@@ -30,7 +30,6 @@ payload = {
     "model": model,
     "messages": messages,
     "temperature": 0.5,
-    "max_tokens": 300,
     "reasoning_effort": "none",
     "stream": False,
 }
