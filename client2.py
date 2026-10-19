@@ -1,7 +1,7 @@
-"""Client 2: domanda fissa con risposta in streaming.
+"""Client 2: risposta del modello in streaming.
 
-A ogni Invio invia la stessa domanda, scritta nel codice, e stampa
-la risposta del modello frammento per frammento, appena arriva.
+A ogni Invio invia al modello solo l'istruzione di sistema, senza
+domanda, e stampa la risposta frammento per frammento, appena arriva.
 Scrivere "esci" per terminare il programma.
 """
 
@@ -22,8 +22,7 @@ messages = [
     {
         "role": "system",
         "content": "Sei un assistente che risponde in italiano, in modo chiaro e conciso.",
-    },
-    {"role": "user", "content": "Che cos'è un modello linguistico?"},
+    }
 ]
 
 # --- Payload --------------------------------------------------------------
@@ -67,7 +66,6 @@ def invia_domanda(payload):
     return "".join(frammenti)
 
 
-print("Domanda:", messages[1]["content"])
 while True:
     comando = input('\nInvio per inviare la domanda, "esci" per terminare: ')
     if comando.strip().lower() == "esci":
