@@ -49,11 +49,20 @@ def test_previous_turns_survive_cleanup():
     assert [m.content for m in out["messages"][5:]] == ["e a Tokyo?", LIMIT_MESSAGE]
 
 
-@pytest.mark.parametrize("args", [{"tz": 1}, {"timezone": 5}])
-def test_wrong_tool_args_do_not_crash(args):
-    out = build_graph(fake(tool_call(args, "a"), AIMessage("ok")), [clock], 5).invoke(start("ora?"))
-    assert out["messages"][-1].content == "ok"    # il ToolMessage d'errore è tornato al modello
-    assert any(isinstance(m, ToolMessage) for m in out["messages"])
+def test_invalid_tool_args_return_error_to_model():
+    out = build_graph(fake(tool_call({"timezone": 5}, "a"), AIMessage("ok")), [clock], 5).invoke(start("ora?"))
+    tool_msgs = [m for m in out["messages"] if isinstance(m, ToolMessage)]
+    assert [m.status for m in tool_msgs] == ["error"]
+    assert out["messages"][-1].content == "ok"
+
+
+def test_unknown_tool_args_are_ignored():
+    # gli argomenti sconosciuti vengono ignorati: si usa il fuso predefinito
+    out = build_graph(fake(tool_call({"tz": 1}, "a"), AIMessage("ok")), [clock], 5).invoke(start("ora?"))
+    tool_msgs = [m for m in out["messages"] if isinstance(m, ToolMessage)]
+    assert len(tool_msgs) == 1 and tool_msgs[0].status == "success"
+    assert tool_msgs[0].content.startswith("Europe/Rome: ")
+    assert out["messages"][-1].content == "ok"
 
 
 def test_two_calls_in_one_message():
@@ -74,3 +83,11 @@ def test_limit_logged(caplog):
         build_graph(model, [clock], 5).invoke(start("che ora è?"))
     assert any(r.name == "assistant.graph" and r.levelno == logging.INFO
                and "limite di passaggi" in r.getMessage() for r in caplog.records)
+
+
+def test_removed_messages_logged_at_debug(caplog):
+    model = fake(*[tool_call({}, f"c{i}") for i in range(10)])
+    with caplog.at_level(logging.DEBUG, logger="assistant.graph"):
+        build_graph(model, [clock], 5).invoke(start("che ora è?"))
+    text = " ".join(r.getMessage() for r in caplog.records if r.name == "assistant.graph")
+    assert "rimosso" in text and "get_current_time" in text

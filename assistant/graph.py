@@ -58,6 +58,9 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int):
         last_human = max(i for i, m in enumerate(messages) if isinstance(m, HumanMessage))
         removed = messages[last_human + 1:]
         logger.debug("[grafo] nodo step_limit: rimossi %d messaggi", len(removed))
+        for m in removed:
+            detail = m.tool_calls if isinstance(m, AIMessage) and m.tool_calls else m.content
+            logger.debug("[grafo] messaggio rimosso: %s %s", type(m).__name__, detail)
         return {"messages": [RemoveMessage(id=m.id) for m in removed] + [AIMessage(LIMIT_MESSAGE)]}
 
     graph = StateGraph(State)
