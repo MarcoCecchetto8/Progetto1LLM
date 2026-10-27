@@ -1,0 +1,61 @@
+"""Interfaccia da terminale: ciclo della sessione, comandi e messaggi d'errore."""
+
+import openai
+from langchain_core.messages import HumanMessage, SystemMessage
+
+from assistant.config import Settings
+from assistant.graph import system_prompt
+
+HELP_TEXT = (
+    "Comandi:\n"
+    "  help        mostra questo aiuto\n"
+    "  clear       svuota la cronologia della conversazione\n"
+    "  quit, exit  esci dall'assistente\n"
+    "Puoi uscire anche con Ctrl+C (Ctrl+D su Linux/Docker, Ctrl+Z + Invio su Windows)."
+)
+GOODBYE = "Arrivederci!"
+
+
+def error_message(error: openai.APIError, settings: Settings) -> str:
+    # APITimeoutError è figlia di APIConnectionError: va controllata prima
+    if isinstance(error, openai.APITimeoutError):
+        return f"Il modello non ha risposto entro {settings.timeout:g} secondi. Riprova."
+    if isinstance(error, openai.APIConnectionError):
+        return f"LM Studio non è raggiungibile all'indirizzo {settings.base_url}. Controlla che sia attivo e riprova."
+    if isinstance(error, openai.BadRequestError) and "context" in str(error).lower():
+        return "Il contesto del modello è pieno: usa 'clear' per svuotare la cronologia."
+    return f"Errore dell'API del modello: {error}"
+
+
+def run(graph, settings: Settings, input_fn=input, output_fn=print) -> int:
+    initial = [SystemMessage(system_prompt(settings.default_timezone))]
+    history = list(initial)
+    output_fn(f"Assistente del laboratorio — modello: {settings.model}")
+    output_fn("Scrivi la tua domanda. Comandi: help, clear. Per uscire: quit, exit o Ctrl+C.")
+    try:
+        while True:
+            text = input_fn("> ").strip()
+            command = text.lower()
+            if not text:
+                continue
+            if command in ("quit", "exit"):
+                break
+            if command == "help":
+                output_fn(HELP_TEXT)
+                continue
+            if command == "clear":
+                history = list(initial)
+                output_fn("Cronologia svuotata.")
+                continue
+            output_fn("…sto pensando")
+            try:
+                result = graph.invoke({"messages": history + [HumanMessage(text)], "steps": 0})
+            except openai.APIError as error:
+                output_fn(error_message(error, settings))
+                continue
+            history = result["messages"]
+            output_fn(history[-1].content)
+    except (EOFError, KeyboardInterrupt):
+        pass
+    output_fn(GOODBYE)
+    return 0
