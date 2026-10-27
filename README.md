@@ -88,7 +88,7 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-Esito al 2026-10-27: 53 test superati.
+Esito al 2026-10-27: 58 test superati.
 
 ## Prova reale
 
