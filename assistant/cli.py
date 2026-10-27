@@ -16,6 +16,7 @@ HELP_TEXT = (
     "Puoi uscire anche con Ctrl+C (Ctrl+D su Linux/Docker, Ctrl+Z + Invio su Windows)."
 )
 GOODBYE = "Arrivederci!"
+EMPTY_ANSWER = "Il modello non ha dato una risposta: riprova."
 
 logger = logging.getLogger("assistant.cli")
 
@@ -61,9 +62,18 @@ def run(graph, settings: Settings, input_fn=input, output_fn=print) -> int:
                 logger.debug("Errore imprevisto durante il turno", exc_info=True)
                 output_fn(f"Errore imprevisto: {error}. Riprova o usa 'clear'.")
                 continue
+            answer = result["messages"][-1].content
+            if not answer.strip():
+                # es. chiamata allo strumento con JSON non valido: il turno non entra in cronologia
+                output_fn(EMPTY_ANSWER)
+                continue
             history = result["messages"]
-            output_fn(history[-1].content)
+            output_fn(answer)
     except (EOFError, KeyboardInterrupt):
         pass
-    output_fn(GOODBYE)
+    try:
+        output_fn(GOODBYE)
+    except KeyboardInterrupt:
+        # Su Windows un Ctrl+C a input() può arrivare in ritardo, dopo l'EOFError
+        pass
     return 0

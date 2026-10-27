@@ -116,6 +116,28 @@ def test_ctrl_c_during_model():
     assert out[-1] == "Arrivederci!"
 
 
+def test_late_ctrl_c_after_eof_single_goodbye():
+    # Su Windows Ctrl+C a input() può dare EOFError e poi un KeyboardInterrupt in ritardo
+    out = []
+
+    def output_fn(text):
+        out.append(text)
+        if text == "Arrivederci!":
+            raise KeyboardInterrupt
+
+    assert run(Stub(), SETTINGS, inputs(), output_fn) == 0
+    assert out.count("Arrivederci!") == 1
+
+
+def test_empty_answer_is_reported_and_not_kept():
+    broken = AIMessage("", invalid_tool_calls=[
+        {"name": "get_current_time", "args": "{oops", "id": "x", "error": "JSON non valido", "type": "invalid_tool_call"}])
+    graph = real_graph(broken, AIMessage("r2"))
+    _, out = session(graph, "d1", "d2", "quit")
+    assert "Il modello non ha dato una risposta: riprova." in out
+    assert [m.content for m in graph.calls[1]["messages"][1:]] == ["d2"]
+
+
 @pytest.mark.parametrize("exc,expected", [
     (openai.APITimeoutError(request=REQ), "120"),
     (openai.APIConnectionError(request=REQ), "http://localhost:1234/v1"),

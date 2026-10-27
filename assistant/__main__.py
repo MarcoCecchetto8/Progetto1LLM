@@ -2,11 +2,12 @@
 
 import logging
 import os
+import signal
 import sys
 
 from dotenv import load_dotenv
 
-from assistant.cli import run
+from assistant.cli import GOODBYE, run
 from assistant.config import ConfigError, load_settings
 from assistant.graph import build_graph
 from assistant.llm import LMStudioUnavailable, ModelNotFound, build_chat_model, check_model
@@ -23,12 +24,15 @@ def configure_logging(level: str) -> None:
             logging.getLogger(name).setLevel(logging.WARNING)
 
 
-def main() -> int:
+def main(start=None, output_fn=print) -> int:
     try:
-        return _start()
+        return (start or _start)()
     except KeyboardInterrupt:
-        print("Arrivederci!")
+        output_fn(GOODBYE)
         return 0
+    finally:
+        # Un Ctrl+C in ritardo (Windows) dopo il saluto non deve produrre un traceback
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 
 def _start() -> int:
@@ -48,4 +52,5 @@ def _start() -> int:
     return run(graph, settings)
 
 
-raise SystemExit(main())
+if __name__ == "__main__":
+    raise SystemExit(main())
