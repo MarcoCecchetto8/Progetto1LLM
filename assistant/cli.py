@@ -1,5 +1,7 @@
 """Interfaccia da terminale: ciclo della sessione, comandi e messaggi d'errore."""
 
+import logging
+
 import openai
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -15,6 +17,8 @@ HELP_TEXT = (
 )
 GOODBYE = "Arrivederci!"
 
+logger = logging.getLogger("assistant.cli")
+
 
 def error_message(error: openai.APIError, settings: Settings) -> str:
     # APITimeoutError è figlia di APIConnectionError: va controllata prima
@@ -22,7 +26,7 @@ def error_message(error: openai.APIError, settings: Settings) -> str:
         return f"Il modello non ha risposto entro {settings.timeout:g} secondi. Riprova."
     if isinstance(error, openai.APIConnectionError):
         return f"LM Studio non è raggiungibile all'indirizzo {settings.base_url}. Controlla che sia attivo e riprova."
-    if isinstance(error, openai.BadRequestError) and "context" in str(error).lower():
+    if "context" in str(error).lower():
         return "Il contesto del modello è pieno: usa 'clear' per svuotare la cronologia."
     return f"Errore dell'API del modello: {error}"
 
@@ -52,6 +56,10 @@ def run(graph, settings: Settings, input_fn=input, output_fn=print) -> int:
                 result = graph.invoke({"messages": history + [HumanMessage(text)], "steps": 0})
             except openai.APIError as error:
                 output_fn(error_message(error, settings))
+                continue
+            except Exception as error:
+                logger.debug("Errore imprevisto durante il turno", exc_info=True)
+                output_fn(f"Errore imprevisto: {error}. Riprova o usa 'clear'.")
                 continue
             history = result["messages"]
             output_fn(history[-1].content)

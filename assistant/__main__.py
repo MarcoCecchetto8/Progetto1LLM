@@ -24,6 +24,14 @@ def configure_logging(level: str) -> None:
 
 
 def main() -> int:
+    try:
+        return _start()
+    except KeyboardInterrupt:
+        print("Arrivederci!")
+        return 0
+
+
+def _start() -> int:
     # Con stdout/stderr rediretti Windows può usare cp1252: forza UTF-8 per non rompere "→" e "…"
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):

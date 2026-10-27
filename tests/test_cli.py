@@ -120,6 +120,9 @@ def test_ctrl_c_during_model():
     (openai.APITimeoutError(request=REQ), "120"),
     (openai.APIConnectionError(request=REQ), "http://localhost:1234/v1"),
     (bad_request("context length exceeded"), "clear"),
+    (openai.APIError("exceeds the context window", request=REQ, body=None), "clear"),
+    (openai.APIError("server esploso", request=REQ, body=None), "server esploso"),
+    (RuntimeError("boom"), "boom"),
 ])
 def test_model_errors_keep_session(exc, expected):
     graph = Stub(exc)
