@@ -92,7 +92,7 @@ Esito al 2026-10-27: 53 test superati.
 
 ## Prova reale
 
-Va eseguita esplicitamente, con LM Studio acceso e il modello caricato. È l'unica prova che dimostra che il modello locale sa usare lo strumento. Esiti ottenuti il 2026-10-27 con `google/gemma-4-e2b`, sia in locale sia con `docker compose run --rm app`:
+Va eseguita esplicitamente, con LM Studio acceso e il modello caricato. È l'unica prova che dimostra che il modello locale sa usare lo strumento. Esiti ottenuti il 2026-10-27 con `google/gemma-4-e2b`, in locale (`python -m assistant`) e con Docker (`docker compose run --rm -T app`), in entrambi i casi con le domande inviate da pipe. L'avvio interattivo con `docker compose run --rm app` (con terminale) non è ancora stato provato a mano.
 
 | Passo | Atteso | Esito |
 |---|---|---|
