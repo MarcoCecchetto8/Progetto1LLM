@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./lezione-03/**)",
+      "Edit(./lezione-03/**)"
+    ]
+  },
+  "claudeMdExcludes": [
+    "**/lezione-03/**"
+  ]
+}
