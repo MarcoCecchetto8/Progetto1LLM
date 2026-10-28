@@ -3,7 +3,7 @@ import openai
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from assistant.cli import run
+from assistant.cli import clear_screen, run
 from assistant.config import load_settings
 from assistant.graph import build_graph
 from assistant.tools import make_clock_tool
@@ -80,6 +80,47 @@ def test_clear_resets_history():
     assert [type(m) for m in messages] == [SystemMessage, HumanMessage]
     assert messages[1].content == "d2"
     assert "Cronologia svuotata." in out
+
+
+def test_clear_clears_screen_and_reprints_header():
+    out, cleared = [], []
+    run(Stub(), SETTINGS, inputs("d1", "clear", "quit"), out.append, lambda: cleared.append(len(out)))
+    assert cleared == [4]  # due righe d'intestazione, "…sto pensando", "ok", poi la pulizia
+    assert out[4:7] == out[0:2] + ["Cronologia svuotata."]
+
+
+class FakeStream:
+    def __init__(self, tty):
+        self.tty = tty
+        self.written = ""
+
+    def isatty(self):
+        return self.tty
+
+    def write(self, text):
+        self.written += text
+
+    def flush(self):
+        pass
+
+
+def test_clear_screen_posix_terminal():
+    stream = FakeStream(tty=True)
+    clear_screen(stream, windows=False)
+    assert stream.written == "\033[2J\033[3J\033[H"
+
+
+def test_clear_screen_windows_terminal():
+    commands = []
+    clear_screen(FakeStream(tty=True), windows=True, system=commands.append)
+    assert commands == ["cls"]
+
+
+@pytest.mark.parametrize("windows", [True, False])
+def test_clear_screen_not_a_terminal(windows):
+    stream, commands = FakeStream(tty=False), []
+    clear_screen(stream, windows=windows, system=commands.append)
+    assert stream.written == "" and commands == []
 
 
 @pytest.mark.parametrize("cmd", ["quit", "EXIT", "  Quit  "])

@@ -61,7 +61,7 @@ Si usa `run` e non `up`, perché `up` non collega il terminale all'input dell'ap
 | Input | Effetto |
 |---|---|
 | `help` | elenca comandi e modi di uscita |
-| `clear` | svuota la cronologia e conferma con `Cronologia svuotata.` |
+| `clear` | svuota la cronologia, pulisce lo schermo (solo se l'output è un terminale), ristampa l'intestazione e conferma con `Cronologia svuotata.` |
 | `quit`, `exit` | uscita con `Arrivederci!` |
 | Ctrl+C, Ctrl+D (Linux/Docker), Ctrl+Z + Invio (Windows) | uscita con `Arrivederci!` |
 | riga vuota | ignorata |
@@ -88,7 +88,7 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-Esito al 2026-10-27: 58 test superati.
+Esito al 2026-10-28: 63 test superati.
 
 ## Prova reale
 
