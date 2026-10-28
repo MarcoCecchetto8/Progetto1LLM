@@ -318,3 +318,11 @@ def test_model_errors_keep_session(exc, expected): ...  # messaggio contiene exp
 - [ ] **Step 4: Togli dal README i comandi non verificati** o marcali come tali. Aggiorna `CLAUDE.md` con struttura e comandi di test stabili.
 - [ ] **Step 5: Verifica finale.** `python -m pytest -v` (tutti PASS) e `git status` (nessun `.env`, `.venv` o cache fra i file da aggiungere).
 - [ ] **Step 6: Commit.** `docs: aggiunge README con avvio, test, prova reale e diagnosi`. Nel resoconto all'utente: cosa è stato eseguito, con quale esito e cosa resta da provare.
+
+### Aggiunta 2026-10-28: `clear` pulisce lo schermo
+
+Richiesta dell'utente dopo la consegna, approvata prima del codice.
+
+- `assistant/cli.py`: `clear_screen(stream=None, windows=os.name == "nt", system=os.system)` non fa nulla se lo stream non è un terminale; su Windows esegue `cls`, altrove scrive `\033[2J\033[3J\033[H`. `run(..., clear_fn=clear_screen)`: con `clear` svuota la cronologia, chiama `clear_fn`, ristampa l'intestazione e poi `Cronologia svuotata.`.
+- Test in `tests/test_cli.py`: pulizia e intestazione ristampata, ramo POSIX, ramo Windows, nessuna azione senza terminale.
+- Commit: `feat(cli): pulisce lo schermo con il comando clear`.

@@ -47,7 +47,7 @@ Scrivi la tua domanda. Comandi: help, clear. Per uscire: quit, exit o Ctrl+C.
 | Input | Effetto |
 |---|---|
 | `help` | elenca comandi e modi di uscita |
-| `clear` | svuota la cronologia e conferma |
+| `clear` | svuota la cronologia, pulisce lo schermo del terminale (`cls` su Windows, sequenza ANSI altrove; nulla se l'output non è un terminale), ristampa l'intestazione e conferma |
 | `quit`, `exit` | uscita pulita |
 | Ctrl+C (anche durante l'attesa del modello) | uscita pulita |
 | Ctrl+D (Linux/Docker), Ctrl+Z + Invio (Windows) | uscita pulita |
