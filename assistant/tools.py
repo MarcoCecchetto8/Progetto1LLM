@@ -3,9 +3,10 @@
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from langchain_core.tools import BaseTool, tool
+
+from assistant.timezones import get_timezone
 
 logger = logging.getLogger("assistant.tools")
 
@@ -23,11 +24,11 @@ def make_clock_tool(default_timezone: str, now: Callable[[], datetime] = utc_now
         Se omesso, si usa il fuso orario predefinito.
         """
         name = (timezone or "").strip() or default_timezone
-        try:
-            instant = now().astimezone(ZoneInfo(name))
-            result = f"{name}: {instant.isoformat(timespec='seconds')}"
-        except (ZoneInfoNotFoundError, ValueError):
+        zone = get_timezone(name)
+        if zone is None:
             result = f'Fuso orario sconosciuto: "{name}". Usa un nome IANA, es. Europe/Rome.'
+        else:
+            result = f"{name}: {now().astimezone(zone).isoformat(timespec='seconds')}"
         logger.info("[strumento] get_current_time(timezone=%s) → %s", name, result)
         return result
 

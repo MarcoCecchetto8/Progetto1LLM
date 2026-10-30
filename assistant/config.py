@@ -2,7 +2,8 @@
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from assistant.timezones import get_timezone
 
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 
@@ -53,10 +54,8 @@ def load_settings(env: Mapping[str, str]) -> Settings:
     max_steps = _number(env, "MAX_STEPS", "5", int, 1, "un intero")
 
     timezone = _get(env, "DEFAULT_TIMEZONE", "Europe/Rome")
-    try:
-        ZoneInfo(timezone)
-    except (ZoneInfoNotFoundError, ValueError):
-        raise ConfigError(f"DEFAULT_TIMEZONE non valida: fuso '{timezone}' sconosciuto.") from None
+    if get_timezone(timezone) is None:
+        raise ConfigError(f"DEFAULT_TIMEZONE non valida: fuso '{timezone}' sconosciuto.")
 
     log_level = _get(env, "LOG_LEVEL", "INFO").upper()
     if log_level not in LOG_LEVELS:

@@ -29,6 +29,14 @@ def test_invalid_values(var, value):
         load_settings({**BASE, var: value})
 
 
+# Nomi lunghissimi (OSError) o accettati solo da un sistema: Windows ignora punto finale,
+# "\" e "::$DATA" nei percorsi, Linux ha "posixrules" tra i fusi di sistema
+@pytest.mark.parametrize("value", ["x" * 300, "Europe/Rome.", "Europe\\Rome", "Europe/Rome::$DATA", "posixrules"])
+def test_timezone_not_iana(value):
+    with pytest.raises(ConfigError, match="DEFAULT_TIMEZONE"):
+        load_settings({**BASE, "DEFAULT_TIMEZONE": value})
+
+
 def test_overrides_and_log_level_case():
     s = load_settings({**BASE, "MAX_STEPS": "3", "DEFAULT_TIMEZONE": "Asia/Tokyo", "LOG_LEVEL": "debug"})
     assert (s.max_steps, s.default_timezone, s.log_level) == (3, "Asia/Tokyo", "DEBUG")

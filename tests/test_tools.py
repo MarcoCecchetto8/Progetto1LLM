@@ -30,7 +30,8 @@ def test_strips_spaces():
     assert make_clock_tool("Europe/Rome", FIXED).invoke({"timezone": " Asia/Tokyo "}).startswith("Asia/Tokyo: ")
 
 
-@pytest.mark.parametrize("bad", ["Marte/Base", "../etc/passwd", "Europe/"])
+@pytest.mark.parametrize("bad", ["Marte/Base", "../etc/passwd", "Europe/", "x" * 300, "Europe/Rome.",
+    "Europe\\Rome", "Europe/Rome::$DATA", "posixrules"])
 def test_unknown_timezone(bad):
     assert make_clock_tool("Europe/Rome", FIXED).invoke({"timezone": bad}) == \
         f'Fuso orario sconosciuto: "{bad}". Usa un nome IANA, es. Europe/Rome.'
