@@ -5,13 +5,7 @@ import os
 import signal
 import sys
 
-from dotenv import load_dotenv
-
-from assistant.cli import GOODBYE, run
-from assistant.config import ConfigError, load_settings
-from assistant.graph import build_graph
-from assistant.llm import LMStudioUnavailable, ModelNotFound, build_chat_model, check_model
-from assistant.tools import make_clock_tool
+from assistant import GOODBYE
 
 
 def configure_logging(level: str) -> None:
@@ -36,6 +30,15 @@ def main(start=None, output_fn=print) -> int:
 
 
 def _start() -> int:
+    # Librerie caricate qui, dentro main(): un Ctrl+C durante i secondi di caricamento dà il saluto
+    from dotenv import load_dotenv
+
+    from assistant.cli import run
+    from assistant.config import ConfigError, load_settings
+    from assistant.graph import build_graph
+    from assistant.llm import LMStudioUnavailable, ModelNotFound, build_chat_model, check_model
+    from assistant.tools import make_clock_tool
+
     # Con stdout/stderr rediretti Windows può usare cp1252: forza UTF-8 per non rompere "→" e "…"
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):

@@ -7,6 +7,7 @@ import sys
 import openai
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from assistant import GOODBYE
 from assistant.config import Settings
 from assistant.graph import system_prompt
 
@@ -17,7 +18,6 @@ HELP_TEXT = (
     "  quit, exit  esci dall'assistente\n"
     "Puoi uscire anche con Ctrl+C (Ctrl+D su Linux/Docker, Ctrl+Z + Invio su Windows)."
 )
-GOODBYE = "Arrivederci!"
 EMPTY_ANSWER = "Il modello non ha dato una risposta: riprova."
 
 logger = logging.getLogger("assistant.cli")
