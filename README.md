@@ -104,7 +104,7 @@ Va eseguita esplicitamente, con LM Studio acceso e il modello caricato. È l'uni
 | 6a. LM Studio irraggiungibile (`LMSTUDIO_BASE_URL` su una porta chiusa) | messaggio con l'indirizzo provato, codice d'uscita 1 | ok (solo in locale) |
 | 6b. `LMSTUDIO_MODEL=inventato` | messaggio con l'elenco dei modelli disponibili, codice d'uscita 1 | ok (solo in locale) |
 | 6c. `quit` | `Arrivederci!`, codice d'uscita 0 | ok |
-| 6d. Ctrl+C durante l'attesa e al prompt | `Arrivederci!` senza traceback | ok in locale; in Docker ok, ma il saluto compariva attaccato a `^C` (corretto, da riprovare) |
+| 6d. Ctrl+C durante l'attesa e al prompt | `Arrivederci!` senza traceback | ok, in locale e con Docker |
 
 Con Docker Desktop su Windows il container ha raggiunto LM Studio con l'indirizzo `http://host.docker.internal:1234/v1` senza altre modifiche.
 
