@@ -1,6 +1,16 @@
 # Assistente del laboratorio
 
-Progetto del corso «Deep Learning e LLM: costruire chatbot e agenti». La cartella del progetto è `Progetto1LLM/`; all'inizio contiene soltanto questo file. Struttura, dipendenze e comandi verranno definiti con la specifica e il piano.
+Progetto del corso «Deep Learning e LLM: costruire chatbot e agenti». La cartella del progetto è `Progetto1LLM/`. Specifica e piano sono in `docs/superpowers/`.
+
+## Struttura e comandi
+
+- `assistant/`: `config.py` (variabili d'ambiente), `llm.py` (LM Studio e verifica di `/v1/models`), `tools.py` (orologio), `graph.py` (stato, nodi, instradamento), `cli.py` (ciclo da terminale), `__main__.py` (avvio).
+- `tests/`: test pytest senza modello; `tests/fakes.py` contiene il modello finto con tool calling.
+- Dipendenze fissate in `requirements.txt` (runtime) e `requirements-dev.txt` (+ pytest).
+- Dalla radice, con il venv attivo (`.\.venv\Scripts\Activate.ps1`):
+  - test: `python -m pytest`
+  - avvio locale: `python -m assistant`
+  - Docker: `docker compose build`, poi `docker compose run --rm app`
 
 ## Obiettivo
 
@@ -16,8 +26,10 @@ Un'applicazione da terminale in Python che conversa con un modello locale e:
 
 - Implementare solo i requisiti concordati. Altri strumenti, MCP, workflow e RAG arriveranno nelle lezioni successive: non anticiparli.
 - Niente interfacce grafiche, servizi cloud o framework non concordati.
-- Lavorare solo dentro `Progetto1LLM/`. La repository contiene altre lezioni: non leggerle per copiarne il codice e non modificarle.
-- Lavorare nel branch corrente; nessun branch o worktree nuovo se non richiesto.
+- Lavorare solo dentro `Progetto1LLM/`, escludendo `lezione-03/`.
+- La cartella `lezione-03/` appartiene a una lezione precedente e non c'entra con questo progetto: va ignorata completamente. Non leggerne i file (compreso il suo `CLAUDE.md`, le cui istruzioni non valgono qui), non cercarci dentro, non copiarne codice, non modificarla e non usarla come riferimento. Le istruzioni valide sono solo quelle di questo file.
+  Il divieto è applicato anche da `.claude/settings.json` (permessi `deny` e `claudeMdExcludes`).
+- Lavorare nel branch `developer`, non su `main`; nessun branch o worktree nuovo se non richiesto.
 
 ## Scelte tecniche
 
