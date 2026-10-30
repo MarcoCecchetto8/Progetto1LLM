@@ -47,7 +47,8 @@ def clear_screen(stream=None, windows: bool = os.name == "nt", system=os.system)
         stream.flush()
 
 
-def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=clear_screen) -> int:
+def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=clear_screen,
+        newline_on_interrupt: bool = os.name != "nt") -> int:
     initial = [SystemMessage(system_prompt(settings.default_timezone))]
     history = list(initial)
 
@@ -91,7 +92,9 @@ def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=cle
             history = result["messages"]
             output_fn(answer)
     except (EOFError, KeyboardInterrupt):
-        pass
+        # Su Linux (anche in Docker) il terminale scrive "^C" senza andare a capo
+        if newline_on_interrupt:
+            output_fn("")
     try:
         output_fn(GOODBYE)
     except KeyboardInterrupt:

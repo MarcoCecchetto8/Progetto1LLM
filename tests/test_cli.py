@@ -157,6 +157,26 @@ def test_ctrl_c_during_model():
     assert out[-1] == "Arrivederci!"
 
 
+@pytest.mark.parametrize("graph,lines", [(Stub(), ()), (Stub(KeyboardInterrupt()), ("ciao",))])
+def test_interrupt_goodbye_on_new_line_posix(graph, lines):
+    # Il terminale Linux (Docker) mostra "^C" senza andare a capo: il saluto va sulla riga dopo
+    out = []
+    run(graph, SETTINGS, inputs(*lines), out.append, newline_on_interrupt=True)
+    assert out[-2:] == ["", "Arrivederci!"]
+
+
+def test_interrupt_goodbye_without_blank_line_windows():
+    out = []
+    run(Stub(), SETTINGS, inputs(), out.append, newline_on_interrupt=False)
+    assert out[-2:] != ["", "Arrivederci!"] and out[-1] == "Arrivederci!"
+
+
+def test_quit_goodbye_without_blank_line():
+    out = []
+    run(Stub(), SETTINGS, inputs("quit"), out.append, newline_on_interrupt=True)
+    assert out[-2] != ""
+
+
 def test_late_ctrl_c_after_eof_single_goodbye():
     # Su Windows Ctrl+C a input() può dare EOFError e poi un KeyboardInterrupt in ritardo
     out = []
