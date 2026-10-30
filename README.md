@@ -88,11 +88,11 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-Esito al 2026-10-28: 63 test superati.
+Esito al 2026-10-30: 67 test superati.
 
 ## Prova reale
 
-Va eseguita esplicitamente, con LM Studio acceso e il modello caricato. È l'unica prova che dimostra che il modello locale sa usare lo strumento. Esiti ottenuti il 2026-10-27 con `google/gemma-4-e2b`, in locale (`python -m assistant`) e con Docker (`docker compose run --rm -T app`), in entrambi i casi con le domande inviate da pipe. L'avvio interattivo con `docker compose run --rm app` (con terminale) non è ancora stato provato a mano.
+Va eseguita esplicitamente, con LM Studio acceso e il modello caricato. È l'unica prova che dimostra che il modello locale sa usare lo strumento. Esiti ottenuti il 2026-10-27 con `google/gemma-4-e2b`, in locale (`python -m assistant`) e con Docker (`docker compose run --rm -T app`), in entrambi i casi con le domande inviate da pipe. Il 2026-10-30 la sessione è stata provata anche a mano, in PowerShell e con `docker compose run --rm app` (con terminale).
 
 | Passo | Atteso | Esito |
 |---|---|---|
@@ -104,7 +104,7 @@ Va eseguita esplicitamente, con LM Studio acceso e il modello caricato. È l'uni
 | 6a. LM Studio irraggiungibile (`LMSTUDIO_BASE_URL` su una porta chiusa) | messaggio con l'indirizzo provato, codice d'uscita 1 | ok (solo in locale) |
 | 6b. `LMSTUDIO_MODEL=inventato` | messaggio con l'elenco dei modelli disponibili, codice d'uscita 1 | ok (solo in locale) |
 | 6c. `quit` | `Arrivederci!`, codice d'uscita 0 | ok |
-| 6d. Ctrl+C durante l'attesa e al prompt | `Arrivederci!` senza traceback | da provare a mano in una console interattiva |
+| 6d. Ctrl+C durante l'attesa e al prompt | `Arrivederci!` senza traceback | ok in locale; in Docker ok, ma il saluto compariva attaccato a `^C` (corretto, da riprovare) |
 
 Con Docker Desktop su Windows il container ha raggiunto LM Studio con l'indirizzo `http://host.docker.internal:1234/v1` senza altre modifiche.
 
