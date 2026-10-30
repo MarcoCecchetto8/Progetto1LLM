@@ -1,10 +1,13 @@
+import logging
 import signal
 import subprocess
 import sys
 
 import pytest
 
-from assistant.__main__ import main
+from assistant.__main__ import configure_logging, main
+
+LIBRARIES = ("httpx", "httpx2", "openai", "httpcore")
 
 
 @pytest.fixture
@@ -12,6 +15,43 @@ def restore_sigint():
     old = signal.getsignal(signal.SIGINT)
     yield
     signal.signal(signal.SIGINT, old)
+
+
+@pytest.fixture
+def restore_logging():
+    root = logging.getLogger()
+    old = (root.level, root.handlers[:], {name: logging.getLogger(name).level for name in LIBRARIES})
+    yield
+    root.setLevel(old[0])
+    root.handlers[:] = old[1]
+    for name, level in old[2].items():
+        logging.getLogger(name).setLevel(level)
+
+
+def test_logging_info_plain_and_libraries_quiet(restore_logging):
+    configure_logging("INFO")
+    root = logging.getLogger()
+    assert root.level == logging.INFO
+    assert [h.stream for h in root.handlers] == [sys.stderr]
+    assert root.handlers[0].formatter._fmt == "%(message)s"
+    assert all(logging.getLogger(name).level == logging.WARNING for name in LIBRARIES)
+
+
+def test_logging_debug_detailed_and_libraries_visible(restore_logging):
+    for name in LIBRARIES:
+        logging.getLogger(name).setLevel(logging.NOTSET)
+    configure_logging("DEBUG")
+    root = logging.getLogger()
+    assert root.level == logging.DEBUG
+    assert "%(asctime)s" in root.handlers[0].formatter._fmt and "%(name)s" in root.handlers[0].formatter._fmt
+    assert all(logging.getLogger(name).level == logging.NOTSET for name in LIBRARIES)
+
+
+def test_logging_replaces_previous_handlers(restore_logging):
+    configure_logging("INFO")
+    configure_logging("WARNING")
+    root = logging.getLogger()
+    assert len(root.handlers) == 1 and root.level == logging.WARNING
 
 
 def test_ctrl_c_at_startup(restore_sigint):
