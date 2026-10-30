@@ -4,7 +4,7 @@ Progetto del corso «Deep Learning e LLM: costruire chatbot e agenti». La carte
 
 ## Struttura e comandi
 
-- `assistant/`: `config.py` (variabili d'ambiente), `llm.py` (LM Studio e verifica di `/v1/models`), `tools.py` (orologio), `graph.py` (stato, nodi, instradamento), `cli.py` (ciclo da terminale), `__main__.py` (avvio).
+- `assistant/`: `config.py` (variabili d'ambiente), `llm.py` (LM Studio e verifica di `/v1/models`), `timezones.py` (fusi IANA ammessi, dall'elenco di `tzdata`), `tools.py` (orologio), `graph.py` (stato, nodi, instradamento), `cli.py` (ciclo da terminale), `__main__.py` (avvio).
 - `tests/`: test pytest senza modello; `tests/fakes.py` contiene il modello finto con tool calling.
 - Dipendenze fissate in `requirements.txt` (runtime) e `requirements-dev.txt` (+ pytest).
 - Dalla radice, con il venv attivo (`.\.venv\Scripts\Activate.ps1`):

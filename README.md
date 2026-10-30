@@ -31,7 +31,7 @@ Invoke-RestMethod http://localhost:1234/v1/models | Select-Object -ExpandPropert
 | `LMSTUDIO_TIMEOUT` | no | `120` | secondi |
 | `LMSTUDIO_TEMPERATURE` | no | `0.2` | |
 | `MAX_STEPS` | no | `5` | invocazioni massime del modello per domanda (≥ 1) |
-| `DEFAULT_TIMEZONE` | no | `Europe/Rome` | nome IANA, validato all'avvio |
+| `DEFAULT_TIMEZONE` | no | `Europe/Rome` | nome IANA esatto (maiuscole comprese), validato all'avvio sull'elenco del pacchetto `tzdata` |
 | `LOG_LEVEL` | no | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 
 ## Avvio locale (PowerShell)
@@ -88,7 +88,7 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-Esito al 2026-10-30: 67 test superati.
+Esito al 2026-10-30: 81 test superati.
 
 ## Prova reale
 
