@@ -29,7 +29,8 @@ Un'applicazione da terminale in Python che conversa con un modello locale e:
 - Lavorare solo dentro `Progetto1LLM/`, escludendo `lezione-03/`.
 - La cartella `lezione-03/` appartiene a una lezione precedente e non c'entra con questo progetto: va ignorata completamente. Non leggerne i file (compreso il suo `CLAUDE.md`, le cui istruzioni non valgono qui), non cercarci dentro, non copiarne codice, non modificarla e non usarla come riferimento. Le istruzioni valide sono solo quelle di questo file.
   Il divieto è applicato anche da `.claude/settings.json` (permessi `deny` e `claudeMdExcludes`).
-- Lavorare nel branch `developer`, non su `main`; nessun branch o worktree nuovo se non richiesto.
+- Base di lavoro: il branch `developer`, non `main`. Ogni funzionalità si sviluppa in un branch `feature/<nome>` creato da `developer`; quando è completa e verificata si unisce in `developer` con `--no-ff`, si pusha `developer` e si elimina il branch feature. Nessun altro branch o worktree se non richiesto.
+- Lavorare a pezzi piccoli: niente blocchi grandi di codice in un solo passo, salvo mia diversa indicazione.
 
 ## Scelte tecniche
 
