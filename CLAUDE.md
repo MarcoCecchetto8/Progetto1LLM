@@ -5,7 +5,7 @@ Progetto del corso «Deep Learning e LLM: costruire chatbot e agenti». La carte
 ## Struttura e comandi
 
 - `assistant/` (host): `config.py` (variabili d'ambiente), `llm.py` (LM Studio e verifica di `/v1/models`), `mcp_client.py` (client MCP: avvia il server in stdio, sessione unica, tool sincroni dal catalogo), `graph.py` (stato, nodi, instradamento, log delle chiamate), `cli.py` (ciclo da terminale), `__main__.py` (avvio).
-- `lab_server/` (server MCP, FastMCP): `server.py` (registrazione dei tool), `clock.py` (orologio), `timezones.py` (fusi IANA ammessi, dall'elenco di `tzdata`), `check.py` (verifica diretta senza assistente), `__main__.py` (avvio in stdio). La logica degli strumenti sta in funzioni pure che sollevano `ValueError`; `server.py` le converte in `ToolError`.
+- `lab_server/` (server MCP, FastMCP): `server.py` (registrazione dei tool), `clock.py` (orologio), `units.py` (convertitore di unità), `timezones.py` (fusi IANA ammessi, dall'elenco di `tzdata`), `check.py` (verifica diretta senza assistente), `__main__.py` (avvio in stdio). La logica degli strumenti sta in funzioni pure che sollevano `ValueError`; `server.py` le converte in `ToolError`.
 - `tests/`: test pytest senza modello; `tests/fakes.py` contiene il modello finto con tool calling e un orologio finto; `tests/mcp_test_server.py` è un server MCP di prova per i test del client.
 - Dipendenze fissate in `requirements.txt` (runtime) e `requirements-dev.txt` (+ pytest).
 - Dalla radice, con il venv attivo (`.\.venv\Scripts\Activate.ps1`):
