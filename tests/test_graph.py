@@ -117,3 +117,8 @@ def test_graph_with_mcp_tool():
     tool_msgs = [m for m in out["messages"] if isinstance(m, ToolMessage)]
     assert [(m.tool_call_id, m.content, m.status) for m in tool_msgs] == [("m1", "ciao", "success")]
     assert out["messages"][-1].content == "fatto"
+
+
+def test_system_prompt_mentions_tools_and_errors():
+    p = system_prompt("Europe/Rome")
+    assert "convert_units" in p and "non inventare" in p and "errore" in p
