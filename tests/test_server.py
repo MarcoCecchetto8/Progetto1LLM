@@ -104,3 +104,29 @@ def test_calculate_in_catalog_and_call():
 def test_calculate_rejects_code():
     text = error_text("calculate", {"expression": "__import__('os')"})
     assert 'Carattere "_" non ammesso' in text
+
+
+FIXED_NOV = lambda: datetime(2026, 11, 2, 10, 0, tzinfo=UTC)
+
+
+def test_catalog_has_all_seven_tools():
+    names = {t.name for t in call(server(), lambda c: c.list_tools())}
+    assert names == {"get_current_time", "convert_units", "calculate",
+                     "date_info", "find_holiday", "add_days", "days_between"}
+
+
+def test_find_holiday_uses_today_in_default_timezone():
+    nov = create_server("Europe/Rome", FIXED_NOV)
+    text = call(nov, lambda c: c.call_tool("find_holiday", {"name": "Pasqua"})).content[0].text
+    assert "già passata" in text and "2027-03-28" in text
+
+
+def test_today_follows_default_timezone():
+    # 2026-11-02 alle 22:00 UTC è già il 3 novembre a Tokyo
+    late = create_server("Asia/Tokyo", lambda: datetime(2026, 11, 2, 22, 0, tzinfo=UTC))
+    text = call(late, lambda c: c.call_tool("add_days", {"days": 0})).content[0].text
+    assert "2026-11-03" in text
+
+
+def test_date_info_wrong_format_is_error():
+    assert "AAAA-MM-GG" in error_text("date_info", {"date": "25/12/2026"})

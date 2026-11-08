@@ -127,3 +127,8 @@ def test_system_prompt_mentions_tools_and_errors():
 def test_system_prompt_mentions_calculator_and_equations():
     p = system_prompt("Europe/Rome")
     assert "calculate" in p and "2x = 28" in p and "28 / 2" in p
+
+
+def test_system_prompt_mentions_date_tools():
+    p = system_prompt("Europe/Rome")
+    assert all(name in p for name in ("date_info", "find_holiday", "add_days", "days_between", "AAAA-MM-GG"))

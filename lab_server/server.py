@@ -2,13 +2,15 @@
 
 import logging
 from collections.abc import Callable
-from datetime import datetime
+from datetime import date, datetime
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
 from lab_server.calculator import calculate as evaluate
+from lab_server import dates
 from lab_server.clock import current_time, utc_now
+from lab_server.timezones import get_timezone
 from lab_server.units import Unit, convert
 from lab_server.validation import ItalianValidationErrors
 
@@ -64,5 +66,48 @@ def create_server(default_timezone: str, now: Callable[[], datetime] = utc_now) 
             raise ToolError(str(error)) from None
         logger.debug("calculate(%s) → %s", expression, result)
         return result
+
+    def today() -> date:
+        return now().astimezone(get_timezone(default_timezone)).date()
+
+    def run(label: str, action) -> str:
+        try:
+            result = action()
+        except ValueError as error:
+            raise ToolError(str(error)) from None
+        logger.debug("%s → %s", label, result)
+        return result
+
+    @mcp.tool
+    def date_info(date: str) -> str:
+        """Giorno della settimana di una data e, se lo è, la festività; dice se la data è passata, oggi o futura.
+
+        date: data nel formato AAAA-MM-GG (es. 2026-12-25).
+        """
+        return run(f"date_info({date})", lambda: dates.date_info(date, today()))
+
+    @mcp.tool
+    def find_holiday(name: str, year: int | None = None) -> str:
+        """Data e giorno della settimana di una festività nazionale italiana (es. Natale, Pasqua, Pasquetta).
+
+        Senza year si usa l'anno corrente; se quest'anno la festività è già passata lo segnala e dà la prossima.
+        """
+        return run(f"find_holiday({name}, {year})", lambda: dates.find_holiday(name, year, today()))
+
+    @mcp.tool
+    def add_days(days: int, start: str | None = None) -> str:
+        """Data che si ottiene aggiungendo (o togliendo, se negativo) un numero di giorni.
+
+        start: data di partenza AAAA-MM-GG; se omessa si parte da oggi.
+        """
+        return run(f"add_days({days}, {start})", lambda: dates.add_days(days, start, today()))
+
+    @mcp.tool
+    def days_between(end: str, start: str | None = None) -> str:
+        """Numero di giorni fra due date AAAA-MM-GG (es. quanti giorni mancano a una scadenza).
+
+        start: data di partenza; se omessa si parte da oggi.
+        """
+        return run(f"days_between({end}, {start})", lambda: dates.days_between(end, start, today()))
 
     return mcp

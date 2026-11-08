@@ -5,7 +5,7 @@ Progetto del corso «Deep Learning e LLM: costruire chatbot e agenti». La carte
 ## Struttura e comandi
 
 - `assistant/` (host): `config.py` (variabili d'ambiente), `llm.py` (LM Studio e verifica di `/v1/models`), `mcp_client.py` (client MCP: avvia il server in stdio, sessione unica, tool sincroni dal catalogo), `graph.py` (stato, nodi, instradamento, log delle chiamate), `cli.py` (ciclo da terminale), `__main__.py` (avvio).
-- `lab_server/` (server MCP, FastMCP): `server.py` (registrazione dei tool), `clock.py` (orologio), `units.py` (convertitore di unità), `calculator.py` (calcolatrice sicura con `ast`, senza `eval`), `timezones.py` (fusi IANA ammessi, dall'elenco di `tzdata`), `validation.py` (errori di validazione degli argomenti tradotti in italiano, per tutti i tool), `check.py` (verifica diretta senza assistente), `__main__.py` (avvio in stdio). La logica degli strumenti sta in funzioni pure che sollevano `ValueError`; `server.py` le converte in `ToolError`.
+- `lab_server/` (server MCP, FastMCP): `server.py` (registrazione dei tool), `clock.py` (orologio), `units.py` (convertitore di unità), `calculator.py` (calcolatrice sicura con `ast`, senza `eval`), `holidays.py` + `holidays.json` (festività da file locale, Pasqua calcolata), `dates.py` (giorni e scadenze), `timezones.py` (fusi IANA ammessi, dall'elenco di `tzdata`), `validation.py` (errori di validazione degli argomenti tradotti in italiano, per tutti i tool), `check.py` (verifica diretta senza assistente), `__main__.py` (avvio in stdio). La logica degli strumenti sta in funzioni pure che sollevano `ValueError`; `server.py` le converte in `ToolError`.
 - `tests/`: test pytest senza modello; `tests/fakes.py` contiene il modello finto con tool calling e un orologio finto; `tests/mcp_test_server.py` è un server MCP di prova per i test del client.
 - Dipendenze fissate in `requirements.txt` (runtime) e `requirements-dev.txt` (+ pytest).
 - Dalla radice, con il venv attivo (`.\.venv\Scripts\Activate.ps1`):
@@ -26,7 +26,7 @@ Un'applicazione da terminale in Python che conversa con un modello locale e:
 
 ## Confini
 
-- Implementare solo i requisiti concordati. Gli strumenti passano dal server MCP (`lab_server/`); in corso gli strumenti base (convertitore, calcolatrice, giorni e scadenze), poi catalogo, note e meteo con una specifica propria. Workflow e RAG arriveranno nelle lezioni successive: non anticiparli.
+- Implementare solo i requisiti concordati. Gli strumenti passano dal server MCP (`lab_server/`); fatti orologio e strumenti base (convertitore, calcolatrice, giorni e scadenze); catalogo, note e meteo arriveranno con una specifica propria. Workflow e RAG arriveranno nelle lezioni successive: non anticiparli.
 - Niente interfacce grafiche, servizi cloud o framework non concordati.
 - Lavorare solo dentro `Progetto1LLM/`, escludendo `lezione-03/`.
 - La cartella `lezione-03/` appartiene a una lezione precedente e non c'entra con questo progetto: va ignorata completamente. Non leggerne i file (compreso il suo `CLAUDE.md`, le cui istruzioni non valgono qui), non cercarci dentro, non copiarne codice, non modificarla e non usarla come riferimento. Le istruzioni valide sono solo quelle di questo file.
