@@ -69,7 +69,6 @@ def holiday_date(name: str, year: int) -> tuple[str, date]:
 
 def holiday_name(day: date) -> str | None:
     data = _holidays()
-    for entry in data["fixed"] + data["easter"]:
-        if _date_of(entry, day.year) == day:
-            return entry["name"]
-    return None
+    # Pasqua o Pasquetta possono cadere il 25 aprile: si nominano tutte le festività del giorno
+    names = [entry["name"] for entry in data["fixed"] + data["easter"] if _date_of(entry, day.year) == day]
+    return " e ".join(names) or None

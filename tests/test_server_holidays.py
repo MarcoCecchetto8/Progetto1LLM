@@ -44,3 +44,9 @@ def test_unknown_holiday_lists_names():
 def test_year_out_of_range(year):
     with pytest.raises(ValueError, match="1900"):
         holiday_date("Natale", year)
+
+
+def test_coinciding_holidays_are_all_named():
+    # Nel 2011 Pasquetta cade il 25 aprile, nel 2038 Pasqua
+    assert holiday_name(date(2011, 4, 25)) == "Festa della Liberazione e Lunedì dell'Angelo"
+    assert holiday_name(date(2038, 4, 25)) == "Festa della Liberazione e Pasqua"
