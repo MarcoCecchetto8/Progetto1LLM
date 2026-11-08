@@ -1,0 +1,18 @@
+{
+  "fixed": [
+    {"name": "Capodanno", "month": 1, "day": 1, "aliases": ["1 gennaio", "primo dell'anno"]},
+    {"name": "Epifania", "month": 1, "day": 6, "aliases": ["6 gennaio", "Befana"]},
+    {"name": "Festa della Liberazione", "month": 4, "day": 25, "aliases": ["25 aprile", "Liberazione"]},
+    {"name": "Festa del Lavoro", "month": 5, "day": 1, "aliases": ["1 maggio", "Festa dei lavoratori"]},
+    {"name": "Festa della Repubblica", "month": 6, "day": 2, "aliases": ["2 giugno"]},
+    {"name": "Ferragosto", "month": 8, "day": 15, "aliases": ["15 agosto", "Assunzione"]},
+    {"name": "Ognissanti", "month": 11, "day": 1, "aliases": ["1 novembre", "Tutti i Santi"]},
+    {"name": "Immacolata Concezione", "month": 12, "day": 8, "aliases": ["8 dicembre", "Immacolata"]},
+    {"name": "Natale", "month": 12, "day": 25, "aliases": ["25 dicembre"]},
+    {"name": "Santo Stefano", "month": 12, "day": 26, "aliases": ["26 dicembre"]}
+  ],
+  "easter": [
+    {"name": "Pasqua", "offset": 0, "aliases": []},
+    {"name": "Lunedì dell'Angelo", "offset": 1, "aliases": ["Pasquetta"]}
+  ]
+}
