@@ -46,7 +46,8 @@ def _evaluate(node: ast.AST):
 
 
 def _format(value) -> str:
-    if isinstance(value, float) and value.is_integer():
+    # Sotto 2^53 un float intero è esatto; oltre, int() mostrerebbe cifre non significative (es. 10^100/3)
+    if isinstance(value, float) and value.is_integer() and abs(value) < 2**53:
         return str(int(value))
     return repr(value) if isinstance(value, float) else str(value)
 

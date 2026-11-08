@@ -73,3 +73,12 @@ def test_complex_result_rejected():
 def test_huge_literal_rejected():
     with pytest.raises(ValueError, match="troppo grand"):
         calculate("1" * 150)
+
+
+@pytest.mark.parametrize("expression,expected", [
+    ("10^100/3", "10^100/3 = 3.3333333333333335e+99"),
+    ("10^20/1", "10^20/1 = 1e+20"),
+    ("2^52 / 1", "2^52 / 1 = 4503599627370496"),
+])
+def test_large_float_results_keep_only_real_digits(expression, expected):
+    assert calculate(expression) == expected
