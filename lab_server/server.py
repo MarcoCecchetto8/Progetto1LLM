@@ -9,12 +9,13 @@ from fastmcp.exceptions import ToolError
 
 from lab_server.clock import current_time, utc_now
 from lab_server.units import Unit, convert
+from lab_server.validation import ItalianValidationErrors
 
 logger = logging.getLogger("lab_server")
 
 
 def create_server(default_timezone: str, now: Callable[[], datetime] = utc_now) -> FastMCP:
-    mcp = FastMCP("Strumenti del laboratorio")
+    mcp = FastMCP("Strumenti del laboratorio", middleware=[ItalianValidationErrors()])
 
     @mcp.tool
     def get_current_time(timezone: str | None = None) -> str:

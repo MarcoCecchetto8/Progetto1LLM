@@ -65,3 +65,31 @@ def test_units_value_as_text():
 def test_units_value_with_comma_is_error():
     args = {"value": "2,5", "from_unit": "km", "to_unit": "m"}
     assert call(server(), lambda c: c.call_tool("convert_units", args, raise_on_error=False)).is_error is True
+
+
+def error_text(name, args):
+    result = call(server(), lambda c: c.call_tool(name, args, raise_on_error=False))
+    assert result.is_error is True
+    return result.content[0].text
+
+
+def test_unit_not_in_list_error_is_italian():
+    text = error_text("convert_units", {"value": 3, "from_unit": "KM", "to_unit": "m"})
+    assert "Argomenti non validi per convert_units" in text
+    assert 'from_unit: "KM" non ammesso' in text and "km" in text
+    assert "pydantic" not in text and "Input should" not in text
+
+
+def test_number_with_comma_error_is_italian():
+    text = error_text("convert_units", {"value": "2,5", "from_unit": "km", "to_unit": "m"})
+    assert 'value: "2,5" non è un numero' in text and "punto" in text
+
+
+def test_missing_argument_error_is_italian():
+    text = error_text("convert_units", {"value": 3, "from_unit": "km"})
+    assert "to_unit: argomento mancante" in text
+
+
+def test_wrong_type_error_is_italian():
+    text = error_text("get_current_time", {"timezone": 5})
+    assert "timezone:" in text and "Input should" not in text
