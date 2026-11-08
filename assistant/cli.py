@@ -82,8 +82,10 @@ def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=cle
             except openai.APIError as error:
                 output_fn(error_message(error, settings))
                 continue
-            except MCPConnectionError:
-                logger.debug("Errore di collegamento con il server MCP", exc_info=True)
+            except MCPConnectionError as error:
+                # Errore di collegamento, distinto da un errore dello strumento (che torna al modello)
+                logger.warning("[mcp] collegamento con il server perso: %s", error)
+                logger.debug("Dettaglio dell'errore di collegamento", exc_info=True)
                 output_fn(TOOLS_DOWN)
                 continue
             except Exception as error:

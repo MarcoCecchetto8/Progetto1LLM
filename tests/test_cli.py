@@ -1,3 +1,5 @@
+import logging
+
 import httpx
 import openai
 import pytest
@@ -222,3 +224,10 @@ def test_tools_down_keeps_session():
     assert out[out.index("…sto pensando") + 1] == TOOLS_DOWN
     assert "ok" in out
     assert [m.content for m in graph.calls[1]["messages"][1:]] == ["seconda"]
+
+
+def test_tools_down_is_logged(caplog):
+    graph = Stub(MCPConnectionError("Il server degli strumenti non risponde: Connection closed"))
+    with caplog.at_level(logging.WARNING, logger="assistant.cli"):
+        session(graph, "che ora è?", "quit")
+    assert "[mcp] collegamento con il server perso: Il server degli strumenti non risponde: Connection closed" in caplog.text
