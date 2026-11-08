@@ -99,7 +99,7 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-Esito al 2026-11-08: 166 test superati. Alcuni test avviano davvero un server MCP di prova in stdio (`tests/mcp_test_server.py`): ogni avvio richiede alcuni secondi.
+Esito al 2026-11-08: 210 test superati. Alcuni test avviano davvero un server MCP di prova in stdio (`tests/mcp_test_server.py`): ogni avvio richiede alcuni secondi.
 
 ## Verifica diretta del server MCP
 
@@ -113,9 +113,12 @@ python -m lab_server.check convert_units value=3 from_unit=hl to_unit=l
 python -m lab_server.check convert_units value=3 from_unit=hl to_unit=kg
 python -m lab_server.check calculate "expression=10 * 7 / 9"
 python -m lab_server.check calculate "expression=__import__('os')"
+python -m lab_server.check find_holiday name=Pasqua
+python -m lab_server.check add_days days=24
+python -m lab_server.check date_info date=25/12/2026
 ```
 
-Il primo comando stampa nome, descrizione e schema di ogni strumento; il secondo il risultato (`Asia/Tokyo: ...`); il terzo `ERRORE: Fuso orario sconosciuto: "Mars/Olympus". ...` con codice d'uscita 1. Il quarto stampa `3 hl = 300 l`; il quinto `ERRORE: Conversione impossibile: hl è un'unità di volume, kg di peso.` con codice d'uscita 1. Il sesto stampa `10 * 7 / 9 = 7.777777777777778`; il settimo `ERRORE: Carattere "_" non ammesso: ...` con codice d'uscita 1. In PowerShell un argomento con spazi va tra virgolette. Gli argomenti si scrivono come `chiave=valore`; i numeri (`value=2.5`) vengono letti come numeri.
+Il primo comando stampa nome, descrizione e schema di ogni strumento; il secondo il risultato (`Asia/Tokyo: ...`); il terzo `ERRORE: Fuso orario sconosciuto: "Mars/Olympus". ...` con codice d'uscita 1. Il quarto stampa `3 hl = 300 l`; il quinto `ERRORE: Conversione impossibile: hl è un'unità di volume, kg di peso.` con codice d'uscita 1. Il sesto stampa `10 * 7 / 9 = 7.777777777777778`; il settimo `ERRORE: Carattere "_" non ammesso: ...` con codice d'uscita 1. Le date: `find_holiday` stampa per esempio `Pasqua 2026 (2026-04-05, domenica) è già passata; la prossima è il 2027-03-28, domenica. Indicativo, non normativo.`; `add_days` la data fra 24 giorni; `date_info` con `25/12/2026` stampa `ERRORE: Data "25/12/2026" non valida: formato atteso AAAA-MM-GG ...` con codice d'uscita 1. In PowerShell un argomento con spazi va tra virgolette. Gli argomenti si scrivono come `chiave=valore`; i numeri (`value=2.5`) vengono letti come numeri.
 
 ## Prova reale
 
@@ -170,6 +173,18 @@ Lo strumento `calculate` analizza l'espressione con il modulo `ast` di Python, s
 | `risolvi 2x = 28` | `calculate` con `28 / 2`, `x = 14` | con la prima versione delle istruzioni il modello ha risolto da solo, senza strumento; con le istruzioni attuali chiama `calculate` con `28 / 2` (2026-11-08, domande da pipe) |
 | `calcola sqrt(16)` | nessun risultato inventato | il modello spiega che le funzioni non sono disponibili, senza chiamare lo strumento (2026-11-08, domande da pipe) |
 | Le stesse domande a mano, in PowerShell e con Docker | come sopra | ok (2026-11-08) |
+
+### Prova reale di giorni e scadenze
+
+Quattro strumenti, tutti con date ISO (`AAAA-MM-GG`) e «oggi» calcolato nel fuso `DEFAULT_TIMEZONE`: `date_info` (giorno della settimana, festività, passata/oggi/futura), `find_holiday` (data di una festività nazionale; se quest'anno è già passata lo dice e dà la prossima), `add_days` (data fra N giorni, anche negativi) e `days_between` (giorni fra due date). Le festività a data fissa sono nel file `lab_server/holidays.json`; Pasqua e Lunedì dell'Angelo sono calcolati. Anni ammessi: 1900–2200. Ogni risultato termina con «Indicativo, non normativo.».
+
+| Domanda | Atteso | Esito |
+|---|---|---|
+| `che giorno della settimana è pasqua?` | `find_holiday` Pasqua: avviso che Pasqua 2026 è passata e data della prossima (2027-03-28, domenica) | ok (2026-11-08, domande da pipe) |
+| `che giorno sarà natale?` | `find_holiday` Natale: 2026-12-25, venerdì | ok (2026-11-08, domande da pipe) |
+| `che giorno sarà tra 24 giorni?` | `add_days` 24 | ok (2026-11-08, domande da pipe): il modello ha chiesto prima l'ora a `get_current_time` e poi `add_days` con la data di oggi → 2026-12-02, mercoledì |
+| `quanti giorni mancano a natale?` | `days_between` fino al 2026-12-25 | ok (2026-11-08, domande da pipe): 47 giorni |
+| Le stesse domande a mano, in PowerShell e con Docker; memoria, `clear` e limite di passaggi | come sopra | da fare |
 
 Con Docker Desktop su Windows il container ha raggiunto LM Studio con l'indirizzo `http://host.docker.internal:1234/v1` senza altre modifiche.
 
