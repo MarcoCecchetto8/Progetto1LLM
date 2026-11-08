@@ -3,7 +3,7 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from assistant.timezones import get_timezone
+from lab_server.timezones import get_timezone
 
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 

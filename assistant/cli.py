@@ -10,6 +10,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from assistant import GOODBYE
 from assistant.config import Settings
 from assistant.graph import system_prompt
+from assistant.mcp_client import MCPConnectionError
 
 HELP_TEXT = (
     "Comandi:\n"
@@ -19,6 +20,7 @@ HELP_TEXT = (
     "Puoi uscire anche con Ctrl+C (Ctrl+D su Linux/Docker, Ctrl+Z + Invio su Windows)."
 )
 EMPTY_ANSWER = "Il modello non ha dato una risposta: riprova."
+TOOLS_DOWN = "Il server degli strumenti non risponde: esci e riavvia l'assistente."
 
 logger = logging.getLogger("assistant.cli")
 
@@ -79,6 +81,12 @@ def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=cle
                 result = graph.invoke({"messages": history + [HumanMessage(text)], "steps": 0})
             except openai.APIError as error:
                 output_fn(error_message(error, settings))
+                continue
+            except MCPConnectionError as error:
+                # Errore di collegamento, distinto da un errore dello strumento (che torna al modello)
+                logger.warning("[mcp] collegamento con il server perso: %s", error)
+                logger.debug("Dettaglio dell'errore di collegamento", exc_info=True)
+                output_fn(TOOLS_DOWN)
                 continue
             except Exception as error:
                 logger.debug("Errore imprevisto durante il turno", exc_info=True)
