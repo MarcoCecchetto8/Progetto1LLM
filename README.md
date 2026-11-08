@@ -169,7 +169,7 @@ Lo strumento `calculate` analizza l'espressione con il modulo `ast` di Python, s
 | `2 alla 5` | `calculate` con `2^5`, `32` | ok (2026-11-08, domande da pipe) |
 | `risolvi 2x = 28` | `calculate` con `28 / 2`, `x = 14` | con la prima versione delle istruzioni il modello ha risolto da solo, senza strumento; con le istruzioni attuali chiama `calculate` con `28 / 2` (2026-11-08, domande da pipe) |
 | `calcola sqrt(16)` | nessun risultato inventato | il modello spiega che le funzioni non sono disponibili, senza chiamare lo strumento (2026-11-08, domande da pipe) |
-| Le stesse domande a mano, in PowerShell e con Docker | come sopra | da fare |
+| Le stesse domande a mano, in PowerShell e con Docker | come sopra | ok (2026-11-08) |
 
 Con Docker Desktop su Windows il container ha raggiunto LM Studio con l'indirizzo `http://host.docker.internal:1234/v1` senza altre modifiche.
 
