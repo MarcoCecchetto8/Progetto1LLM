@@ -70,7 +70,8 @@ def test_exit_code_from_start(restore_sigint):
 
 def test_heavy_imports_happen_inside_main():
     # Le librerie richiedono qualche secondo: caricate in main(), un Ctrl+C lì dà il saluto, non un traceback
-    heavy = ("langgraph", "langchain_core", "langchain_openai", "openai", "dotenv")
+    heavy = ("langgraph", "langchain_core", "langchain_openai", "openai", "dotenv",
+             "assistant.mcp_client", "langchain_mcp_adapters", "mcp", "fastmcp")
     code = f"import sys, assistant.__main__; print([m for m in {heavy!r} if m in sys.modules])"
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
     assert result.stdout.strip() == "[]"

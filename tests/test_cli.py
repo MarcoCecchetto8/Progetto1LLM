@@ -3,11 +3,11 @@ import openai
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from assistant.cli import clear_screen, run
+from assistant.cli import TOOLS_DOWN, clear_screen, run
 from assistant.config import load_settings
 from assistant.graph import build_graph
-from assistant.tools import make_clock_tool
-from tests.fakes import fake
+from assistant.mcp_client import MCPConnectionError
+from tests.fakes import fake, fake_clock
 
 REQ = httpx.Request("POST", "http://localhost:1234/v1/chat/completions")
 SETTINGS = load_settings({"LMSTUDIO_BASE_URL": "http://localhost:1234/v1", "LMSTUDIO_MODEL": "m"})
@@ -56,7 +56,7 @@ class Stub:
 
 
 def real_graph(*msgs):
-    return Recorder(build_graph(fake(*msgs), [make_clock_tool("Europe/Rome")], 5))
+    return Recorder(build_graph(fake(*msgs), [fake_clock], 5))
 
 
 def session(graph, *lines):
@@ -214,3 +214,11 @@ def test_model_errors_keep_session(exc, expected):
     assert "ok" in out
     retry = graph.calls[1]["messages"]
     assert [m.content for m in retry[1:]] == ["seconda"]
+
+
+def test_tools_down_keeps_session():
+    graph = Stub(MCPConnectionError("Il server degli strumenti non risponde: Connection closed"))
+    _, out = session(graph, "che ora è?", "seconda", "quit")
+    assert out[out.index("…sto pensando") + 1] == TOOLS_DOWN
+    assert "ok" in out
+    assert [m.content for m in graph.calls[1]["messages"][1:]] == ["seconda"]

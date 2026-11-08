@@ -37,7 +37,7 @@ def _start() -> int:
     from assistant.config import ConfigError, load_settings
     from assistant.graph import build_graph
     from assistant.llm import LMStudioUnavailable, ModelNotFound, build_chat_model, check_model
-    from assistant.tools import make_clock_tool
+    from assistant.mcp_client import MCPClient, MCPConnectionError, server_command, server_env
 
     # Con stdout/stderr rediretti Windows può usare cp1252: forza UTF-8 per non rompere "→" e "…"
     for stream in (sys.stdout, sys.stderr):
@@ -51,8 +51,21 @@ def _start() -> int:
     except (ConfigError, LMStudioUnavailable, ModelNotFound) as error:
         print(error, file=sys.stderr)
         return 1
-    graph = build_graph(build_chat_model(settings), [make_clock_tool(settings.default_timezone)], settings.max_steps)
-    return run(graph, settings)
+    client = MCPClient(server_command(), server_env(settings))
+    try:
+        try:
+            tools = client.start()
+            if not tools:
+                raise MCPConnectionError("Il server degli strumenti non espone nessuno strumento.")
+        except MCPConnectionError as error:
+            print(error, file=sys.stderr)
+            return 1
+        # Il catalogo arriva dal server (discovery), non è scritto nell'assistente
+        logging.getLogger("assistant").info("[mcp] catalogo: %s", ", ".join(tool.name for tool in tools))
+        graph = build_graph(build_chat_model(settings), tools, settings.max_steps)
+        return run(graph, settings)
+    finally:
+        client.close()
 
 
 if __name__ == "__main__":
