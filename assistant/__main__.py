@@ -18,6 +18,12 @@ def configure_logging(level: str) -> None:
             logging.getLogger(name).setLevel(logging.WARNING)
 
 
+def close_quietly(client) -> None:
+    # Un Ctrl+C in ritardo (Windows) dopo il saluto non deve interrompere la chiusura del server né ripetere il saluto
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    client.close()
+
+
 def main(start=None, output_fn=print) -> int:
     try:
         return (start or _start)()
@@ -65,7 +71,7 @@ def _start() -> int:
         graph = build_graph(build_chat_model(settings), tools, settings.max_steps)
         return run(graph, settings)
     finally:
-        client.close()
+        close_quietly(client)
 
 
 if __name__ == "__main__":

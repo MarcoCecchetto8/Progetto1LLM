@@ -5,7 +5,7 @@ import sys
 
 import pytest
 
-from assistant.__main__ import configure_logging, main
+from assistant.__main__ import close_quietly, configure_logging, main
 
 LIBRARIES = ("httpx", "httpx2", "openai", "httpcore")
 
@@ -80,3 +80,15 @@ def test_heavy_imports_happen_inside_main():
 def test_late_ctrl_c_ignored_after_exit(restore_sigint):
     main(lambda: 0, print)
     assert signal.getsignal(signal.SIGINT) is signal.SIG_IGN
+
+
+def test_mcp_client_closed_with_ctrl_c_ignored(restore_sigint):
+    # Su Windows un Ctrl+C a input() può arrivare dopo il saluto: durante la chiusura del server va ignorato
+    seen = []
+
+    class Client:
+        def close(self):
+            seen.append(signal.getsignal(signal.SIGINT))
+
+    close_quietly(Client())
+    assert seen == [signal.SIG_IGN]
