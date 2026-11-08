@@ -27,8 +27,8 @@ def server_env(settings: Settings) -> dict[str, str]:
     env = dict(os.environ)
     env["DEFAULT_TIMEZONE"] = settings.default_timezone
     env["LOG_LEVEL"] = settings.log_level
-    # Senza DEBUG FastMCP non deve scrivere nel terminale le righe sugli errori degli strumenti
-    env["FASTMCP_LOG_LEVEL"] = "DEBUG" if settings.log_level == "DEBUG" else "ERROR"
+    # Senza DEBUG FastMCP non deve scrivere nel terminale: registra gli errori degli strumenti a livello ERROR
+    env["FASTMCP_LOG_LEVEL"] = "DEBUG" if settings.log_level == "DEBUG" else "CRITICAL"
     return env
 
 

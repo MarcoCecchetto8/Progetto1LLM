@@ -67,9 +67,19 @@ def settings(level):
 
 def test_server_env_info():
     env = server_env(settings("INFO"))
-    assert env["FASTMCP_LOG_LEVEL"] == "ERROR"
+    assert env["FASTMCP_LOG_LEVEL"] == "CRITICAL"
     assert env["DEFAULT_TIMEZONE"] == "Asia/Tokyo" and env["LOG_LEVEL"] == "INFO"
 
 
 def test_server_env_debug():
     assert server_env(settings("DEBUG"))["FASTMCP_LOG_LEVEL"] == "DEBUG"
+
+
+def test_tool_error_is_silent_on_stderr_without_debug(tmp_path):
+    errlog = (tmp_path / "stderr.txt").open("w+", encoding="utf-8")
+    env = {**os.environ, "FASTMCP_LOG_LEVEL": server_env(settings("INFO"))["FASTMCP_LOG_LEVEL"]}
+    with MCPClient(TEST_SERVER, env, errlog=errlog) as tools:
+        with pytest.raises(ToolException):
+            {t.name: t for t in tools}["fail"].invoke({})
+    errlog.seek(0)
+    assert errlog.read() == ""
