@@ -137,9 +137,10 @@ Dal 2026-11-08 l'orologio passa dal server MCP. Esiti:
 |---|---|---|
 | 1. Avvio | `[mcp] catalogo: get_current_time` nel log, poi l'intestazione | ok (2026-11-08, locale, domande da pipe) |
 | 2. `che ora è a Tokyo?` | riga `[strumento] get_current_time call_id=... argomenti={"timezone": "Asia/Tokyo"} esito=ok` e ora corretta | ok (2026-11-08, locale, domande da pipe) |
-| 3. `che ora è?`, poi `e a Tokyo?`, a mano in PowerShell | due chiamate con `Europe/Rome` e `Asia/Tokyo` | da fare |
-| 4. Memoria e `clear` | come nella prova precedente | da fare |
-| 5. `docker compose run --rm app` con `che ora è a Tokyo?` | catalogo e chiamata come in locale | da fare |
+| 3. `che ora è?`, poi `e a Tokyo?`, a mano in PowerShell | due chiamate con `Europe/Rome` e `Asia/Tokyo` | ok (2026-11-08) |
+| 4. Memoria e `clear` | come nella prova precedente | ok (2026-11-08) |
+| 5. `docker compose run --rm app` con `che ora è a Tokyo?` | catalogo e chiamata come in locale | ok (2026-11-08) |
+| 6. Ctrl+C ripetuto al prompt e durante l'avvio | un solo `Arrivederci!`, senza traceback | ok (2026-11-08) |
 
 Con Docker Desktop su Windows il container ha raggiunto LM Studio con l'indirizzo `http://host.docker.internal:1234/v1` senza altre modifiche.
 
