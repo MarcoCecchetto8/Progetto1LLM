@@ -99,7 +99,7 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-Esito al 2026-11-08: 126 test superati. Alcuni test avviano davvero un server MCP di prova in stdio (`tests/mcp_test_server.py`): ogni avvio richiede alcuni secondi.
+Esito al 2026-11-08: 130 test superati. Alcuni test avviano davvero un server MCP di prova in stdio (`tests/mcp_test_server.py`): ogni avvio richiede alcuni secondi.
 
 ## Verifica diretta del server MCP
 
