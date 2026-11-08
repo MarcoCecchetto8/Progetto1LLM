@@ -99,7 +99,7 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-Esito al 2026-11-08: 130 test superati. Alcuni test avviano davvero un server MCP di prova in stdio (`tests/mcp_test_server.py`): ogni avvio richiede alcuni secondi.
+Esito al 2026-11-08: 166 test superati. Alcuni test avviano davvero un server MCP di prova in stdio (`tests/mcp_test_server.py`): ogni avvio richiede alcuni secondi.
 
 ## Verifica diretta del server MCP
 
@@ -111,9 +111,11 @@ python -m lab_server.check get_current_time timezone=Asia/Tokyo
 python -m lab_server.check get_current_time timezone=Mars/Olympus
 python -m lab_server.check convert_units value=3 from_unit=hl to_unit=l
 python -m lab_server.check convert_units value=3 from_unit=hl to_unit=kg
+python -m lab_server.check calculate "expression=10 * 7 / 9"
+python -m lab_server.check calculate "expression=__import__('os')"
 ```
 
-Il primo comando stampa nome, descrizione e schema di ogni strumento; il secondo il risultato (`Asia/Tokyo: ...`); il terzo `ERRORE: Fuso orario sconosciuto: "Mars/Olympus". ...` con codice d'uscita 1. Il quarto stampa `3 hl = 300 l`; il quinto `ERRORE: Conversione impossibile: hl è un'unità di volume, kg di peso.` con codice d'uscita 1. Gli argomenti si scrivono come `chiave=valore`; i numeri (`value=2.5`) vengono letti come numeri.
+Il primo comando stampa nome, descrizione e schema di ogni strumento; il secondo il risultato (`Asia/Tokyo: ...`); il terzo `ERRORE: Fuso orario sconosciuto: "Mars/Olympus". ...` con codice d'uscita 1. Il quarto stampa `3 hl = 300 l`; il quinto `ERRORE: Conversione impossibile: hl è un'unità di volume, kg di peso.` con codice d'uscita 1. Il sesto stampa `10 * 7 / 9 = 7.777777777777778`; il settimo `ERRORE: Carattere "_" non ammesso: ...` con codice d'uscita 1. In PowerShell un argomento con spazi va tra virgolette. Gli argomenti si scrivono come `chiave=valore`; i numeri (`value=2.5`) vengono letti come numeri.
 
 ## Prova reale
 
@@ -155,6 +157,18 @@ Lo strumento `convert_units` accetta solo unità metriche di un elenco chiuso (l
 | `quanti kg sono 2 quintali?` | `convert_units` q → kg, `200 kg` | ok (2026-11-08, domande da pipe) |
 | `20 gradi celsius in kelvin` | `convert_units` C → K, `293.15 K` | ok (2026-11-08, domande da pipe) |
 | `converti 5 km in kg` | nessun numero inventato | il modello spiega che le categorie sono diverse **senza chiamare lo strumento** (nessuna riga `[strumento]`); l'errore dello strumento è verificato con `python -m lab_server.check` e nei test |
+| Le stesse domande a mano, in PowerShell e con Docker | come sopra | ok (2026-11-08) |
+
+### Prova reale della calcolatrice sicura
+
+Lo strumento `calculate` analizza l'espressione con il modulo `ast` di Python, senza `eval`: accetta solo numeri, `+ - * /`, parentesi e potenza (`^` o `**`) e rifiuta con un errore lettere, funzioni, equazioni, divisioni per zero, espressioni malformate, troppo lunghe (oltre 200 caratteri) o con risultati oltre 10^100.
+
+| Domanda | Atteso | Esito |
+|---|---|---|
+| `quanto fa 10 * 7 / 9?` | `calculate` con `10 * 7 / 9`, `7.777777777777778` | ok (2026-11-08, domande da pipe) |
+| `2 alla 5` | `calculate` con `2^5`, `32` | ok (2026-11-08, domande da pipe) |
+| `risolvi 2x = 28` | `calculate` con `28 / 2`, `x = 14` | con la prima versione delle istruzioni il modello ha risolto da solo, senza strumento; con le istruzioni attuali chiama `calculate` con `28 / 2` (2026-11-08, domande da pipe) |
+| `calcola sqrt(16)` | nessun risultato inventato | il modello spiega che le funzioni non sono disponibili, senza chiamare lo strumento (2026-11-08, domande da pipe) |
 | Le stesse domande a mano, in PowerShell e con Docker | come sopra | ok (2026-11-08) |
 
 Con Docker Desktop su Windows il container ha raggiunto LM Studio con l'indirizzo `http://host.docker.internal:1234/v1` senza altre modifiche.

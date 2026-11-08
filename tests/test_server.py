@@ -93,3 +93,14 @@ def test_missing_argument_error_is_italian():
 def test_wrong_type_error_is_italian():
     text = error_text("get_current_time", {"timezone": 5})
     assert "timezone:" in text and "Input should" not in text
+
+
+def test_calculate_in_catalog_and_call():
+    tools = {t.name for t in call(server(), lambda c: c.list_tools())}
+    assert "calculate" in tools
+    assert call(server(), lambda c: c.call_tool("calculate", {"expression": "2^5"})).content[0].text == "2^5 = 32"
+
+
+def test_calculate_rejects_code():
+    text = error_text("calculate", {"expression": "__import__('os')"})
+    assert 'Carattere "_" non ammesso' in text
