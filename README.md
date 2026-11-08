@@ -99,7 +99,7 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-Esito al 2026-11-08: 101 test superati. Alcuni test avviano davvero un server MCP di prova in stdio (`tests/mcp_test_server.py`): ogni avvio richiede alcuni secondi.
+Esito al 2026-11-08: 130 test superati. Alcuni test avviano davvero un server MCP di prova in stdio (`tests/mcp_test_server.py`): ogni avvio richiede alcuni secondi.
 
 ## Verifica diretta del server MCP
 
@@ -109,9 +109,11 @@ Senza assistente e senza modello, si possono controllare catalogo e chiamate del
 python -m lab_server.check
 python -m lab_server.check get_current_time timezone=Asia/Tokyo
 python -m lab_server.check get_current_time timezone=Mars/Olympus
+python -m lab_server.check convert_units value=3 from_unit=hl to_unit=l
+python -m lab_server.check convert_units value=3 from_unit=hl to_unit=kg
 ```
 
-Il primo comando stampa nome, descrizione e schema di ogni strumento; il secondo il risultato (`Asia/Tokyo: ...`); il terzo `ERRORE: Fuso orario sconosciuto: "Mars/Olympus". ...` con codice d'uscita 1. Gli argomenti si scrivono come `chiave=valore`; i numeri (`value=2.5`) vengono letti come numeri.
+Il primo comando stampa nome, descrizione e schema di ogni strumento; il secondo il risultato (`Asia/Tokyo: ...`); il terzo `ERRORE: Fuso orario sconosciuto: "Mars/Olympus". ...` con codice d'uscita 1. Il quarto stampa `3 hl = 300 l`; il quinto `ERRORE: Conversione impossibile: hl è un'unità di volume, kg di peso.` con codice d'uscita 1. Gli argomenti si scrivono come `chiave=valore`; i numeri (`value=2.5`) vengono letti come numeri.
 
 ## Prova reale
 
@@ -141,6 +143,19 @@ Dal 2026-11-08 l'orologio passa dal server MCP. Esiti:
 | 4. Memoria e `clear` | come nella prova precedente | ok (2026-11-08) |
 | 5. `docker compose run --rm app` con `che ora è a Tokyo?` | catalogo e chiamata come in locale | ok (2026-11-08) |
 | 6. Ctrl+C ripetuto al prompt e durante l'avvio | un solo `Arrivederci!`, senza traceback | ok (2026-11-08) |
+
+### Prova reale del convertitore di unità
+
+Lo strumento `convert_units` accetta solo unità metriche di un elenco chiuso (lunghezza `mm`…`km`; peso `mg`…`kg`, `q`, `t`; volume `ml`…`hl`, `m3`; temperatura `C`, `K`) e rifiuta con un errore le conversioni fra categorie diverse, le quantità negative e le temperature sotto lo zero assoluto.
+
+| Domanda | Atteso | Esito |
+|---|---|---|
+| `quanti cm sono 2,5 km?` | `convert_units` km → cm, `250000 cm` | ok (2026-11-08, domande da pipe) |
+| `converti 3 hl in litri` | `convert_units` hl → l, `300 l` | ok (2026-11-08, domande da pipe) |
+| `quanti kg sono 2 quintali?` | `convert_units` q → kg, `200 kg` | ok (2026-11-08, domande da pipe) |
+| `20 gradi celsius in kelvin` | `convert_units` C → K, `293.15 K` | ok (2026-11-08, domande da pipe) |
+| `converti 5 km in kg` | nessun numero inventato | il modello spiega che le categorie sono diverse **senza chiamare lo strumento** (nessuna riga `[strumento]`); l'errore dello strumento è verificato con `python -m lab_server.check` e nei test |
+| Le stesse domande a mano, in PowerShell e con Docker | come sopra | ok (2026-11-08) |
 
 Con Docker Desktop su Windows il container ha raggiunto LM Studio con l'indirizzo `http://host.docker.internal:1234/v1` senza altre modifiche.
 

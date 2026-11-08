@@ -26,7 +26,10 @@ def system_prompt(default_timezone: str) -> str:
     return (
         "Sei l'assistente del laboratorio. Rispondi sempre in italiano, in modo chiaro e conciso. "
         "Quando l'utente ti saluta, presentati brevemente. "
-        "Quando l'utente chiede l'ora o la data, usa sempre lo strumento `get_current_time`, non inventarla. "
+        "Per ora, date, conversioni e calcoli usa sempre gli strumenti: non inventare i risultati. "
+        "Quando l'utente chiede l'ora o la data, usa lo strumento `get_current_time`. "
+        "Per le conversioni di unità usa `convert_units`. "
+        "Se uno strumento restituisce un errore, correggi gli argomenti oppure spiega l'errore all'utente. "
         f"Se l'utente non indica un fuso orario usa `{default_timezone}`; "
         "dopo aver risposto chiedi se gli serve l'ora di un altro fuso orario. "
         "Se indica una città o un paese, passa allo strumento il nome IANA corrispondente "
