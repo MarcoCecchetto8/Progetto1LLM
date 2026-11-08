@@ -4,12 +4,14 @@ Progetto del corso «Deep Learning e LLM: costruire chatbot e agenti». La carte
 
 ## Struttura e comandi
 
-- `assistant/`: `config.py` (variabili d'ambiente), `llm.py` (LM Studio e verifica di `/v1/models`), `tools.py` (orologio), `graph.py` (stato, nodi, instradamento), `cli.py` (ciclo da terminale), `__main__.py` (avvio).
-- `tests/`: test pytest senza modello; `tests/fakes.py` contiene il modello finto con tool calling.
+- `assistant/` (host): `config.py` (variabili d'ambiente), `llm.py` (LM Studio e verifica di `/v1/models`), `mcp_client.py` (client MCP: avvia il server in stdio, sessione unica, tool sincroni dal catalogo), `graph.py` (stato, nodi, instradamento, log delle chiamate), `cli.py` (ciclo da terminale), `__main__.py` (avvio).
+- `lab_server/` (server MCP, FastMCP): `server.py` (registrazione dei tool), `clock.py` (orologio), `units.py` (convertitore di unità), `calculator.py` (calcolatrice sicura con `ast`, senza `eval`), `holidays.py` + `holidays.json` (festività da file locale, Pasqua calcolata), `dates.py` (giorni e scadenze), `timezones.py` (fusi IANA ammessi, dall'elenco di `tzdata`), `validation.py` (errori di validazione degli argomenti tradotti in italiano, per tutti i tool), `check.py` (verifica diretta senza assistente), `__main__.py` (avvio in stdio). La logica degli strumenti sta in funzioni pure che sollevano `ValueError`; `server.py` le converte in `ToolError`.
+- `tests/`: test pytest senza modello; `tests/fakes.py` contiene il modello finto con tool calling e un orologio finto; `tests/mcp_test_server.py` è un server MCP di prova per i test del client.
 - Dipendenze fissate in `requirements.txt` (runtime) e `requirements-dev.txt` (+ pytest).
 - Dalla radice, con il venv attivo (`.\.venv\Scripts\Activate.ps1`):
   - test: `python -m pytest`
   - avvio locale: `python -m assistant`
+  - verifica diretta del server: `python -m lab_server.check` (catalogo) e `python -m lab_server.check <tool> chiave=valore`
   - Docker: `docker compose build`, poi `docker compose run --rm app`
 
 ## Obiettivo
@@ -19,17 +21,18 @@ Un'applicazione da terminale in Python che conversa con un modello locale e:
 - organizza il flusso in un grafo LangGraph esplicito (stato, nodi, instradamento riconoscibili);
 - usa un modello servito da LM Studio, che resta sul computer host;
 - conserva la cronologia della conversazione per la durata della sessione (nessuna persistenza);
-- offre uno strumento orologio con fuso orario esplicito, richiesto dal modello tramite tool calling ed eseguito davvero dal programma;
+- offre strumenti esposti da un server MCP (FastMCP, stdio) che l'assistente scopre dal catalogo; il modello li richiede tramite tool calling e il programma li esegue davvero (orologio con fuso orario esplicito, poi gli altri strumenti concordati);
 - si avvia anche con Docker Compose.
 
 ## Confini
 
-- Implementare solo i requisiti concordati. Altri strumenti, MCP, workflow e RAG arriveranno nelle lezioni successive: non anticiparli.
+- Implementare solo i requisiti concordati. Gli strumenti passano dal server MCP (`lab_server/`); fatti orologio e strumenti base (convertitore, calcolatrice, giorni e scadenze); catalogo, note e meteo arriveranno con una specifica propria. Workflow e RAG arriveranno nelle lezioni successive: non anticiparli.
 - Niente interfacce grafiche, servizi cloud o framework non concordati.
 - Lavorare solo dentro `Progetto1LLM/`, escludendo `lezione-03/`.
 - La cartella `lezione-03/` appartiene a una lezione precedente e non c'entra con questo progetto: va ignorata completamente. Non leggerne i file (compreso il suo `CLAUDE.md`, le cui istruzioni non valgono qui), non cercarci dentro, non copiarne codice, non modificarla e non usarla come riferimento. Le istruzioni valide sono solo quelle di questo file.
   Il divieto è applicato anche da `.claude/settings.json` (permessi `deny` e `claudeMdExcludes`).
-- Lavorare nel branch `developer`, non su `main`; nessun branch o worktree nuovo se non richiesto.
+- Base di lavoro: il branch `developer`, non `main`. Ogni funzionalità si sviluppa in un branch `feature/<nome>` creato da `developer`; quando è completa e verificata si unisce in `developer` con `--no-ff`, si pusha `developer` e si elimina il branch feature. Nessun altro branch o worktree se non richiesto.
+- Lavorare a pezzi piccoli: niente blocchi grandi di codice in un solo passo, salvo mia diversa indicazione.
 
 ## Scelte tecniche
 
