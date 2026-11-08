@@ -122,3 +122,8 @@ def test_graph_with_mcp_tool():
 def test_system_prompt_mentions_tools_and_errors():
     p = system_prompt("Europe/Rome")
     assert "convert_units" in p and "non inventare" in p and "errore" in p
+
+
+def test_system_prompt_mentions_calculator_and_equations():
+    p = system_prompt("Europe/Rome")
+    assert "calculate" in p and "2x = 28" in p and "28 / 2" in p

@@ -7,6 +7,7 @@ from datetime import datetime
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
+from lab_server.calculator import calculate as evaluate
 from lab_server.clock import current_time, utc_now
 from lab_server.units import Unit, convert
 from lab_server.validation import ItalianValidationErrors
@@ -48,6 +49,20 @@ def create_server(default_timezone: str, now: Callable[[], datetime] = utc_now) 
         except ValueError as error:
             raise ToolError(str(error)) from None
         logger.debug("convert_units(%s, %s, %s) → %s", value, from_unit, to_unit, result)
+        return result
+
+    @mcp.tool
+    def calculate(expression: str) -> str:
+        """Calcola un'espressione aritmetica in modo sicuro.
+
+        Ammessi: numeri (decimali con il punto), + - * /, parentesi, potenza con ^ o **.
+        Non ammessi: lettere, funzioni (es. sqrt) ed equazioni con = (riscrivile come espressione).
+        """
+        try:
+            result = evaluate(expression)
+        except ValueError as error:
+            raise ToolError(str(error)) from None
+        logger.debug("calculate(%s) → %s", expression, result)
         return result
 
     return mcp
