@@ -134,6 +134,11 @@ def test_system_prompt_mentions_date_tools():
     assert all(name in p for name in ("date_info", "find_holiday", "add_days", "days_between", "AAAA-MM-GG"))
 
 
+def test_system_prompt_forbids_counting_days():
+    p = system_prompt("Europe/Rome")
+    assert "non contare tu i giorni" in p and "days_between" in p
+
+
 def test_system_prompt_mentions_catalog():
     p = system_prompt("Europe/Rome")
     assert "search_catalog" in p and "get_item" in p and "max_results" in p

@@ -26,10 +26,16 @@ def _short(day: date) -> str:
     return f"{day.isoformat()}, {WEEKDAYS[day.weekday()]}"
 
 
+def _distance(day: date, today: date) -> str:
+    # I giorni li conta lo strumento: il modello, se li calcola da solo, sbaglia
+    days = abs((day - today).days)
+    count = f"{days} {'giorno' if days == 1 else 'giorni'}"
+    return "oggi" if day == today else f"passata, {count} fa" if day < today else f"futura, fra {count}"
+
+
 def describe(day: date, today: date) -> str:
     name = holiday_name(day)
-    when = "passata" if day < today else "oggi" if day == today else "futura"
-    return f"{_short(day)}{f' ({name})' if name else ''} — {when}."
+    return f"{_short(day)}{f' ({name})' if name else ''} — {_distance(day, today)}."
 
 
 def date_info(day: str, today: date) -> str:
@@ -47,7 +53,7 @@ def find_holiday(name: str, year: int | None, today: date) -> str:
     # Già passata quest'anno: lo si dice esplicitamente, poi si indica la prossima
     _, following = holiday_date(name, today.year + 1)
     return (f"{canonical} {today.year} ({_short(day)}) è già passata; "
-            f"la prossima è il {_short(following)}. {NOTE}")
+            f"la prossima è il {_short(following)}, fra {(following - today).days} giorni. {NOTE}")
 
 
 def add_days(days: int, start: str | None, today: date) -> str:
