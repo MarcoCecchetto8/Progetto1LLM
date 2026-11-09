@@ -197,12 +197,14 @@ Due strumenti sul catalogo dei linguaggi di programmazione (20 linguaggi, file l
 
 | Domanda | Atteso | Esito |
 |---|---|---|
-| `chi ha creato Haskell?` | `search_catalog` poi `get_item` con il codice `HS`, autori nella risposta | da provare |
-| `quali linguaggi funzionali ci sono nel catalogo?` | `search_catalog` con `funzionale`, elenco dei risultati (8 in totale) | da provare |
-| `quali linguaggi funzionali sono nati prima del 1980?` | ricerca e controllo degli anni, nessun anno inventato | da provare |
-| `c'è Brainfuck nel catalogo?` | `search_catalog` senza risultati, risposta che dice che non c'è | da provare |
-| `dimmi tutto sul linguaggio con codice XYZ` | `get_item` con errore, nessuna scheda inventata | da provare |
-| Le stesse domande a mano, in PowerShell e con Docker; memoria e `clear` | come sopra | da provare |
+| `chi ha creato Haskell?` | `search_catalog` poi `get_item` con il codice `HS`, autori nella risposta | prima prova (2026-11-09) fallita: nessuno strumento chiamato e risposta «non ho trovato informazioni». Dopo l'aggiunta alle istruzioni di sistema («chiama sempre gli strumenti del catalogo prima di rispondere») ok, anche ripetuta: `search_catalog` «Haskell», `get_item` `HS`, risposta «Comitato Haskell» |
+| `quali linguaggi funzionali ci sono nel catalogo?` | `search_catalog` con `funzionale`, elenco dei risultati (8 in totale) | ok (2026-11-09): query al singolare `funzionale`; letto «ci sono altri 3 risultati», il modello ha ripetuto la ricerca con `max_results` 10 e ha elencato tutti gli 8 |
+| `quali linguaggi funzionali sono nati prima del 1980?` | ricerca e controllo degli anni, nessun anno inventato | ok (2026-11-09): risposta dalla cronologia della domanda precedente, senza nuove chiamate: solo Lisp (1958) |
+| `c'è Brainfuck nel catalogo?` | `search_catalog` senza risultati, risposta che dice che non c'è | ok (2026-11-09) |
+| `dimmi tutto sul linguaggio con codice XYZ` | `get_item` con errore, nessuna scheda inventata | prima prova (2026-11-09) fallita: nessuna chiamata, il modello ha chiesto il codice. Dopo l'aggiunta alle istruzioni («se l'utente indica un codice, chiama subito `get_item`») ok, anche ripetuta: `get_item` `XYZ` con `esito=errore` ed errore spiegato all'utente |
+| Le stesse domande a mano, in PowerShell e con Docker; memoria e `clear` | come sopra | ok (2026-11-09) |
+
+Anche due domande su Python e sul linguaggio C hanno prodotto la sequenza `search_catalog` → `get_item` (`PY`, `C`); la ricerca «C» ha trovato solo C e C++.
 
 ## Diagnosi
 
