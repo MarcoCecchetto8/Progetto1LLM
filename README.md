@@ -141,8 +141,7 @@ Il primo comando stampa nome, descrizione e schema di ogni strumento; il secondo
 Senza assistente e senza modello. In un terminale si avvia il servizio (database temporaneo, porta 8000 libera):
 
 ```powershell
-python -m notes_service --db $env:TEMP
-otes-prova.db
+python -m notes_service --db $env:TEMP\notes-prova.db
 ```
 
 In un secondo terminale:
