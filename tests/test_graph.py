@@ -139,6 +139,13 @@ def test_system_prompt_mentions_catalog():
     assert "search_catalog" in p and "get_item" in p and "max_results" in p
 
 
+def test_system_prompt_requires_catalog_lookup():
+    p = system_prompt("Europe/Rome")
+    assert "chiama sempre gli strumenti del catalogo prima di rispondere" in p
+    assert "non dire mai che un dato non c'è senza averlo cercato" in p
+    assert "chiama subito `get_item` con quel codice" in p
+
+
 def test_graph_catalog_search_then_detail():
     with MCPClient([sys.executable, "-m", "lab_server"], os.environ) as tools:
         model = fake(tool_call({"query": "Haskell"}, "s1", name="search_catalog"),
