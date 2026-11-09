@@ -99,7 +99,7 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-Esito al 2026-11-09: 240 test superati. Alcuni test avviano davvero un server MCP di prova in stdio (`tests/mcp_test_server.py`): ogni avvio richiede alcuni secondi.
+Esito al 2026-11-09: 243 test superati. Alcuni test avviano davvero un server MCP di prova in stdio (`tests/mcp_test_server.py`): ogni avvio richiede alcuni secondi.
 
 ## Verifica diretta del server MCP
 
@@ -121,7 +121,7 @@ python -m lab_server.check get_item code=PY
 python -m lab_server.check get_item code=XYZ
 ```
 
-Il primo comando stampa nome, descrizione e schema di ogni strumento; il secondo il risultato (`Asia/Tokyo: ...`); il terzo `ERRORE: Fuso orario sconosciuto: "Mars/Olympus". ...` con codice d'uscita 1. Il quarto stampa `3 hl = 300 l`; il quinto `ERRORE: Conversione impossibile: hl è un'unità di volume, kg di peso.` con codice d'uscita 1. Il sesto stampa `10 * 7 / 9 = 7.777777777777778`; il settimo `ERRORE: Carattere "_" non ammesso: ...` con codice d'uscita 1. Le date: `find_holiday` stampa per esempio `Pasqua 2026 (2026-04-05, domenica) è già passata; la prossima è il 2027-03-28, domenica. Indicativo, non normativo.`; `add_days` la data fra 24 giorni; `date_info` con `25/12/2026` stampa `ERRORE: Data "25/12/2026" non valida: formato atteso AAAA-MM-GG ...` con codice d'uscita 1. Il catalogo dei linguaggi: `search_catalog` con `query=funzionale` stampa `Trovati 8 linguaggi per "funzionale", mostrati 5:` seguito da un elenco di codice, nome e anno (da `HS: Haskell (1990)` a `PY: Python (1991)`) e dall'invito a ripetere la ricerca con `max_results` più alto; `get_item` con `code=PY` stampa la scheda di Python (anno, autori, paradigmi, tipizzazione, descrizione); con `code=XYZ` stampa `ERRORE: Codice "XYZ" non presente nel catalogo: usa search_catalog per trovare il codice.` con codice d'uscita 1. In PowerShell un argomento con spazi va tra virgolette. Gli argomenti si scrivono come `chiave=valore`; i numeri (`value=2.5`) vengono letti come numeri.
+Il primo comando stampa nome, descrizione e schema di ogni strumento; il secondo il risultato (`Asia/Tokyo: ...`); il terzo `ERRORE: Fuso orario sconosciuto: "Mars/Olympus". ...` con codice d'uscita 1. Il quarto stampa `3 hl = 300 l`; il quinto `ERRORE: Conversione impossibile: hl è un'unità di volume, kg di peso.` con codice d'uscita 1. Il sesto stampa `10 * 7 / 9 = 7.777777777777778`; il settimo `ERRORE: Carattere "_" non ammesso: ...` con codice d'uscita 1. Le date: `find_holiday` stampa per esempio `Pasqua 2026 (2026-04-05, domenica) è già passata; la prossima è il 2027-03-28, domenica, fra 139 giorni. Indicativo, non normativo.` (con oggi 2026-11-09); `add_days` la data fra 24 giorni (per esempio `2026-11-09 + 24 giorni = 2026-12-03, giovedì — futura, fra 24 giorni. ...`); `date_info` con `25/12/2026` stampa `ERRORE: Data "25/12/2026" non valida: formato atteso AAAA-MM-GG ...` con codice d'uscita 1. Il catalogo dei linguaggi: `search_catalog` con `query=funzionale` stampa `Trovati 8 linguaggi per "funzionale", mostrati 5:` seguito da un elenco di codice, nome e anno (da `HS: Haskell (1990)` a `PY: Python (1991)`) e dall'invito a ripetere la ricerca con `max_results` più alto; `get_item` con `code=PY` stampa la scheda di Python (anno, autori, paradigmi, tipizzazione, descrizione); con `code=XYZ` stampa `ERRORE: Codice "XYZ" non presente nel catalogo: usa search_catalog per trovare il codice.` con codice d'uscita 1. In PowerShell un argomento con spazi va tra virgolette. Gli argomenti si scrivono come `chiave=valore`; i numeri (`value=2.5`) vengono letti come numeri.
 
 ## Prova reale
 
@@ -179,7 +179,7 @@ Lo strumento `calculate` analizza l'espressione con il modulo `ast` di Python, s
 
 ### Prova reale di giorni e scadenze
 
-Quattro strumenti, tutti con date ISO (`AAAA-MM-GG`) e «oggi» calcolato nel fuso `DEFAULT_TIMEZONE`: `date_info` (giorno della settimana, festività, passata/oggi/futura), `find_holiday` (data di una festività nazionale; se quest'anno è già passata lo dice e dà la prossima), `add_days` (data fra N giorni, anche negativi) e `days_between` (giorni fra due date). Le festività a data fissa sono nel file `lab_server/holidays.json`; Pasqua e Lunedì dell'Angelo sono calcolati. Anni ammessi: 1900–2200. Ogni risultato termina con «Indicativo, non normativo.».
+Quattro strumenti, tutti con date ISO (`AAAA-MM-GG`) e «oggi» calcolato nel fuso `DEFAULT_TIMEZONE`: `date_info` (giorno della settimana, festività, passata/oggi/futura con i giorni di distanza, per esempio «futura, fra 53 giorni» o «passata, 1 giorno fa»), `find_holiday` (data di una festività nazionale; se quest'anno è già passata lo dice e dà la prossima, con i giorni che mancano), `add_days` (data fra N giorni, anche negativi) e `days_between` (giorni fra due date). Le festività a data fissa sono nel file `lab_server/holidays.json`; Pasqua e Lunedì dell'Angelo sono calcolati. Anni ammessi: 1900–2200. Ogni risultato termina con «Indicativo, non normativo.».
 
 | Domanda | Atteso | Esito |
 |---|---|---|
@@ -187,6 +187,7 @@ Quattro strumenti, tutti con date ISO (`AAAA-MM-GG`) e «oggi» calcolato nel fu
 | `che giorno sarà natale?` | `find_holiday` Natale: 2026-12-25, venerdì | ok (2026-11-08, domande da pipe) |
 | `che giorno sarà tra 24 giorni?` | `add_days` 24 | ok (2026-11-08, domande da pipe): il modello ha chiesto prima l'ora a `get_current_time` e poi `add_days` con la data di oggi → 2026-12-02, mercoledì |
 | `quanti giorni mancano a natale?` | `days_between` fino al 2026-12-25 | ok (2026-11-08, domande da pipe): 47 giorni |
+| `quanti giorni mancano a pasqua?` | numero dato dagli strumenti (`find_holiday` scrive «fra N giorni», oppure `days_between`), mai contato dal modello | prima prova (2026-11-09) fallita: solo `find_holiday` e «49 giorni» contati dal modello (erano 139). Dopo la correzione: da provare |
 | Le stesse domande a mano, in PowerShell e con Docker; memoria e `clear` | come sopra | ok (2026-11-08) |
 
 Con Docker Desktop su Windows il container ha raggiunto LM Studio con l'indirizzo `http://host.docker.internal:1234/v1` senza altre modifiche.
