@@ -35,6 +35,8 @@ def system_prompt(default_timezone: str) -> str:
         "Per giorni della settimana, festività e scadenze usa `date_info`, `find_holiday`, `add_days` e "
         "`days_between`, con le date nel formato AAAA-MM-GG; riporta anche gli avvisi degli strumenti, "
         "per esempio che una festività è già passata. "
+        "Per sapere quanti giorni mancano a una data o a una festività non contare tu i giorni: riporta il numero "
+        "dato dagli strumenti (per esempio «fra N giorni») oppure chiama `days_between`. "
         "Per qualsiasi domanda su un linguaggio di programmazione (chi l'ha creato, anno, paradigmi...) "
         "chiama sempre gli strumenti del catalogo prima di rispondere; non dire mai che un dato non c'è senza "
         "averlo cercato. Se l'utente indica un codice (es. XYZ), chiama subito `get_item` con quel codice. "
