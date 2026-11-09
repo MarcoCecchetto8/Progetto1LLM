@@ -1,6 +1,8 @@
 """Test dei tool delle note: servizio FastAPI in memoria tramite TestClient, nessun modello."""
 
 import logging
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
 import httpx
@@ -91,6 +93,27 @@ def test_delete_note_declined(client, caplog):
     assert out == "Eliminazione della nota 1 annullata dall'utente."
     assert client.get("/notes/1").status_code == 200
     assert "annullata dall'utente" in caplog.text
+
+
+def test_delete_note_confirmations_are_serialized(client):
+    windows = []
+
+    def slow_confirm(question):
+        start = time.monotonic()
+        time.sleep(0.2)
+        windows.append((start, time.monotonic()))
+        return True
+
+    tools = make_tools(client, slow_confirm)
+    tools["add_note"].invoke({"text": "uno"})
+    tools["add_note"].invoke({"text": "due"})
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda i: tools["delete_note"].invoke({"note_id": i}), [1, 2]))
+    assert len(results) == 2 and len(windows) == 2
+    first, second = sorted(windows)
+    assert first[1] <= second[0]
+    assert client.get("/notes/1").status_code == 404
+    assert client.get("/notes/2").status_code == 404
 
 
 def test_delete_note_missing_does_not_ask(client):

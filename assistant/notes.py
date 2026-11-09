@@ -3,6 +3,7 @@
 import logging
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable
 from datetime import date
@@ -60,6 +61,10 @@ def _call(client: httpx.Client, method: str, url: str, **kw) -> httpx.Response:
 
 def build_note_tools(client: httpx.Client, today: Callable[[], date],
                      confirm: Callable[[str], bool]) -> list[BaseTool]:
+    # ToolNode esegue in parallelo le chiamate di uno stesso messaggio: senza lock due
+    # conferme comparirebbero insieme e la risposta dell'utente potrebbe valere per la nota sbagliata.
+    delete_lock = threading.Lock()
+
     @tool
     def add_note(text: str, due_date: str | None = None) -> str:
         """Salva una nota (promemoria) con testo e, se richiesta, una scadenza.
@@ -87,19 +92,20 @@ def build_note_tools(client: httpx.Client, today: Callable[[], date],
     @tool
     def delete_note(note_id: int) -> str:
         """Elimina una nota dato il suo ID (visibile con list_notes). Prima chiede conferma all'utente."""
-        try:
-            note = _call(client, "GET", f"/notes/{note_id}").json()
-        except ToolException as e:
-            if "Nessuna nota con ID" in str(e):
-                raise ToolException(f"Nessuna nota con ID {note_id}: nulla è stato eliminato.") from e
-            raise
-        phrase = due_phrase(note["due_date"], today())
-        if not confirm(f"Elimino la nota {note_id} «{note['text']}» · {phrase}? [s/N] "):
-            logger.info("[note] eliminazione della nota %s annullata dall'utente", note_id)
-            return f"Eliminazione della nota {note_id} annullata dall'utente."
-        logger.info("[note] eliminazione della nota %s confermata dall'utente", note_id)
-        _call(client, "DELETE", f"/notes/{note_id}")
-        return f"Nota {note_id} eliminata: «{note['text']}»."
+        with delete_lock:
+            try:
+                note = _call(client, "GET", f"/notes/{note_id}").json()
+            except ToolException as e:
+                if "Nessuna nota con ID" in str(e):
+                    raise ToolException(f"Nessuna nota con ID {note_id}: nulla è stato eliminato.") from e
+                raise
+            phrase = due_phrase(note["due_date"], today())
+            if not confirm(f"Elimino la nota {note_id} «{note['text']}» · {phrase}? [s/N] "):
+                logger.info("[note] eliminazione della nota %s annullata dall'utente", note_id)
+                return f"Eliminazione della nota {note_id} annullata dall'utente."
+            logger.info("[note] eliminazione della nota %s confermata dall'utente", note_id)
+            _call(client, "DELETE", f"/notes/{note_id}")
+            return f"Nota {note_id} eliminata: «{note['text']}»."
 
     return [add_note, list_notes, delete_note]
 
