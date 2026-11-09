@@ -11,6 +11,7 @@ from assistant import GOODBYE
 from assistant.config import Settings
 from assistant.graph import system_prompt
 from assistant.mcp_client import MCPConnectionError
+from assistant.notes import NotesConnectionError
 
 HELP_TEXT = (
     "Comandi:\n"
@@ -21,6 +22,7 @@ HELP_TEXT = (
 )
 EMPTY_ANSWER = "Il modello non ha dato una risposta: riprova."
 TOOLS_DOWN = "Il server degli strumenti non risponde: esci e riavvia l'assistente."
+NOTES_DOWN = "Il servizio delle note non risponde: esci e riavvia l'assistente."
 
 logger = logging.getLogger("assistant.cli")
 
@@ -87,6 +89,11 @@ def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=cle
                 logger.warning("[mcp] collegamento con il server perso: %s", error)
                 logger.debug("Dettaglio dell'errore di collegamento", exc_info=True)
                 output_fn(TOOLS_DOWN)
+                continue
+            except NotesConnectionError as error:
+                logger.warning("[note] collegamento con il servizio perso: %s", error)
+                logger.debug("Dettaglio dell'errore di collegamento", exc_info=True)
+                output_fn(NOTES_DOWN)
                 continue
             except Exception as error:
                 logger.debug("Errore imprevisto durante il turno", exc_info=True)

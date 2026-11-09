@@ -161,3 +161,9 @@ def test_graph_catalog_search_then_detail():
     assert [(m.tool_call_id, m.status) for m in tool_msgs] == [("s1", "success"), ("g1", "success")]
     assert tool_msgs[1].content.startswith("Haskell (HS)")
     assert out["messages"][-1].content == "Haskell è del 1990." and out["steps"] == 3
+
+
+def test_system_prompt_mentions_notes_tools():
+    prompt = system_prompt("Europe/Rome")
+    for word in ("add_note", "list_notes", "delete_note", "ID esatto", "chiederà conferma"):
+        assert word in prompt

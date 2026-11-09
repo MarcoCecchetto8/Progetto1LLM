@@ -43,7 +43,14 @@ def _start() -> int:
     from assistant.config import ConfigError, load_settings
     from assistant.graph import build_graph
     from assistant.llm import LMStudioUnavailable, ModelNotFound, build_chat_model, check_model
+    from datetime import datetime
+
+    import httpx
+
     from assistant.mcp_client import MCPClient, MCPConnectionError, server_command, server_env
+    from assistant.notes import (LocalNotesService, NotesConnectionError, TIMEOUT, ask_in_terminal,
+                                 build_note_tools, wait_until_ready)
+    from lab_server.timezones import get_timezone
 
     # Con stdout/stderr rediretti Windows può usare cp1252: forza UTF-8 per non rompere "→" e "…"
     for stream in (sys.stdout, sys.stderr):
@@ -68,8 +75,27 @@ def _start() -> int:
             return 1
         # Il catalogo arriva dal server (discovery), non è scritto nell'assistente
         logging.getLogger("assistant").info("[mcp] catalogo: %s", ", ".join(tool.name for tool in tools))
-        graph = build_graph(build_chat_model(settings), tools, settings.max_steps)
-        return run(graph, settings)
+        service = None if settings.notes_service_url else LocalNotesService(quiet=settings.log_level != "DEBUG")
+        http = None
+        try:
+            try:
+                url = settings.notes_service_url or service.start()
+                if service is None:
+                    wait_until_ready(url)
+            except NotesConnectionError as error:
+                print(error, file=sys.stderr)
+                return 1
+            http = httpx.Client(base_url=url, timeout=TIMEOUT)
+            logging.getLogger("assistant").info("[note] servizio: %s", url)
+            zone = get_timezone(settings.default_timezone)
+            tools = tools + build_note_tools(http, lambda: datetime.now(zone).date(), ask_in_terminal)
+            graph = build_graph(build_chat_model(settings), tools, settings.max_steps)
+            return run(graph, settings)
+        finally:
+            if http is not None:
+                close_quietly(http)
+            if service is not None:
+                close_quietly(service)
     finally:
         close_quietly(client)
 

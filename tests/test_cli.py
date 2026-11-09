@@ -231,3 +231,13 @@ def test_tools_down_is_logged(caplog):
     with caplog.at_level(logging.WARNING, logger="assistant.cli"):
         session(graph, "che ora è?", "quit")
     assert "[mcp] collegamento con il server perso: Il server degli strumenti non risponde: Connection closed" in caplog.text
+
+
+def test_notes_down_keeps_session():
+    from assistant.cli import NOTES_DOWN
+    from assistant.notes import NotesConnectionError
+
+    graph = Stub(NotesConnectionError("Il servizio delle note non risponde: x"))
+    _, out = session(graph, "ricorda latte", "seconda", "quit")
+    assert out[out.index("…sto pensando") + 1] == NOTES_DOWN
+    assert [m.content for m in graph.calls[1]["messages"][1:]] == ["seconda"]

@@ -40,3 +40,9 @@ def test_timezone_not_iana(value):
 def test_overrides_and_log_level_case():
     s = load_settings({**BASE, "MAX_STEPS": "3", "DEFAULT_TIMEZONE": "Asia/Tokyo", "LOG_LEVEL": "debug"})
     assert (s.max_steps, s.default_timezone, s.log_level) == (3, "Asia/Tokyo", "DEBUG")
+
+
+def test_notes_service_url_default_and_normalized():
+    base = {"LMSTUDIO_BASE_URL": "http://localhost:1234/v1", "LMSTUDIO_MODEL": "m"}
+    assert load_settings(base).notes_service_url == ""
+    assert load_settings({**base, "NOTES_SERVICE_URL": " http://notes:8000/ "}).notes_service_url == "http://notes:8000"

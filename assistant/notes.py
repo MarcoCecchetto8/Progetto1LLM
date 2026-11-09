@@ -1,8 +1,12 @@
 """Tool delle note: wrapper LangChain sul servizio HTTP FastAPI, con conferma prima di eliminare."""
 
 import logging
+import subprocess
+import sys
+import time
 from collections.abc import Callable
 from datetime import date
+from pathlib import Path
 
 import httpx
 from langchain_core.tools import BaseTool, ToolException, tool
@@ -98,3 +102,63 @@ def build_note_tools(client: httpx.Client, today: Callable[[], date],
         return f"Nota {note_id} eliminata: «{note['text']}»."
 
     return [add_note, list_notes, delete_note]
+
+
+def _responds(url: str) -> bool:
+    try:
+        httpx.get(f"{url}/notes", params={"limit": 1}, timeout=1.0)
+    except httpx.TransportError:
+        return False
+    return True
+
+
+def wait_until_ready(url: str, timeout: float = 20.0, alive: Callable[[], bool] = lambda: True) -> None:
+    deadline = time.monotonic() + timeout
+    while alive():
+        if _responds(url):
+            return
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(0.2)
+    raise NotesConnectionError(f"Il servizio delle note non risponde all'indirizzo {url}.")
+
+
+class LocalNotesService:
+    """Avvia il servizio delle note come sottoprocesso locale."""
+
+    def __init__(self, port: int = 8000, quiet: bool = True, db: Path | None = None):
+        self.port = port
+        self.quiet = quiet
+        self.db = db
+        self._proc: subprocess.Popen | None = None
+
+    def start(self) -> str:
+        url = f"http://127.0.0.1:{self.port}"
+        if _responds(url):
+            raise NotesConnectionError(
+                f"La porta {self.port} è già in uso (forse il servizio delle note di Docker è acceso: "
+                "docker compose down)."
+            )
+        command = [sys.executable, "-m", "notes_service", "--port", str(self.port)]
+        if self.quiet:
+            command.append("--quiet")
+        if self.db:
+            command += ["--db", str(self.db)]
+        proc = self._proc = subprocess.Popen(command)
+        try:
+            wait_until_ready(url, alive=lambda: proc.poll() is None)
+        except NotesConnectionError as error:
+            self.close()
+            raise NotesConnectionError(f"Il servizio delle note non è partito su {url}.") from error
+        return url
+
+    def close(self) -> None:
+        proc, self._proc = self._proc, None
+        if proc is None or proc.poll() is not None:
+            return
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
