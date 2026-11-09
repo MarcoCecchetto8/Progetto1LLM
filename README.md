@@ -99,7 +99,7 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-Esito al 2026-11-08: 211 test superati. Alcuni test avviano davvero un server MCP di prova in stdio (`tests/mcp_test_server.py`): ogni avvio richiede alcuni secondi.
+Esito al 2026-11-09: 238 test superati. Alcuni test avviano davvero un server MCP di prova in stdio (`tests/mcp_test_server.py`): ogni avvio richiede alcuni secondi.
 
 ## Verifica diretta del server MCP
 
@@ -116,9 +116,12 @@ python -m lab_server.check calculate "expression=__import__('os')"
 python -m lab_server.check find_holiday name=Pasqua
 python -m lab_server.check add_days days=24
 python -m lab_server.check date_info date=25/12/2026
+python -m lab_server.check search_catalog query=funzionale
+python -m lab_server.check get_item code=PY
+python -m lab_server.check get_item code=XYZ
 ```
 
-Il primo comando stampa nome, descrizione e schema di ogni strumento; il secondo il risultato (`Asia/Tokyo: ...`); il terzo `ERRORE: Fuso orario sconosciuto: "Mars/Olympus". ...` con codice d'uscita 1. Il quarto stampa `3 hl = 300 l`; il quinto `ERRORE: Conversione impossibile: hl è un'unità di volume, kg di peso.` con codice d'uscita 1. Il sesto stampa `10 * 7 / 9 = 7.777777777777778`; il settimo `ERRORE: Carattere "_" non ammesso: ...` con codice d'uscita 1. Le date: `find_holiday` stampa per esempio `Pasqua 2026 (2026-04-05, domenica) è già passata; la prossima è il 2027-03-28, domenica. Indicativo, non normativo.`; `add_days` la data fra 24 giorni; `date_info` con `25/12/2026` stampa `ERRORE: Data "25/12/2026" non valida: formato atteso AAAA-MM-GG ...` con codice d'uscita 1. In PowerShell un argomento con spazi va tra virgolette. Gli argomenti si scrivono come `chiave=valore`; i numeri (`value=2.5`) vengono letti come numeri.
+Il primo comando stampa nome, descrizione e schema di ogni strumento; il secondo il risultato (`Asia/Tokyo: ...`); il terzo `ERRORE: Fuso orario sconosciuto: "Mars/Olympus". ...` con codice d'uscita 1. Il quarto stampa `3 hl = 300 l`; il quinto `ERRORE: Conversione impossibile: hl è un'unità di volume, kg di peso.` con codice d'uscita 1. Il sesto stampa `10 * 7 / 9 = 7.777777777777778`; il settimo `ERRORE: Carattere "_" non ammesso: ...` con codice d'uscita 1. Le date: `find_holiday` stampa per esempio `Pasqua 2026 (2026-04-05, domenica) è già passata; la prossima è il 2027-03-28, domenica. Indicativo, non normativo.`; `add_days` la data fra 24 giorni; `date_info` con `25/12/2026` stampa `ERRORE: Data "25/12/2026" non valida: formato atteso AAAA-MM-GG ...` con codice d'uscita 1. Il catalogo dei linguaggi: `search_catalog` con `query=funzionale` stampa `Trovati 8 linguaggi per "funzionale", mostrati 5:` seguito da un elenco di codice, nome e anno (da `HS: Haskell (1990)` a `PY: Python (1991)`) e dall'invito a ripetere la ricerca con `max_results` più alto; `get_item` con `code=PY` stampa la scheda di Python (anno, autori, paradigmi, tipizzazione, descrizione); con `code=XYZ` stampa `ERRORE: Codice "XYZ" non presente nel catalogo: usa search_catalog per trovare il codice.` con codice d'uscita 1. In PowerShell un argomento con spazi va tra virgolette. Gli argomenti si scrivono come `chiave=valore`; i numeri (`value=2.5`) vengono letti come numeri.
 
 ## Prova reale
 
@@ -185,6 +188,19 @@ Quattro strumenti, tutti con date ISO (`AAAA-MM-GG`) e «oggi» calcolato nel fu
 | `che giorno sarà tra 24 giorni?` | `add_days` 24 | ok (2026-11-08, domande da pipe): il modello ha chiesto prima l'ora a `get_current_time` e poi `add_days` con la data di oggi → 2026-12-02, mercoledì |
 | `quanti giorni mancano a natale?` | `days_between` fino al 2026-12-25 | ok (2026-11-08, domande da pipe): 47 giorni |
 | Le stesse domande a mano, in PowerShell e con Docker; memoria e `clear` | come sopra | ok (2026-11-08) |
+
+### Prova reale del catalogo
+
+Due strumenti sul catalogo dei linguaggi di programmazione (20 linguaggi, file locale `lab_server/catalog.json`): `search_catalog` cerca per parole chiave (nome, autore, paradigma, anno, descrizione) e restituisce codice, nome e anno con il totale trovato (da 1 a 20 risultati, 5 per default); `get_item` dà la scheda completa di un linguaggio dal suo codice (per esempio `PY`, `HS`).
+
+| Domanda | Atteso | Esito |
+|---|---|---|
+| `chi ha creato Haskell?` | `search_catalog` poi `get_item` con il codice `HS`, autori nella risposta | da provare |
+| `quali linguaggi funzionali ci sono nel catalogo?` | `search_catalog` con `funzionale`, elenco dei risultati (8 in totale) | da provare |
+| `quali linguaggi funzionali sono nati prima del 1980?` | ricerca e controllo degli anni, nessun anno inventato | da provare |
+| `c'è Brainfuck nel catalogo?` | `search_catalog` senza risultati, risposta che dice che non c'è | da provare |
+| `dimmi tutto sul linguaggio con codice XYZ` | `get_item` con errore, nessuna scheda inventata | da provare |
+| Le stesse domande a mano, in PowerShell e con Docker; memoria e `clear` | come sopra | da provare |
 
 Con Docker Desktop su Windows il container ha raggiunto LM Studio con l'indirizzo `http://host.docker.internal:1234/v1` senza altre modifiche.
 
