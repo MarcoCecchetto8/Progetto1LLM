@@ -99,7 +99,7 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-Esito al 2026-11-09: 238 test superati. Alcuni test avviano davvero un server MCP di prova in stdio (`tests/mcp_test_server.py`): ogni avvio richiede alcuni secondi.
+Esito al 2026-11-09: 239 test superati. Alcuni test avviano davvero un server MCP di prova in stdio (`tests/mcp_test_server.py`): ogni avvio richiede alcuni secondi.
 
 ## Verifica diretta del server MCP
 
@@ -189,6 +189,8 @@ Quattro strumenti, tutti con date ISO (`AAAA-MM-GG`) e «oggi» calcolato nel fu
 | `quanti giorni mancano a natale?` | `days_between` fino al 2026-12-25 | ok (2026-11-08, domande da pipe): 47 giorni |
 | Le stesse domande a mano, in PowerShell e con Docker; memoria e `clear` | come sopra | ok (2026-11-08) |
 
+Con Docker Desktop su Windows il container ha raggiunto LM Studio con l'indirizzo `http://host.docker.internal:1234/v1` senza altre modifiche.
+
 ### Prova reale del catalogo
 
 Due strumenti sul catalogo dei linguaggi di programmazione (20 linguaggi, file locale `lab_server/catalog.json`): `search_catalog` cerca per parole chiave (nome, autore, paradigma, anno, descrizione) e restituisce codice, nome e anno con il totale trovato (da 1 a 20 risultati, 5 per default); `get_item` dà la scheda completa di un linguaggio dal suo codice (per esempio `PY`, `HS`).
@@ -201,8 +203,6 @@ Due strumenti sul catalogo dei linguaggi di programmazione (20 linguaggi, file l
 | `c'è Brainfuck nel catalogo?` | `search_catalog` senza risultati, risposta che dice che non c'è | da provare |
 | `dimmi tutto sul linguaggio con codice XYZ` | `get_item` con errore, nessuna scheda inventata | da provare |
 | Le stesse domande a mano, in PowerShell e con Docker; memoria e `clear` | come sopra | da provare |
-
-Con Docker Desktop su Windows il container ha raggiunto LM Studio con l'indirizzo `http://host.docker.internal:1234/v1` senza altre modifiche.
 
 ## Diagnosi
 

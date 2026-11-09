@@ -164,4 +164,7 @@ def test_search_catalog_accepts_numeric_string():
 def test_search_catalog_no_match_is_not_error():
     result = call(server(), lambda c: c.call_tool("search_catalog", {"query": "cobra"}))
     assert result.is_error is False
-    assert result.content[0].text == 'Nessun linguaggio corrisponde a "cobra".'
+    assert result.content[0].text == (
+        'Nessun linguaggio corrisponde a "cobra". Se hai usato parole al plurale riprova al singolare '
+        "(es. funzionale); altrimenti il catalogo non lo contiene."
+    )

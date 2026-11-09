@@ -55,7 +55,7 @@ def search(query: str, max_results: int = DEFAULT_RESULTS) -> str:
     q = query.strip()
     found = [(len(words & fields), entry) for entry, fields in _index() if words & fields]
     if not found:
-        return f'Nessun linguaggio corrisponde a "{q}".'
+        return f'Nessun linguaggio corrisponde a "{q}". Se hai usato parole al plurale riprova al singolare (es. funzionale); altrimenti il catalogo non lo contiene.'
     found.sort(key=lambda item: (-item[0], item[1]["name"].casefold()))
     n, m = len(found), min(len(found), max_results)
     if n == 1:

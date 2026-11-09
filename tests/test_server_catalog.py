@@ -1,4 +1,4 @@
-"""Forma del file dei dati del catalogo dei linguaggi di programmazione."""
+"""Test del catalogo dei linguaggi: forma dei dati, logica di ricerca e di dettaglio."""
 
 import json
 from importlib.resources import files
@@ -88,7 +88,16 @@ def test_search_truncation():
 
 
 def test_search_no_match():
-    assert search("cobra") == 'Nessun linguaggio corrisponde a "cobra".'
+    assert search("cobra") == (
+        'Nessun linguaggio corrisponde a "cobra". Se hai usato parole al plurale riprova al singolare '
+        "(es. funzionale); altrimenti il catalogo non lo contiene."
+    )
+
+
+def test_search_plural_suggests_singular():
+    out = search("funzionali")
+    assert out.startswith("Nessun linguaggio corrisponde a")
+    assert "riprova al singolare" in out
 
 
 @pytest.mark.parametrize("query", ["", "linguaggi di programmazione", "?"])
