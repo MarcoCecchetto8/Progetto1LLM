@@ -1,0 +1,295 @@
+[
+  {
+    "code": "C",
+    "name": "C",
+    "year": 1972,
+    "authors": [
+      "Dennis Ritchie"
+    ],
+    "paradigms": [
+      "imperativo",
+      "procedurale"
+    ],
+    "typing": "statica",
+    "description": "Linguaggio imperativo di livello medio-basso, creato ai Bell Labs e usato per scrivere il sistema operativo Unix. È molto usato nella programmazione di sistema e nei sistemi embedded."
+  },
+  {
+    "code": "COBOL",
+    "name": "COBOL",
+    "year": 1959,
+    "authors": [
+      "Comitato CODASYL"
+    ],
+    "paradigms": [
+      "imperativo",
+      "procedurale"
+    ],
+    "typing": "statica",
+    "description": "Linguaggio nato per le applicazioni gestionali e commerciali, definito da un comitato di rappresentanti di aziende e governo. Ancora oggi è presente in molti sistemi bancari e amministrativi."
+  },
+  {
+    "code": "CPP",
+    "name": "C++",
+    "year": 1985,
+    "authors": [
+      "Bjarne Stroustrup"
+    ],
+    "paradigms": [
+      "imperativo",
+      "procedurale",
+      "a oggetti"
+    ],
+    "typing": "statica",
+    "description": "Estensione del linguaggio C con classi e altri costrutti ad alto livello, sviluppata ai Bell Labs. È usato per sistemi, videogiochi e software dove contano le prestazioni."
+  },
+  {
+    "code": "CS",
+    "name": "C#",
+    "year": 2000,
+    "authors": [
+      "Anders Hejlsberg"
+    ],
+    "paradigms": [
+      "imperativo",
+      "a oggetti"
+    ],
+    "typing": "statica",
+    "description": "Linguaggio a oggetti sviluppato da Microsoft per la piattaforma .NET. È progettato sotto la guida di Anders Hejlsberg."
+  },
+  {
+    "code": "FORTRAN",
+    "name": "Fortran",
+    "year": 1957,
+    "authors": [
+      "John Backus"
+    ],
+    "paradigms": [
+      "imperativo",
+      "procedurale"
+    ],
+    "typing": "statica",
+    "description": "Uno dei primi linguaggi di alto livello, sviluppato in IBM da un gruppo guidato da John Backus. È pensato per il calcolo scientifico e numerico."
+  },
+  {
+    "code": "GO",
+    "name": "Go",
+    "year": 2009,
+    "authors": [
+      "Robert Griesemer",
+      "Rob Pike",
+      "Ken Thompson"
+    ],
+    "paradigms": [
+      "imperativo",
+      "procedurale",
+      "concorrente"
+    ],
+    "typing": "statica",
+    "description": "Linguaggio compilato creato in Google, con sintassi semplice e supporto integrato alla concorrenza tramite goroutine e canali."
+  },
+  {
+    "code": "HS",
+    "name": "Haskell",
+    "year": 1990,
+    "authors": [
+      "Comitato Haskell"
+    ],
+    "paradigms": [
+      "funzionale",
+      "dichiarativo"
+    ],
+    "typing": "statica",
+    "description": "Linguaggio funzionale puro con valutazione pigra e un sistema di tipi statico con inferenza. Fu definito da un comitato di ricercatori."
+  },
+  {
+    "code": "JAVA",
+    "name": "Java",
+    "year": 1995,
+    "authors": [
+      "James Gosling"
+    ],
+    "paradigms": [
+      "imperativo",
+      "a oggetti",
+      "concorrente"
+    ],
+    "typing": "statica",
+    "description": "Linguaggio a oggetti sviluppato in Sun Microsystems, compilato in bytecode eseguito dalla macchina virtuale Java. È molto usato nelle applicazioni aziendali e su Android."
+  },
+  {
+    "code": "JS",
+    "name": "JavaScript",
+    "year": 1995,
+    "authors": [
+      "Brendan Eich"
+    ],
+    "paradigms": [
+      "imperativo",
+      "a oggetti",
+      "funzionale"
+    ],
+    "typing": "dinamica",
+    "description": "Linguaggio creato in Netscape, usato soprattutto per rendere interattive le pagine web nei browser. Oggi si usa anche sui server con Node.js."
+  },
+  {
+    "code": "KT",
+    "name": "Kotlin",
+    "year": 2011,
+    "authors": [
+      "JetBrains"
+    ],
+    "paradigms": [
+      "imperativo",
+      "a oggetti",
+      "funzionale"
+    ],
+    "typing": "statica",
+    "description": "Linguaggio sviluppato da JetBrains che gira sulla macchina virtuale Java. È uno dei linguaggi ufficiali per lo sviluppo Android."
+  },
+  {
+    "code": "LISP",
+    "name": "Lisp",
+    "year": 1958,
+    "authors": [
+      "John McCarthy"
+    ],
+    "paradigms": [
+      "funzionale"
+    ],
+    "typing": "dinamica",
+    "description": "Uno dei più antichi linguaggi ancora in uso, ideato da John McCarthy al MIT. Si basa sulle liste e sul trattamento del codice come dati."
+  },
+  {
+    "code": "PASCAL",
+    "name": "Pascal",
+    "year": 1970,
+    "authors": [
+      "Niklaus Wirth"
+    ],
+    "paradigms": [
+      "imperativo",
+      "procedurale"
+    ],
+    "typing": "statica",
+    "description": "Linguaggio progettato da Niklaus Wirth per insegnare la programmazione strutturata. Prende il nome dal matematico Blaise Pascal."
+  },
+  {
+    "code": "PHP",
+    "name": "PHP",
+    "year": 1995,
+    "authors": [
+      "Rasmus Lerdorf"
+    ],
+    "paradigms": [
+      "imperativo",
+      "procedurale",
+      "a oggetti"
+    ],
+    "typing": "dinamica",
+    "description": "Linguaggio di scripting pensato per lo sviluppo web lato server. Fu creato da Rasmus Lerdorf."
+  },
+  {
+    "code": "PROLOG",
+    "name": "Prolog",
+    "year": 1972,
+    "authors": [
+      "Alain Colmerauer",
+      "Philippe Roussel"
+    ],
+    "paradigms": [
+      "logico",
+      "dichiarativo"
+    ],
+    "typing": "dinamica",
+    "description": "Linguaggio di programmazione logica in cui si descrivono fatti e regole e il sistema ricava le risposte. Fu sviluppato a Marsiglia."
+  },
+  {
+    "code": "PY",
+    "name": "Python",
+    "year": 1991,
+    "authors": [
+      "Guido van Rossum"
+    ],
+    "paradigms": [
+      "imperativo",
+      "procedurale",
+      "a oggetti",
+      "funzionale"
+    ],
+    "typing": "dinamica",
+    "description": "Linguaggio dalla sintassi leggibile, che usa l'indentazione per delimitare i blocchi. È molto diffuso nello scripting, nell'analisi dei dati e nell'intelligenza artificiale."
+  },
+  {
+    "code": "RB",
+    "name": "Ruby",
+    "year": 1995,
+    "authors": [
+      "Yukihiro Matsumoto"
+    ],
+    "paradigms": [
+      "imperativo",
+      "a oggetti"
+    ],
+    "typing": "dinamica",
+    "description": "Linguaggio interamente a oggetti creato in Giappone da Yukihiro Matsumoto. È noto soprattutto per il framework web Ruby on Rails."
+  },
+  {
+    "code": "RS",
+    "name": "Rust",
+    "year": 2010,
+    "authors": [
+      "Graydon Hoare"
+    ],
+    "paradigms": [
+      "imperativo",
+      "funzionale",
+      "concorrente"
+    ],
+    "typing": "statica",
+    "description": "Linguaggio di sistema che garantisce la sicurezza della memoria tramite il controllo dei prestiti, senza garbage collector. Fu avviato da Graydon Hoare e poi sviluppato da Mozilla."
+  },
+  {
+    "code": "SQL",
+    "name": "SQL",
+    "year": 1974,
+    "authors": [
+      "Donald Chamberlin",
+      "Raymond Boyce"
+    ],
+    "paradigms": [
+      "dichiarativo"
+    ],
+    "typing": "statica",
+    "description": "Linguaggio dichiarativo per interrogare e modificare i database relazionali. Nacque in IBM con il nome SEQUEL."
+  },
+  {
+    "code": "SWIFT",
+    "name": "Swift",
+    "year": 2014,
+    "authors": [
+      "Chris Lattner"
+    ],
+    "paradigms": [
+      "imperativo",
+      "a oggetti",
+      "funzionale"
+    ],
+    "typing": "statica",
+    "description": "Linguaggio presentato da Apple per sviluppare app per iOS e macOS. Il suo progetto fu avviato da Chris Lattner."
+  },
+  {
+    "code": "TS",
+    "name": "TypeScript",
+    "year": 2012,
+    "authors": [
+      "Anders Hejlsberg"
+    ],
+    "paradigms": [
+      "imperativo",
+      "a oggetti",
+      "funzionale"
+    ],
+    "typing": "statica",
+    "description": "Estensione di JavaScript sviluppata da Microsoft che aggiunge i tipi statici. Il codice viene tradotto in JavaScript prima dell'esecuzione."
+  }
+]

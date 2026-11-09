@@ -132,3 +132,27 @@ def test_system_prompt_mentions_calculator_and_equations():
 def test_system_prompt_mentions_date_tools():
     p = system_prompt("Europe/Rome")
     assert all(name in p for name in ("date_info", "find_holiday", "add_days", "days_between", "AAAA-MM-GG"))
+
+
+def test_system_prompt_mentions_catalog():
+    p = system_prompt("Europe/Rome")
+    assert "search_catalog" in p and "get_item" in p and "max_results" in p
+
+
+def test_system_prompt_requires_catalog_lookup():
+    p = system_prompt("Europe/Rome")
+    assert "chiama sempre gli strumenti del catalogo prima di rispondere" in p
+    assert "non dire mai che un dato non c'è senza averlo cercato" in p
+    assert "chiama subito `get_item` con quel codice" in p
+
+
+def test_graph_catalog_search_then_detail():
+    with MCPClient([sys.executable, "-m", "lab_server"], os.environ) as tools:
+        model = fake(tool_call({"query": "Haskell"}, "s1", name="search_catalog"),
+                     tool_call({"code": "HS"}, "g1", name="get_item"),
+                     AIMessage("Haskell è del 1990."))
+        out = build_graph(model, tools, 5).invoke(start("parlami di Haskell"))
+    tool_msgs = [m for m in out["messages"] if isinstance(m, ToolMessage)]
+    assert [(m.tool_call_id, m.status) for m in tool_msgs] == [("s1", "success"), ("g1", "success")]
+    assert tool_msgs[1].content.startswith("Haskell (HS)")
+    assert out["messages"][-1].content == "Haskell è del 1990." and out["steps"] == 3

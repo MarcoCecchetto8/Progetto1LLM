@@ -109,10 +109,11 @@ def test_calculate_rejects_code():
 FIXED_NOV = lambda: datetime(2026, 11, 2, 10, 0, tzinfo=UTC)
 
 
-def test_catalog_has_all_seven_tools():
+def test_catalog_has_all_nine_tools():
     names = {t.name for t in call(server(), lambda c: c.list_tools())}
     assert names == {"get_current_time", "convert_units", "calculate",
-                     "date_info", "find_holiday", "add_days", "days_between"}
+                     "date_info", "find_holiday", "add_days", "days_between",
+                     "search_catalog", "get_item"}
 
 
 def test_find_holiday_uses_today_in_default_timezone():
@@ -130,3 +131,40 @@ def test_today_follows_default_timezone():
 
 def test_date_info_wrong_format_is_error():
     assert "AAAA-MM-GG" in error_text("date_info", {"date": "25/12/2026"})
+
+
+def test_search_catalog_schema_has_bounds():
+    tools = {t.name: t for t in call(server(), lambda c: c.list_tools())}
+    prop = tools["search_catalog"].inputSchema["properties"]["max_results"]
+    assert prop["minimum"] == 1 and prop["maximum"] == 20 and prop["default"] == 5
+
+
+def test_search_catalog_and_get_item_calls():
+    found = call(server(), lambda c: c.call_tool("search_catalog", {"query": "Haskell"})).content[0].text
+    assert "HS: Haskell" in found
+    detail = call(server(), lambda c: c.call_tool("get_item", {"code": "hs"})).content[0].text
+    assert detail.startswith("Haskell (HS)")
+
+
+def test_get_item_unknown_code_is_error():
+    assert "non presente nel catalogo" in error_text("get_item", {"code": "XYZ"})
+
+
+def test_search_catalog_max_results_out_of_range_is_italian():
+    assert error_text("search_catalog", {"query": "python", "max_results": 0}) == (
+        'Argomenti non validi per search_catalog: max_results: "0" troppo piccolo (minimo 1).')
+    assert "troppo grande (massimo 20)" in error_text("search_catalog", {"query": "python", "max_results": 21})
+
+
+def test_search_catalog_accepts_numeric_string():
+    result = call(server(), lambda c: c.call_tool("search_catalog", {"query": "python", "max_results": "10"}))
+    assert result.is_error is False
+
+
+def test_search_catalog_no_match_is_not_error():
+    result = call(server(), lambda c: c.call_tool("search_catalog", {"query": "cobra"}))
+    assert result.is_error is False
+    assert result.content[0].text == (
+        'Nessun linguaggio corrisponde a "cobra". Se hai usato parole al plurale riprova al singolare '
+        "(es. funzionale); altrimenti il catalogo non lo contiene."
+    )
