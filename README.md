@@ -71,7 +71,7 @@ docker compose run --rm app
 
 Si usa `run` e non `up`, perché `up` non collega il terminale all'input dell'applicazione.
 
-Compose avvia anche un secondo container, `notes`, con il servizio delle note (porta 8000 pubblicata sull'host). Le note stanno nella cartella `data/` del progetto, montata nel container: sono le stesse dell'avvio locale. Per fermare il servizio dopo l'uso:
+Compose avvia anche un secondo container, `notes`, con il servizio delle note (porta 8000 pubblicata solo su `127.0.0.1` dell'host, non raggiungibile dalla rete). Le note stanno nella cartella `data/` del progetto, montata nel container: sono le stesse dell'avvio locale. Per fermare il servizio dopo l'uso:
 
 ```powershell
 docker compose down
@@ -112,7 +112,7 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-Esito al 2026-11-09: 294 test superati. Alcuni test avviano davvero un server MCP di prova in stdio (`tests/mcp_test_server.py`): ogni avvio richiede alcuni secondi.
+Esito al 2026-11-09: 295 test superati. Alcuni test avviano davvero un server MCP di prova in stdio (`tests/mcp_test_server.py`): ogni avvio richiede alcuni secondi.
 
 ## Verifica diretta del server MCP
 
@@ -154,7 +154,7 @@ Invoke-RestMethod -Method Delete http://127.0.0.1:8000/notes/1
 
 La `POST` restituisce `{"id":1,"text":"prova","due_date":"2026-11-13","created_at":"2026-11-09T16:06:38+00:00"}` (`created_at` è in UTC), la `GET` `{"total":1,"notes":[...]}` con quella nota, la `DELETE` la nota eliminata. Il servizio scrive su stderr una riga per ogni creazione (`nota creata id=1 testo=prova scadenza=2026-11-13`) ed eliminazione. `http://127.0.0.1:8000/docs` risponde 200. Si ferma con Ctrl+C.
 
-Con Docker (2026-11-09): `docker compose config`, `docker compose build` e `docker compose up -d notes` vanno a buon fine; `docker compose ps` mostra `notes` acceso con `0.0.0.0:8000->8000/tcp`. Dall'host le stesse tre chiamate funzionano e `data/notes.db` viene scritto attraverso la cartella montata (l'utente non root `appuser` del container riesce a scrivere). `docker compose down` ferma e rimuove il container.
+Con Docker (2026-11-09): `docker compose config`, `docker compose build` e `docker compose up -d notes` vanno a buon fine; `docker compose ps` mostra `notes` acceso con `127.0.0.1:8000->8000/tcp` (porta pubblicata solo su localhost). Dall'host le stesse tre chiamate funzionano e `data/notes.db` viene scritto attraverso la cartella montata (l'utente non root `appuser` del container riesce a scrivere). `docker compose down` ferma e rimuove il container.
 
 ## Prova reale
 
@@ -251,7 +251,11 @@ Tre strumenti sulle note persistenti (`add_note`, `list_notes`, `delete_note`), 
 | `Elimina la nota 99` | errore chiaro, nessuna richiesta di conferma, nulla eliminato | da provare |
 | eliminazione di una nota vera, rispondendo `n` e poi `s` | con `n` la nota resta, con `s` sparisce | da provare |
 | riavvio dell'assistente | le note salvate ci sono ancora; le stesse note si vedono da Docker | da provare |
+| `elimina le note 1 e 2` | le due conferme arrivano una alla volta, ognuna con la sua nota | da provare |
+| Ctrl+C alla domanda `[s/N]` | nessuna eliminazione, «Arrivederci!», porta 8000 liberata | da provare |
 | `/docs` nel browser mentre l'assistente è in esecuzione | pagina della documentazione interattiva | da provare |
+
+Le eliminazioni vanno provate a mano nel terminale, perché con le domande inviate da pipe la conferma legge la riga successiva (qualsiasi risposta diversa da s/si/sì annulla).
 
 Se il modello sceglie male o dichiara un salvataggio non avvenuto, va annotato il punto esatto.
 
