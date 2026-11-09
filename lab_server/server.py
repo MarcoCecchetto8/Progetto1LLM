@@ -3,12 +3,15 @@
 import logging
 from collections.abc import Callable
 from datetime import date, datetime
+from typing import Annotated
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
+from pydantic import Field
 
 from lab_server.calculator import calculate as evaluate
-from lab_server import dates
+from lab_server import catalog, dates
+from lab_server.catalog import DEFAULT_RESULTS, MAX_RESULTS
 from lab_server.clock import current_time, utc_now
 from lab_server.timezones import get_timezone
 from lab_server.units import Unit, convert
@@ -109,5 +112,19 @@ def create_server(default_timezone: str, now: Callable[[], datetime] = utc_now) 
         start: data di partenza; se omessa si parte da oggi.
         """
         return run(f"days_between({end}, {start})", lambda: dates.days_between(end, start, today()))
+
+    @mcp.tool
+    def search_catalog(query: str, max_results: Annotated[int, Field(ge=1, le=MAX_RESULTS)] = DEFAULT_RESULTS) -> str:
+        """Cerca linguaggi di programmazione nel catalogo per parole chiave (nome, autore, paradigma, anno, parole della descrizione).
+
+        Passare poche parole al singolare (es. funzionale, Haskell, Bell Labs).
+        Restituisce un elenco breve con codice, nome e anno e il numero totale trovato; usarlo quando non si conosce il codice.
+        """
+        return run(f"search_catalog({query}, {max_results})", lambda: catalog.search(query, max_results))
+
+    @mcp.tool
+    def get_item(code: str) -> str:
+        """Tutte le informazioni di un solo linguaggio dato il suo codice (es. PY, HS), ottenuto da search_catalog."""
+        return run(f"get_item({code})", lambda: catalog.get_item(code))
 
     return mcp

@@ -20,6 +20,10 @@ def _describe(error: dict) -> str:
     if kind in NUMBER_ERRORS:
         whole = "intero " if kind.startswith("int") else ""
         return f'{field}: "{value}" non è un numero {whole}(usa il punto per i decimali)'
+    if kind == "greater_than_equal":
+        return f'{field}: "{value}" troppo piccolo (minimo {error["ctx"]["ge"]})'
+    if kind == "less_than_equal":
+        return f'{field}: "{value}" troppo grande (massimo {error["ctx"]["le"]})'
     if kind == "string_type":
         return f"{field}: deve essere un testo"
     return f'{field}: valore "{value}" non valido'
