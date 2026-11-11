@@ -1,6 +1,6 @@
 # Note persistenti con FastAPI — specifica
 
-Data: 2026-11-09 · Stato: approvata dall'utente il 2026-11-09
+Data: 2026-11-09 · Stato: approvata dall'utente il 2026-11-09 · **Revisione 2026-11-11** (sezione 5.4, controllo dei falsi successi, dopo la prova reale): approvata dall'utente il 2026-11-11
 
 Riferimenti: lezione 5 del corso, slide 16 (scelta del confine), 19 e 21 (variante FastAPI + wrapper HTTP), 6 (controllo dei permessi da parte dell'applicazione), 26 («Note persistenti: un tool che produce effetti») e 31 (evidenze). Specifiche precedenti `2026-11-02-strumenti-mcp-design.md` e `2026-11-09-catalogo-linguaggi-design.md`, valide per tutto ciò che qui non cambia.
 
@@ -34,7 +34,7 @@ Dare all'assistente **note persistenti**: aggiungerle, elencarle, eliminarle, co
 **Anti-obiettivi:**
 - una nota eliminata senza la conferma esplicita dell'utente nel terminale;
 - un'eliminazione «per descrizione» invece che per ID esatto;
-- un falso successo: nota dichiarata salvata o eliminata quando il servizio ha risposto con un errore o non ha risposto;
+- un falso successo: nota dichiarata salvata o eliminata quando il servizio ha risposto con un errore o non ha risposto, **oppure quando il modello non ha chiamato lo strumento affatto** (caso visto nella prova reale, sezione 5.4): non deve mai arrivare all'utente senza un avviso;
 - l'archivio SQLite o la cartella `data/` versionati in Git;
 - un test con servizio o modello simulati presentato come prova reale.
 
@@ -104,11 +104,35 @@ La conferma è una funzione iniettabile nel wrapper (i test la sostituiscono con
 
 **Istruzioni di sistema** (testo esatto al piano): per ricordare qualcosa usa `add_note` (una sola chiamata per richiesta), con la scadenza in `AAAA-MM-GG` se l'utente ne indica una; per eliminare usa l'ID esatto preso da `list_notes`, e se la richiesta è ambigua chiedi all'utente quale nota; non dichiarare mai una nota salvata o eliminata se lo strumento non lo conferma.
 
+*Revisione 2026-11-11:* per i giorni come «venerdì» o «domani» il prompt dice di **non chiedere la data all'utente** ma di ricavarla con `get_current_time` e `add_days` e poi chiamare `add_note`, e che la nota esiste solo se lo strumento risponde «Nota N salvata». Sull'eliminazione resta la formulazione originale: la frase aggiunta «non chiedere tu conferma» è tolta, perché nella misura il modello ha cominciato a parlare della conferma invece di chiamare `delete_note` (2 volte su 5).
+
 ### 5.3 Errori
 
 - **Errore dello strumento** (torna al modello come `ToolMessage` con stato `error`): testo vuoto o troppo lungo, data non valida, `limit` fuori intervallo, ID inesistente. Il wrapper traduce le risposte d'errore del servizio in messaggi italiani.
 - **Errore di collegamento** (servizio terminato o non raggiungibile durante la sessione, timeout): distinto dall'errore dello strumento, trattato come quello del server MCP: turno interrotto, messaggio all'utente («Il servizio delle note non risponde…»), domanda non in cronologia. *Scelta di Claude:* timeout di 5 secondi per le richieste HTTP.
 - **Log nell'assistente**: le righe esistenti `[strumento] … esito=…` del nodo strumenti; in più una riga `INFO` quando l'utente conferma o annulla un'eliminazione.
+
+### 5.4 Controllo dei falsi successi (revisione 2026-11-11)
+
+**Perché.** Nella prova reale (sonda end-to-end: grafo vero, `gemma-4-e2b`, archivio temporaneo, 5 conversazioni per domanda) il modello a volte chiude il turno scrivendo «Ho salvato la nota» **senza aver chiamato `add_note`**: 1 volta su 5 con «Ricordami di comprare il latte», 3 su 5 con «…il report venerdì» (dopo `add_days` scambia il risultato della data per il salvataggio). Il codice delle note è corretto: la risposta del modello non contiene chiamate e il grafo la manda all'utente. Il prompt da solo non ha ridotto il problema, quindi il controllo lo fa il **programma**, come la conferma dell'eliminazione (slide 6).
+
+**Che cosa controlla.** Quando il modello risponde senza chiamate (la risposta che andrebbe all'utente), il programma guarda:
+1. se il testo **dichiara** un salvataggio o un'eliminazione di una nota (famiglie di parole come «salvat…», «memorizzat…», «annotat…», «registrat…» per il salvataggio; «eliminat…», «cancellat…», «rimoss…» per l'eliminazione; elenco esatto al piano, in minuscolo e senza distinzione di accenti);
+2. se **nello stesso turno** (dopo l'ultima domanda dell'utente) c'è una conferma dello strumento corrispondente: un risultato di `add_note` senza errore per il salvataggio; un risultato di `delete_note` senza errore (eliminata **o** annullata dall'utente) per l'eliminazione.
+
+Dichiarazione senza conferma = **falso successo**. Le frasi negative che contengono le stesse parole (per esempio «non ho salvato nulla») sono un caso limite: il piano stabilisce come trattarle, con un test; nel dubbio si preferisce un avviso di troppo a un falso successo che passa.
+
+**Che cosa fa.**
+1. **Primo falso successo nel turno**: la risposta non arriva all'utente. Viene tolta dalla cronologia e al modello torna un messaggio del programma, per esempio `[Controllo del programma] Hai scritto che la nota è salvata, ma add_note non è stato chiamato: la nota NON è salvata. Chiama add_note oppure di' all'utente che non è stata salvata.` (testo esatto al piano). Il modello riprova; il nuovo passaggio conta nel limite di passaggi (`MAX_STEPS`) come gli altri.
+2. **Secondo falso successo nello stesso turno**, oppure limite di passaggi già raggiunto: la risposta arriva all'utente **con un avviso aggiunto dal programma**, per esempio `⚠ Attenzione: nessuna nota è stata salvata (lo strumento non è stato chiamato).` (testo esatto al piano). Niente terzo tentativo.
+3. Ogni intervento lascia una riga di log `INFO` (`[controllo] falso successo: …, nuovo tentativo` / `…, avviso all'utente`).
+
+**Dove sta.** Il grafo riceve un **controllo della risposta facoltativo** (una funzione passata a `build_graph`): senza controllo il grafo si comporta come oggi, quindi i test esistenti e gli altri strumenti non cambiano. La funzione che riconosce i falsi successi delle note sta nel modulo delle note dell'assistente, perché conosce i nomi e i testi dei suoi tool. Nel grafo il controllo è un passaggio riconoscibile (nodo o instradamento dopo `model`; forma esatta al piano), con lo stesso stile di `step_limit`.
+
+**Limiti dichiarati.**
+- Il controllo riconosce **parole**, non intenzioni: una risposta come «Ti ricordo di consegnare il report venerdì» senza `add_note` non dichiara un salvataggio e passa senza avviso. Si registra come limite del modello nella prova reale.
+- Non risolve il caso «Elimina la nota 99» in cui il modello risponde «Dovrai prima confermare» senza chiamare `delete_note`: non è un falso successo (non dichiara nulla di fatto). Per questo si torna alla formulazione originale del prompt (sezione 5.2).
+- **Streaming** (prossima funzionalità richiesta dall'utente): se la risposta verrà mostrata mentre si genera, il controllo arriverebbe dopo che l'utente l'ha già letta. La specifica dello streaming dovrà dire come convivono (per esempio avviso dopo il testo, o niente streaming per le risposte che toccano le note).
 
 ## 6. Docker
 
@@ -138,6 +162,15 @@ SQLite con `sqlite3` della libreria standard. `httpx` potrebbe già essere insta
 - **Avvio**: con `NOTES_SERVICE_URL` vuota il servizio viene avviato e chiuso; con un URL non raggiungibile → messaggio e codice 1.
 - **Grafo** con il modello finto: `add_note` → `ToolMessage` correlato; `delete_note` annullata → nessuna eliminazione e cronologia coerente.
 - **Istruzioni**: il prompt cita i tre tool e la regola dell'ID.
+- **Controllo dei falsi successi** (revisione 2026-11-11), con il modello finto:
+  - «Ho salvato la nota» senza `add_note` → al modello torna il messaggio del programma, la risposta falsa non resta in cronologia; se il secondo tentativo chiama `add_note` → nota salvata e risposta senza avviso;
+  - due falsi successi di fila → risposta all'utente con l'avviso, nessun terzo tentativo;
+  - falso successo quando il limite di passaggi è già raggiunto → avviso subito;
+  - «Ho salvato…» dopo un `add_note` riuscito nello stesso turno → nessun intervento; dopo un `add_note` **fallito** (errore dello strumento) → intervento;
+  - un `add_note` riuscito in un turno **precedente** non vale come conferma per il turno attuale;
+  - eliminazione: «Ho eliminato…» senza `delete_note` → intervento; dopo `delete_note` annullata dall'utente → nessun intervento;
+  - risposte che non parlano di note (ora, catalogo) → nessun intervento; grafo senza controllo → comportamento invariato;
+  - funzione di riconoscimento testata a parte su frasi reali raccolte nella prova (comprese le negative scelte al piano).
 - Restano verdi tutti i test esistenti.
 
 ### Verifica diretta
@@ -152,6 +185,8 @@ Documentata nel README, solo comandi eseguiti: avvio del servizio da solo e prov
 - `/docs` aperto nel browser mentre l'assistente è in esecuzione.
 
 Se il modello sceglie male o dichiara un salvataggio non avvenuto, si registra il punto esatto e non si dichiara completata quella prova.
+
+*Revisione 2026-11-11:* dopo il controllo si ripete la misura con la sonda end-to-end (5 conversazioni per «Ricordami di comprare il latte», «Ricordami di consegnare il report venerdì», «Elimina la nota 99») e si riportano nel README, prima/dopo: salvataggi riusciti, falsi successi corretti al secondo tentativo, avvisi mostrati, e quanti falsi successi sono arrivati all'utente **senza** avviso (atteso: zero). Il controllo non rende il modello affidabile: lo rende **onesto verso l'utente**, e il README lo dice.
 
 ## 9. Ordine di lavoro e branch
 
@@ -171,6 +206,7 @@ Branch `feature/note-fastapi` da `developer`; merge `--no-ff` in `developer` dop
 - Timeout HTTP 5 secondi; servizio irraggiungibile = errore di collegamento (turno interrotto).
 - Porta 8000 pubblicata in Docker; bind mount di `data/`.
 - Nessuna modifica di note esistenti.
+- *Revisione 2026-11-11:* controllo dei falsi successi nel programma (un solo nuovo tentativo, poi avviso); riconoscimento per parole; controllo passato a `build_graph` come funzione facoltativa e implementato nel modulo delle note; messaggio di correzione al modello come messaggio del programma nella conversazione (tipo esatto al piano: un messaggio di sistema a metà conversazione potrebbe non essere accettato dal modello in LM Studio, va verificato).
 
 ## 11. Lasciato al piano
 
