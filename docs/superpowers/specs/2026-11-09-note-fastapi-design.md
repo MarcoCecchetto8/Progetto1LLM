@@ -1,6 +1,6 @@
 # Note persistenti con FastAPI — specifica
 
-Data: 2026-11-09 · Stato: approvata dall'utente il 2026-11-09 · **Revisione 2026-11-11** (sezione 5.4, controllo dei falsi successi, dopo la prova reale): approvata dall'utente il 2026-11-11
+Data: 2026-11-09 · Stato: approvata dall'utente il 2026-11-09 · **Revisione 2026-11-11** (sezione 5.4, controllo dei falsi successi, dopo la prova reale): approvata dall'utente il 2026-11-11 · **Revisione 2026-11-15** (5.4: solo avviso, niente nuovo tentativo): scelta dell'utente
 
 Riferimenti: lezione 5 del corso, slide 16 (scelta del confine), 19 e 21 (variante FastAPI + wrapper HTTP), 6 (controllo dei permessi da parte dell'applicazione), 26 («Note persistenti: un tool che produce effetti») e 31 (evidenze). Specifiche precedenti `2026-11-02-strumenti-mcp-design.md` e `2026-11-09-catalogo-linguaggi-design.md`, valide per tutto ciò che qui non cambia.
 
@@ -122,10 +122,13 @@ La conferma è una funzione iniettabile nel wrapper (i test la sostituiscono con
 
 Dichiarazione senza conferma = **falso successo**. Le frasi negative che contengono le stesse parole (per esempio «non ho salvato nulla») sono un caso limite: il piano stabilisce come trattarle, con un test; nel dubbio si preferisce un avviso di troppo a un falso successo che passa.
 
-**Che cosa fa.**
-1. **Primo falso successo nel turno**: la risposta non arriva all'utente. Viene tolta dalla cronologia e al modello torna un messaggio del programma, per esempio `[Controllo del programma] Hai scritto che la nota è salvata, ma add_note non è stato chiamato: la nota NON è salvata. Chiama add_note oppure di' all'utente che non è stata salvata.` (testo esatto al piano). Il modello riprova; il nuovo passaggio conta nel limite di passaggi (`MAX_STEPS`) come gli altri.
-2. **Secondo falso successo nello stesso turno**, oppure limite di passaggi già raggiunto: la risposta arriva all'utente **con un avviso aggiunto dal programma**, per esempio `⚠ Attenzione: nessuna nota è stata salvata (lo strumento non è stato chiamato).` (testo esatto al piano). Niente terzo tentativo.
-3. Ogni intervento lascia una riga di log `INFO` (`[controllo] falso successo: …, nuovo tentativo` / `…, avviso all'utente`).
+**Che cosa fa (revisione 2026-11-15: solo avviso, scelta dell'utente).**
+1. La risposta del modello arriva all'utente **con un avviso aggiunto dal programma** in fondo, per esempio `⚠ Attenzione: nessuna nota è stata salvata (lo strumento non l'ha confermato).` per il salvataggio e `⚠ Attenzione: nessuna nota è stata eliminata (lo strumento non l'ha confermato).` per l'eliminazione (testo esatto al piano). Se la risposta dichiara entrambe le cose senza conferma, compaiono entrambi gli avvisi.
+2. L'avviso resta **nella cronologia** insieme alla risposta, così nei turni successivi il modello «vede» che la nota non è stata salvata.
+3. Il controllo non chiama di nuovo il modello e non consuma passaggi.
+4. Ogni avviso lascia una riga di log `INFO` (`[controllo] falso successo: …, avviso all'utente`).
+
+**Perché niente nuovo tentativo.** La prima versione di questa sezione (2026-11-11) prevedeva di rimandare la risposta al modello una volta, con un messaggio di correzione. Misurato prima di pianificare (risposta falsa «Ho salvato la nota» + correzione, tool delle note legati, 5 prove per tipo): correzione come messaggio di sistema → 0 su 5 chiamano `add_note` (il modello ripete la frase falsa); come messaggio dell'utente → 0 su 5 (si scusa o ripete «Ho salvato»). Con `gemma-4-e2b` il nuovo tentativo costerebbe un altro giro del modello senza correggere nulla: resta solo l'avviso.
 
 **Dove sta.** Il grafo riceve un **controllo della risposta facoltativo** (una funzione passata a `build_graph`): senza controllo il grafo si comporta come oggi, quindi i test esistenti e gli altri strumenti non cambiano. La funzione che riconosce i falsi successi delle note sta nel modulo delle note dell'assistente, perché conosce i nomi e i testi dei suoi tool. Nel grafo il controllo è un passaggio riconoscibile (nodo o instradamento dopo `model`; forma esatta al piano), con lo stesso stile di `step_limit`.
 
@@ -163,10 +166,10 @@ SQLite con `sqlite3` della libreria standard. `httpx` potrebbe già essere insta
 - **Grafo** con il modello finto: `add_note` → `ToolMessage` correlato; `delete_note` annullata → nessuna eliminazione e cronologia coerente.
 - **Istruzioni**: il prompt cita i tre tool e la regola dell'ID.
 - **Controllo dei falsi successi** (revisione 2026-11-11), con il modello finto:
-  - «Ho salvato la nota» senza `add_note` → al modello torna il messaggio del programma, la risposta falsa non resta in cronologia; se il secondo tentativo chiama `add_note` → nota salvata e risposta senza avviso;
-  - due falsi successi di fila → risposta all'utente con l'avviso, nessun terzo tentativo;
-  - falso successo quando il limite di passaggi è già raggiunto → avviso subito;
-  - «Ho salvato…» dopo un `add_note` riuscito nello stesso turno → nessun intervento; dopo un `add_note` **fallito** (errore dello strumento) → intervento;
+  - «Ho salvato la nota» senza `add_note` → risposta con l'avviso di salvataggio, avviso presente anche nel messaggio in cronologia, nessuna nuova chiamata al modello (stesso numero di passaggi);
+  - risposta che dichiara salvataggio ed eliminazione senza conferme → entrambi gli avvisi;
+  - «Ho salvato…» dopo un `add_note` riuscito nello stesso turno → nessun intervento; dopo un `add_note` **fallito** (errore dello strumento) → avviso;
+  - dopo il limite di passaggi (`LIMIT_MESSAGE`) → nessun avviso (non è una risposta del modello);
   - un `add_note` riuscito in un turno **precedente** non vale come conferma per il turno attuale;
   - eliminazione: «Ho eliminato…» senza `delete_note` → intervento; dopo `delete_note` annullata dall'utente → nessun intervento;
   - risposte che non parlano di note (ora, catalogo) → nessun intervento; grafo senza controllo → comportamento invariato;
@@ -186,7 +189,7 @@ Documentata nel README, solo comandi eseguiti: avvio del servizio da solo e prov
 
 Se il modello sceglie male o dichiara un salvataggio non avvenuto, si registra il punto esatto e non si dichiara completata quella prova.
 
-*Revisione 2026-11-11:* dopo il controllo si ripete la misura con la sonda end-to-end (5 conversazioni per «Ricordami di comprare il latte», «Ricordami di consegnare il report venerdì», «Elimina la nota 99») e si riportano nel README, prima/dopo: salvataggi riusciti, falsi successi corretti al secondo tentativo, avvisi mostrati, e quanti falsi successi sono arrivati all'utente **senza** avviso (atteso: zero). Il controllo non rende il modello affidabile: lo rende **onesto verso l'utente**, e il README lo dice.
+*Revisione 2026-11-11:* dopo il controllo si ripete la misura con la sonda end-to-end (5 conversazioni per «Ricordami di comprare il latte», «Ricordami di consegnare il report venerdì», «Elimina la nota 99») e si riportano nel README, prima/dopo: salvataggi riusciti, avvisi mostrati, e quanti falsi successi sono arrivati all'utente **senza** avviso (atteso: zero). Il controllo non rende il modello affidabile: lo rende **onesto verso l'utente**, e il README lo dice.
 
 ## 9. Ordine di lavoro e branch
 
@@ -206,7 +209,7 @@ Branch `feature/note-fastapi` da `developer`; merge `--no-ff` in `developer` dop
 - Timeout HTTP 5 secondi; servizio irraggiungibile = errore di collegamento (turno interrotto).
 - Porta 8000 pubblicata in Docker; bind mount di `data/`.
 - Nessuna modifica di note esistenti.
-- *Revisione 2026-11-11:* controllo dei falsi successi nel programma (un solo nuovo tentativo, poi avviso); riconoscimento per parole; controllo passato a `build_graph` come funzione facoltativa e implementato nel modulo delle note; messaggio di correzione al modello come messaggio del programma nella conversazione (tipo esatto al piano: un messaggio di sistema a metà conversazione potrebbe non essere accettato dal modello in LM Studio, va verificato).
+- *Revisione 2026-11-11/15:* controllo dei falsi successi nel programma, **solo avviso** (scelta dell'utente dopo la misura sul nuovo tentativo); riconoscimento per parole; controllo passato a `build_graph` come funzione facoltativa e implementato nel modulo delle note; avviso aggiunto in fondo alla risposta e conservato in cronologia.
 
 ## 11. Lasciato al piano
 
