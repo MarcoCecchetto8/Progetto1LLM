@@ -49,7 +49,7 @@ def _start() -> int:
 
     from assistant.mcp_client import MCPClient, MCPConnectionError, server_command, server_env
     from assistant.notes import (LocalNotesService, NotesConnectionError, TIMEOUT, ask_in_terminal,
-                                 build_note_tools, wait_until_ready)
+                                 build_note_tools, check_note_claims, wait_until_ready)
     from lab_server.timezones import get_timezone
 
     # Con stdout/stderr rediretti Windows può usare cp1252: forza UTF-8 per non rompere "→" e "…"
@@ -89,7 +89,8 @@ def _start() -> int:
             logging.getLogger("assistant").info("[note] servizio: %s", url)
             zone = get_timezone(settings.default_timezone)
             tools = tools + build_note_tools(http, lambda: datetime.now(zone).date(), ask_in_terminal)
-            graph = build_graph(build_chat_model(settings), tools, settings.max_steps)
+            graph = build_graph(build_chat_model(settings), tools, settings.max_steps,
+                                answer_check=check_note_claims)
             return run(graph, settings)
         finally:
             if http is not None:

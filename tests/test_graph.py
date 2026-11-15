@@ -169,6 +169,13 @@ def test_system_prompt_mentions_notes_tools():
         assert word in prompt
 
 
+def test_system_prompt_notes_weekday_rule():
+    prompt = system_prompt("Europe/Rome")
+    for word in ("add_days", "«venerdì»", "non chiedergli la data", "«Nota N salvata»"):
+        assert word in prompt
+    assert "non chiedere tu conferma" not in prompt
+
+
 def test_answer_check_appends_warnings():
     check = lambda msgs: ["⚠ A", "⚠ B"]
     out = build_graph(fake(AIMessage("Fatto.")), [clock], 5, answer_check=check).invoke(start("x"))
