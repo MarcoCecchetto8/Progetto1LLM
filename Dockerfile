@@ -9,6 +9,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY assistant/ ./assistant/
 COPY lab_server/ ./lab_server/
+COPY notes_service/ ./notes_service/
 
 RUN useradd --create-home appuser
 USER appuser

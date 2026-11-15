@@ -12,6 +12,10 @@ Gli strumenti sono esposti da un **server MCP** scritto con FastMCP (`lab_server
 
 Nome, descrizione e schema degli strumenti arrivano dal server (discovery): l'assistente non li riscrive. Dopo `bind_tools` il percorso nel grafo è lo stesso di prima: il modello propone la chiamata, il nodo `tools` la esegue tramite MCP e il risultato rientra come `ToolMessage` con lo stesso `tool_call_id`.
 
+Le **note** seguono un'altra strada: sono salvate in un database SQLite (`data/notes.db`, non versionato) dietro un piccolo servizio **FastAPI** (`notes_service/`), e i tre strumenti `add_note`, `list_notes` e `delete_note` sono wrapper scritti a mano in `assistant/notes.py` che chiamano il servizio via HTTP. A differenza degli strumenti MCP, qui non c'è discovery: nome, descrizione e schema sono definiti nell'assistente. L'eliminazione chiede conferma da terminale (`[s/N]`).
+
+Un controllo del programma, non del modello, segnala i falsi successi: se la risposta finale dice di aver salvato o eliminato una nota ma nello stesso turno lo strumento corrispondente (`add_note` o `delete_note`) non ha risposto con successo, sotto la risposta compare un avviso (`⚠ Attenzione: nessuna nota è stata salvata (lo strumento non l'ha confermato).` oppure `... eliminata ...`). L'avviso fa parte della risposta e resta nella cronologia. Serve perché il modello locale a volte afferma di aver fatto un'operazione che non ha eseguito.
+
 I comandi qui sotto sono stati eseguiti su Windows 11 con PowerShell, Python 3.14.2 e Docker Desktop (Docker 29.9.2).
 
 ## Requisiti
@@ -43,6 +47,7 @@ Invoke-RestMethod http://localhost:1234/v1/models | Select-Object -ExpandPropert
 | `MAX_STEPS` | no | `5` | invocazioni massime del modello per domanda (≥ 1) |
 | `DEFAULT_TIMEZONE` | no | `Europe/Rome` | nome IANA esatto (maiuscole comprese), validato all'avvio sull'elenco del pacchetto `tzdata` |
 | `LOG_LEVEL` | no | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+| `NOTES_SERVICE_URL` | no | vuota | vuota in locale: l'assistente avvia da solo il servizio delle note su `http://127.0.0.1:8000`; con Docker Compose viene impostata a `http://notes:8000` |
 
 ## Avvio locale (PowerShell)
 
@@ -55,6 +60,8 @@ pip install -r requirements.txt
 python -m assistant
 ```
 
+Il servizio delle note viene avviato dall'assistente (all'avvio compare `[note] servizio: http://127.0.0.1:8000`) e fermato all'uscita. Finché l'assistente è in esecuzione, la documentazione interattiva è su http://127.0.0.1:8000/docs. Le note stanno in `data/notes.db`, escluso da Git.
+
 ## Avvio con Docker
 
 LM Studio resta sull'host: il container lo raggiunge tramite `host.docker.internal`.
@@ -65,6 +72,14 @@ docker compose run --rm app
 ```
 
 Si usa `run` e non `up`, perché `up` non collega il terminale all'input dell'applicazione.
+
+Compose avvia anche un secondo container, `notes`, con il servizio delle note (porta 8000 pubblicata solo su `127.0.0.1` dell'host, non raggiungibile dalla rete). Le note stanno nella cartella `data/` del progetto, montata nel container: sono le stesse dell'avvio locale. Per fermare il servizio dopo l'uso:
+
+```powershell
+docker compose down
+```
+
+Non usare insieme l'assistente locale e quello Docker: entrambi vogliono la porta 8000.
 
 ## Comandi
 
@@ -99,7 +114,7 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-Esito al 2026-11-09: 243 test superati. Alcuni test avviano davvero un server MCP di prova in stdio (`tests/mcp_test_server.py`): ogni avvio richiede alcuni secondi.
+Esito al 2026-11-09: 295 test superati. Alcuni test avviano davvero un server MCP di prova in stdio (`tests/mcp_test_server.py`): ogni avvio richiede alcuni secondi.
 
 ## Verifica diretta del server MCP
 
@@ -122,6 +137,26 @@ python -m lab_server.check get_item code=XYZ
 ```
 
 Il primo comando stampa nome, descrizione e schema di ogni strumento; il secondo il risultato (`Asia/Tokyo: ...`); il terzo `ERRORE: Fuso orario sconosciuto: "Mars/Olympus". ...` con codice d'uscita 1. Il quarto stampa `3 hl = 300 l`; il quinto `ERRORE: Conversione impossibile: hl è un'unità di volume, kg di peso.` con codice d'uscita 1. Il sesto stampa `10 * 7 / 9 = 7.777777777777778`; il settimo `ERRORE: Carattere "_" non ammesso: ...` con codice d'uscita 1. Le date: `find_holiday` stampa per esempio `Pasqua 2026 (2026-04-05, domenica) è già passata; la prossima è il 2027-03-28, domenica, fra 139 giorni. Indicativo, non normativo.` (con oggi 2026-11-09); `add_days` la data fra 24 giorni (per esempio `2026-11-09 + 24 giorni = 2026-12-03, giovedì — futura, fra 24 giorni. ...`); `date_info` con `25/12/2026` stampa `ERRORE: Data "25/12/2026" non valida: formato atteso AAAA-MM-GG ...` con codice d'uscita 1. Il catalogo dei linguaggi: `search_catalog` con `query=funzionale` stampa `Trovati 8 linguaggi per "funzionale", mostrati 5:` seguito da un elenco di codice, nome e anno (da `HS: Haskell (1990)` a `PY: Python (1991)`) e dall'invito a ripetere la ricerca con `max_results` più alto; `get_item` con `code=PY` stampa la scheda di Python (anno, autori, paradigmi, tipizzazione, descrizione); con `code=XYZ` stampa `ERRORE: Codice "XYZ" non presente nel catalogo: usa search_catalog per trovare il codice.` con codice d'uscita 1. In PowerShell un argomento con spazi va tra virgolette. Gli argomenti si scrivono come `chiave=valore`; i numeri (`value=2.5`) vengono letti come numeri.
+
+## Verifica diretta del servizio delle note
+
+Senza assistente e senza modello. In un terminale si avvia il servizio (database temporaneo, porta 8000 libera):
+
+```powershell
+python -m notes_service --db $env:TEMP\notes-prova.db
+```
+
+In un secondo terminale:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/notes -ContentType 'application/json' -Body '{"text":"prova","due_date":"2026-11-13"}'
+Invoke-RestMethod http://127.0.0.1:8000/notes
+Invoke-RestMethod -Method Delete http://127.0.0.1:8000/notes/1
+```
+
+La `POST` restituisce `{"id":1,"text":"prova","due_date":"2026-11-13","created_at":"2026-11-09T16:06:38+00:00"}` (`created_at` è in UTC), la `GET` `{"total":1,"notes":[...]}` con quella nota, la `DELETE` la nota eliminata. Il servizio scrive su stderr una riga per ogni creazione (`nota creata id=1 testo=prova scadenza=2026-11-13`) ed eliminazione. `http://127.0.0.1:8000/docs` risponde 200. Si ferma con Ctrl+C.
+
+Con Docker (2026-11-09): `docker compose config`, `docker compose build` e `docker compose up -d notes` vanno a buon fine; `docker compose ps` mostra `notes` acceso con `127.0.0.1:8000->8000/tcp` (porta pubblicata solo su localhost). Dall'host le stesse tre chiamate funzionano e `data/notes.db` viene scritto attraverso la cartella montata (l'utente non root `appuser` del container riesce a scrivere). `docker compose down` ferma e rimuove il container.
 
 ## Prova reale
 
@@ -207,6 +242,28 @@ Due strumenti sul catalogo dei linguaggi di programmazione (20 linguaggi, file l
 
 Anche due domande su Python e sul linguaggio C hanno prodotto la sequenza `search_catalog` → `get_item` (`PY`, `C`); la ricerca «C» ha trovato solo C e C++.
 
+### Prova reale delle note
+
+Tre strumenti sulle note persistenti (`add_note`, `list_notes`, `delete_note`), con il servizio FastAPI. Va provata in locale e con Docker, con LM Studio acceso.
+
+Esiti del 2026-11-15 con `google/gemma-4-e2b`, domande inviate da pipe (la conferma `[s/N]` legge la riga successiva dell'input, quindi `s` o `n` vanno sulla riga dopo la domanda).
+
+| Domanda | Atteso | Esito |
+|---|---|---|
+| `Ricordami di comprare il latte` (e altre due note con scadenza AAAA-MM-GG) | una chiamata `add_note` per richiesta | ok: 3 note salvate, scadenze corrette |
+| `Ricordami di consegnare il report venerdì` | una sola chiamata `add_note`, scadenza = il prossimo venerdì | **non superata (limite del modello)**: vedi sotto |
+| `Che note ho?` | `list_notes`, ordine per scadenza | ok: scadenze in ordine, poi quelle senza scadenza |
+| `Elimina la nota 99` | errore chiaro, nessuna richiesta di conferma, nulla eliminato | ok 4 volte su 5 (errore «Nessuna nota con ID 99»); 1 volta il modello non chiama `delete_note` e risponde che dovrebbe prima verificare |
+| eliminazione di una nota vera, rispondendo `n` e poi `s` | con `n` la nota resta, con `s` sparisce | ok |
+| riavvio dell'assistente | le note salvate ci sono ancora; le stesse note si vedono da Docker | ok in locale e con Docker (`docker compose run --rm -T app`); una nota salvata da Docker si ritrova nel file locale `data/notes.db` |
+| `Elimina le note 3 e 4`, rispondendo `s` e poi `n` | le due conferme arrivano una alla volta, ognuna con la sua nota | ok: la 3 eliminata, la 4 resta |
+| Ctrl+C alla domanda `[s/N]` | nessuna eliminazione, «Arrivederci!», porta 8000 liberata | ok (prova a mano dell'utente) |
+| `/docs` nel browser mentre l'assistente è in esecuzione | pagina della documentazione interattiva | ok (prova a mano dell'utente) |
+
+**Limite del modello: giorni della settimana.** Con «Ricordami di consegnare il report venerdì» il modello chiama `get_current_time` e spesso `add_days` con un numero di giorni sbagliato, poi risponde «Ho salvato un promemoria…» **senza chiamare `add_note`**. Misura su 5 conversazioni (archivio temporaneo): prima della modifica al prompt 0 salvataggi; dopo, 1 su 5; con il controllo dei falsi successi 0 su 5, ma in tutte e 5 la risposta arriva con l'avviso `⚠ Attenzione: nessuna nota è stata salvata…`. Il rimedio è indicare la data nel formato AAAA-MM-GG.
+
+**Falsi successi.** Senza controllo il modello dichiarava note salvate che non esistevano (1 volta su 5 con «Ricordami di comprare il latte», 3 su 5 con «venerdì»). Con il controllo, nelle stesse misure nessun falso successo è arrivato all'utente senza avviso. Il controllo non rende il modello affidabile: lo rende onesto verso l'utente. Può comparire un avviso ridondante quando il modello stesso dice che nulla è stato eliminato o salvato.
+
 ## Diagnosi
 
 | Sintomo | Causa probabile e rimedio |
@@ -221,5 +278,7 @@ Anche due domande su Python e sul linguaggio C hanno prodotto la sequenza `searc
 | `Impossibile avviare il server degli strumenti (...)` all'avvio | il server MCP non parte: controllare con `python -m lab_server.check` e reinstallare le dipendenze (`pip install -r requirements.txt`) |
 | `Il server degli strumenti non espone nessuno strumento.` all'avvio | catalogo vuoto: controllare con `python -m lab_server.check` |
 | `Il server degli strumenti non risponde: esci e riavvia l'assistente.` | il server MCP si è fermato durante la sessione: uscire e riavviare l'assistente (con `LOG_LEVEL=DEBUG` si vede il dettaglio) |
+| `La porta 8000 è già in uso ...` all'avvio | un altro servizio delle note è già acceso (di solito quello di Docker): `docker compose down` e riavviare |
+| `Il servizio delle note non risponde: esci e riavvia l'assistente.` | il servizio delle note si è fermato durante la sessione: uscire e riavviare l'assistente |
 | Il modello risponde senza riga `[strumento]` nel log | il modello non ha chiamato lo strumento: la risposta non è verificata; riformulare la domanda |
 | Il container non raggiunge LM Studio | controllare che il server sia attivo sull'host; se serve, attivare in LM Studio l'opzione per servire sulla rete locale e riprovare |

@@ -21,6 +21,7 @@ class Settings:
     max_steps: int
     default_timezone: str
     log_level: str
+    notes_service_url: str = ""
 
 
 def _get(env: Mapping[str, str], name: str, default: str | None = None) -> str:
@@ -61,4 +62,6 @@ def load_settings(env: Mapping[str, str]) -> Settings:
     if log_level not in LOG_LEVELS:
         raise ConfigError(f"LOG_LEVEL non valida: '{log_level}' (valori ammessi: {', '.join(LOG_LEVELS)}).")
 
-    return Settings(base_url, model, timeout, temperature, max_steps, timezone, log_level)
+    notes_url = env.get("NOTES_SERVICE_URL", "").strip().rstrip("/")
+
+    return Settings(base_url, model, timeout, temperature, max_steps, timezone, log_level, notes_url)
