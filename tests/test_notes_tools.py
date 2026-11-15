@@ -206,6 +206,19 @@ def test_claim_passive_and_accents_warn(answer):
     assert check_note_claims(turn(answer)) == [SAVE_WARNING]
 
 
+@pytest.mark.parametrize("answer", ["L'ho salvata nelle tue note.", "Ok, l'ho aggiunta alle note.",
+                                    "Ho aggiunto il promemoria."])
+def test_claim_clitic_and_added_note_warn(answer):
+    # il participio concorda con il pronome: l'ho salvata, l'ho aggiunta
+    assert check_note_claims(turn(answer)) == [SAVE_WARNING]
+
+
+def test_added_days_is_not_a_claim():
+    # «aggiunto» senza la parola nota/promemoria parla d'altro (es. add_days)
+    days = tool_msg("2026-11-13", "add_days")
+    assert check_note_claims(turn("Ho aggiunto 5 giorni a oggi: sarà venerdì 13 novembre.", days)) == []
+
+
 def test_add_note_success_confirms():
     msgs = turn("Ho salvato la nota.", tool_msg("Nota 1 salvata: «x»", "add_note"))
     assert check_note_claims(msgs) == []
@@ -229,6 +242,10 @@ def test_other_tool_does_not_confirm():
 @pytest.mark.parametrize("answer", ["Ho eliminato la nota 3.", "La nota 3 è stata cancellata."])
 def test_delete_claim_without_tool_warns(answer):
     assert check_note_claims(turn(answer)) == [DELETE_WARNING]
+
+
+def test_delete_clitic_claim_warns():
+    assert check_note_claims(turn("Fatto! L'ho eliminata.")) == [DELETE_WARNING]
 
 
 def test_delete_cancelled_confirms():

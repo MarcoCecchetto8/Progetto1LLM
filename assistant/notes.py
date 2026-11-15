@@ -24,12 +24,15 @@ SAVE_WARNING = "⚠ Attenzione: nessuna nota è stata salvata (lo strumento non 
 DELETE_WARNING = "⚠ Attenzione: nessuna nota è stata eliminata (lo strumento non l'ha confermato)."
 
 # Solo forme verbali di azione compiuta: gli aggettivi ("Nessuna nota salvata") non devono scattare.
+# Desinenza libera perché il participio concorda con il pronome ("l'ho salvata"); "aggiunto" conta
+# solo se segue nota/promemoria, altrimenti "ho aggiunto 5 giorni" (add_days) darebbe un falso avviso.
 _SAVE_CLAIM = re.compile(
-    r"\bho\s+(?:gia\s+)?(salvato|memorizzato|annotato|registrato|aggiunto)\b"
-    r"|\b(?:e'?|sono)\s+stat[aoie]\s+(salvat|memorizzat|annotat|registrat|aggiunt)[aoie]\b"
+    r"\bho\s+(?:gia\s+)?(salvat|memorizzat|annotat|registrat)[aoie]\b"
+    r"|\bho\s+(?:gia\s+)?aggiunt[aoie]\s+(?:\w+\s+){0,2}?(?:nota|note|promemoria)\b"
+    r"|\b(?:e'?|sono)\s+stat[aoie]\s+(salvat|memorizzat|annotat|registrat)[aoie]\b"
 )
 _DELETE_CLAIM = re.compile(
-    r"\bho\s+(?:gia\s+)?(eliminato|cancellato|rimosso)\b"
+    r"\bho\s+(?:gia\s+)?(eliminat|cancellat|rimoss)[aoie]\b"
     r"|\b(?:e'?|sono)\s+stat[aoie]\s+(eliminat|cancellat|rimoss)[aoie]\b"
 )
 
