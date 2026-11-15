@@ -2,6 +2,7 @@
 
 import json
 import logging
+from collections.abc import Callable
 from typing import Annotated, TypedDict
 
 from langchain_core.language_models import BaseChatModel
@@ -72,7 +73,8 @@ def log_tool_calls(calls: list[dict], messages: list) -> None:
                     json.dumps(call["args"], ensure_ascii=False), outcome, message.content)
 
 
-def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int):
+def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
+                answer_check: Callable[[list[AnyMessage]], list[str]] | None = None):
     model_with_tools = model.bind_tools(tools)
     # Gli errori dello strumento tornano al modello come ToolMessage con stato "error".
     # Niente wrap_tool_call: con un wrapper il ToolNode convertirebbe in messaggio anche gli errori di collegamento
@@ -87,7 +89,7 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int):
     def route_after_model(state: State) -> str:
         last = state["messages"][-1]
         if not getattr(last, "tool_calls", None):
-            target = END
+            target = "answer_check" if answer_check else END
         elif state["steps"] < max_steps:
             target = "tools"
         else:
@@ -111,12 +113,28 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int):
             logger.debug("[grafo] messaggio rimosso: %s %s", type(m).__name__, detail)
         return {"messages": [RemoveMessage(id=m.id) for m in removed] + [AIMessage(LIMIT_MESSAGE)]}
 
+    def answer_check_node(state: State) -> dict:
+        # Controllo facoltativo: non richiama il modello e non cambia steps; sostituisce solo l'ultima risposta (stesso id)
+        last = state["messages"][-1]
+        if not isinstance(last.content, str):
+            return {}
+        warnings = answer_check(state["messages"])
+        if not warnings:
+            return {}
+        logger.info("[controllo] falso successo: avviso all'utente → %s", " | ".join(warnings))
+        return {"messages": [AIMessage(content=last.content + "\n\n" + "\n".join(warnings), id=last.id)]}
+
     graph = StateGraph(State)
     graph.add_node("model", model_node)
     graph.add_node("tools", tools_node)
     graph.add_node("step_limit", step_limit_node)
     graph.add_edge(START, "model")
-    graph.add_conditional_edges("model", route_after_model, ["tools", "step_limit", END])
+    destinations = ["tools", "step_limit", END]
+    if answer_check:
+        graph.add_node("answer_check", answer_check_node)
+        graph.add_edge("answer_check", END)
+        destinations.append("answer_check")
+    graph.add_conditional_edges("model", route_after_model, destinations)
     graph.add_edge("tools", "model")
     graph.add_edge("step_limit", END)
     return graph.compile()

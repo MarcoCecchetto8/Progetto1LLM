@@ -167,3 +167,47 @@ def test_system_prompt_mentions_notes_tools():
     prompt = system_prompt("Europe/Rome")
     for word in ("add_note", "list_notes", "delete_note", "ID esatto", "chiederà conferma"):
         assert word in prompt
+
+
+def test_answer_check_appends_warnings():
+    check = lambda msgs: ["⚠ A", "⚠ B"]
+    out = build_graph(fake(AIMessage("Fatto.")), [clock], 5, answer_check=check).invoke(start("x"))
+    last = out["messages"][-1]
+    assert isinstance(last, AIMessage) and last.content == "Fatto.\n\n⚠ A\n⚠ B"
+    assert out["steps"] == 1 and len(out["messages"]) == 3
+
+
+def test_answer_check_without_warnings_leaves_answer():
+    out = build_graph(fake(AIMessage("Fatto.")), [clock], 5, answer_check=lambda msgs: []).invoke(start("x"))
+    assert out["messages"][-1].content == "Fatto."
+
+
+def test_answer_check_receives_turn_messages():
+    seen = []
+    check = lambda msgs: seen.append(list(msgs)) or []
+    model = fake(tool_call({}, "a"), AIMessage("Sono le 14:32"))
+    build_graph(model, [clock], 5, answer_check=check).invoke(start("che ora è?"))
+    assert len(seen) == 1
+    assert any(isinstance(m, ToolMessage) and m.name == "get_current_time" for m in seen[0])
+    assert isinstance(seen[0][-1], AIMessage) and seen[0][-1].content == "Sono le 14:32"
+
+
+def test_answer_check_skipped_on_step_limit():
+    calls = []
+    check = lambda msgs: calls.append(1) or ["⚠"]
+    model = fake(*[tool_call({}, f"c{i}") for i in range(10)])
+    out = build_graph(model, [clock], 5, answer_check=check).invoke(start("che ora è?"))
+    assert out["messages"][-1].content == LIMIT_MESSAGE and calls == []
+
+
+def test_answer_check_skips_non_string_content():
+    content = [{"type": "text", "text": "Fatto."}]
+    out = build_graph(fake(AIMessage(content=content)), [clock], 5, answer_check=lambda msgs: ["⚠"]).invoke(start("x"))
+    assert out["messages"][-1].content == content
+
+
+def test_answer_check_logged(caplog):
+    check = lambda msgs: ["⚠ A", "⚠ B"]
+    with caplog.at_level(logging.INFO, logger="assistant.graph"):
+        build_graph(fake(AIMessage("Fatto.")), [clock], 5, answer_check=check).invoke(start("x"))
+    assert "[controllo] falso successo: avviso all'utente → ⚠ A | ⚠ B" in caplog.text
