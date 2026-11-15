@@ -12,7 +12,8 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langchain_core.tools import ToolException
 
 from assistant.graph import build_graph
-from assistant.notes import NotesConnectionError, ask_in_terminal, build_note_tools, due_phrase
+from assistant.notes import (DELETE_WARNING, SAVE_WARNING, NotesConnectionError, ask_in_terminal,
+                             build_note_tools, check_note_claims, due_phrase)
 from notes_service.app import create_app
 from tests.fakes import fake, tool_call
 
@@ -180,4 +181,90 @@ def test_graph_delete_declined(client):
     out = build_graph(model, list(t.values()), 5).invoke(_start("elimina"))
     msgs = [m for m in out["messages"] if isinstance(m, ToolMessage)]
     assert msgs[0].status == "success" and "annullata" in msgs[0].content
+    assert client.get("/notes/1").status_code == 200
+
+
+def turn(answer, *tools, history=()):
+    return [SystemMessage("s"), *history, HumanMessage("q"), *tools, AIMessage(answer)]
+
+
+def tool_msg(content, name, status="success"):
+    return ToolMessage(content, tool_call_id="t", name=name, status=status)
+
+
+@pytest.mark.parametrize("answer", [
+    'Ho salvato la nota: "comprare il latte".',
+    'Ho salvato un promemoria per te: "consegnare il report" venerdì.',
+    'Ho salvato il promemoria: "comprare il latte".',
+])
+def test_claim_without_add_note_warns(answer):
+    assert check_note_claims(turn(answer)) == [SAVE_WARNING]
+
+
+@pytest.mark.parametrize("answer", ["La nota è stata salvata.", "La nota e' stata memorizzata"])
+def test_claim_passive_and_accents_warn(answer):
+    assert check_note_claims(turn(answer)) == [SAVE_WARNING]
+
+
+def test_add_note_success_confirms():
+    msgs = turn("Ho salvato la nota.", tool_msg("Nota 1 salvata: «x»", "add_note"))
+    assert check_note_claims(msgs) == []
+
+
+def test_add_note_error_does_not_confirm():
+    msgs = turn("Ho salvato la nota.", tool_msg("Nota 1 salvata: «x»", "add_note", "error"))
+    assert check_note_claims(msgs) == [SAVE_WARNING]
+
+
+def test_previous_turn_does_not_confirm():
+    history = [HumanMessage("prima"), tool_msg("Nota 1 salvata: «x»", "add_note"), AIMessage("Fatto")]
+    assert check_note_claims(turn("Ho salvato la nota.", history=history)) == [SAVE_WARNING]
+
+
+def test_other_tool_does_not_confirm():
+    msgs = turn('Ho salvato un promemoria per venerdì.', tool_msg("2026-11-13", "add_days"))
+    assert check_note_claims(msgs) == [SAVE_WARNING]
+
+
+@pytest.mark.parametrize("answer", ["Ho eliminato la nota 3.", "La nota 3 è stata cancellata."])
+def test_delete_claim_without_tool_warns(answer):
+    assert check_note_claims(turn(answer)) == [DELETE_WARNING]
+
+
+def test_delete_cancelled_confirms():
+    cancelled = tool_msg("Eliminazione della nota 3 annullata dall'utente.", "delete_note")
+    assert check_note_claims(turn("Va bene, non ho eliminato nulla.", cancelled)) == []
+
+
+def test_both_claims_warn_in_order():
+    answer = "Ho salvato la nuova nota e ho eliminato la vecchia."
+    assert check_note_claims(turn(answer)) == [SAVE_WARNING, DELETE_WARNING]
+
+
+@pytest.mark.parametrize("answer", [
+    "Non hai note salvate.",
+    "Nessuna nota salvata.",
+    "Non è stata trovata alcuna nota con l'ID 99 da eliminare.",
+    "Dovrai prima confermare l'eliminazione della nota con ID 99.",
+    "Sono le 14:32.",
+    "Ti ricordo di consegnare il report venerdì.",
+])
+def test_no_claim_no_warning(answer):
+    assert check_note_claims(turn(answer)) == []
+
+
+def test_non_string_answer_ignored():
+    answer = AIMessage(content=[{"type": "text", "text": "Ho salvato la nota."}])
+    assert check_note_claims([SystemMessage("s"), HumanMessage("q"), answer]) == []
+
+
+def test_graph_appends_save_warning(client):
+    tools = list(make_tools(client).values())
+    out = build_graph(fake(AIMessage("Ho salvato la nota.")), tools, 5,
+                      answer_check=check_note_claims).invoke(_start("annota latte"))
+    assert out["messages"][-1].content == "Ho salvato la nota.\n\n" + SAVE_WARNING
+
+    model = fake(tool_call({"text": "latte"}, "a", name="add_note"), AIMessage("Ho salvato la nota."))
+    out = build_graph(model, tools, 5, answer_check=check_note_claims).invoke(_start("annota latte"))
+    assert out["messages"][-1].content == "Ho salvato la nota."
     assert client.get("/notes/1").status_code == 200

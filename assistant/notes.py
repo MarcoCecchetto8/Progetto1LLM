@@ -1,21 +1,37 @@
 """Tool delle note: wrapper LangChain sul servizio HTTP FastAPI, con conferma prima di eliminare."""
 
 import logging
+import re
 import subprocess
 import sys
 import threading
 import time
+import unicodedata
 from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 
 import httpx
+from langchain_core.messages import AnyMessage, HumanMessage, ToolMessage
 from langchain_core.tools import BaseTool, ToolException, tool
 
 logger = logging.getLogger("assistant.notes")
 
 TIMEOUT = 5.0
 YES = {"s", "si", "sì"}
+
+SAVE_WARNING = "⚠ Attenzione: nessuna nota è stata salvata (lo strumento non l'ha confermato)."
+DELETE_WARNING = "⚠ Attenzione: nessuna nota è stata eliminata (lo strumento non l'ha confermato)."
+
+# Solo forme verbali di azione compiuta: gli aggettivi ("Nessuna nota salvata") non devono scattare.
+_SAVE_CLAIM = re.compile(
+    r"\bho\s+(?:gia\s+)?(salvato|memorizzato|annotato|registrato|aggiunto)\b"
+    r"|\b(?:e'?|sono)\s+stat[aoie]\s+(salvat|memorizzat|annotat|registrat|aggiunt)[aoie]\b"
+)
+_DELETE_CLAIM = re.compile(
+    r"\bho\s+(?:gia\s+)?(eliminato|cancellato|rimosso)\b"
+    r"|\b(?:e'?|sono)\s+stat[aoie]\s+(eliminat|cancellat|rimoss)[aoie]\b"
+)
 
 
 class NotesConnectionError(Exception):
@@ -108,6 +124,28 @@ def build_note_tools(client: httpx.Client, today: Callable[[], date],
             return f"Nota {note_id} eliminata: «{note['text']}»."
 
     return [add_note, list_notes, delete_note]
+
+
+def _normalize(text: str) -> str:
+    decomposed = unicodedata.normalize("NFD", text.casefold())
+    return "".join(c for c in decomposed if not unicodedata.combining(c))
+
+
+def check_note_claims(messages: list[AnyMessage]) -> list[str]:
+    """Avvisi per le risposte che dichiarano un salvataggio o un'eliminazione mai confermati da uno strumento."""
+    answer = messages[-1].content
+    if not isinstance(answer, str):
+        return []
+    last_human = max((i for i, m in enumerate(messages) if isinstance(m, HumanMessage)), default=-1)
+    confirmed = {m.name for m in messages[last_human + 1:]
+                 if isinstance(m, ToolMessage) and m.status != "error"}
+    text = _normalize(answer)
+    warnings = []
+    if _SAVE_CLAIM.search(text) and "add_note" not in confirmed:
+        warnings.append(SAVE_WARNING)
+    if _DELETE_CLAIM.search(text) and "delete_note" not in confirmed:
+        warnings.append(DELETE_WARNING)
+    return warnings
 
 
 def _responds(url: str) -> bool:
