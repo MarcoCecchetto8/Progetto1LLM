@@ -246,20 +246,23 @@ Anche due domande su Python e sul linguaggio C hanno prodotto la sequenza `searc
 
 Tre strumenti sulle note persistenti (`add_note`, `list_notes`, `delete_note`), con il servizio FastAPI. Va provata in locale e con Docker, con LM Studio acceso.
 
+Esiti del 2026-11-15 con `google/gemma-4-e2b`, domande inviate da pipe (la conferma `[s/N]` legge la riga successiva dell'input, quindi `s` o `n` vanno sulla riga dopo la domanda).
+
 | Domanda | Atteso | Esito |
 |---|---|---|
-| `Ricordami di consegnare il report venerdì` | una sola chiamata `add_note`, scadenza = il prossimo venerdì | da provare |
-| `Che note ho?` | `list_notes`, ordine per scadenza | da provare |
-| `Elimina la nota 99` | errore chiaro, nessuna richiesta di conferma, nulla eliminato | da provare |
-| eliminazione di una nota vera, rispondendo `n` e poi `s` | con `n` la nota resta, con `s` sparisce | da provare |
-| riavvio dell'assistente | le note salvate ci sono ancora; le stesse note si vedono da Docker | da provare |
-| `elimina le note 1 e 2` | le due conferme arrivano una alla volta, ognuna con la sua nota | da provare |
-| Ctrl+C alla domanda `[s/N]` | nessuna eliminazione, «Arrivederci!», porta 8000 liberata | da provare |
-| `/docs` nel browser mentre l'assistente è in esecuzione | pagina della documentazione interattiva | da provare |
+| `Ricordami di comprare il latte` (e altre due note con scadenza AAAA-MM-GG) | una chiamata `add_note` per richiesta | ok: 3 note salvate, scadenze corrette |
+| `Ricordami di consegnare il report venerdì` | una sola chiamata `add_note`, scadenza = il prossimo venerdì | **non superata (limite del modello)**: vedi sotto |
+| `Che note ho?` | `list_notes`, ordine per scadenza | ok: scadenze in ordine, poi quelle senza scadenza |
+| `Elimina la nota 99` | errore chiaro, nessuna richiesta di conferma, nulla eliminato | ok 4 volte su 5 (errore «Nessuna nota con ID 99»); 1 volta il modello non chiama `delete_note` e risponde che dovrebbe prima verificare |
+| eliminazione di una nota vera, rispondendo `n` e poi `s` | con `n` la nota resta, con `s` sparisce | ok |
+| riavvio dell'assistente | le note salvate ci sono ancora; le stesse note si vedono da Docker | ok in locale e con Docker (`docker compose run --rm -T app`); una nota salvata da Docker si ritrova nel file locale `data/notes.db` |
+| `Elimina le note 3 e 4`, rispondendo `s` e poi `n` | le due conferme arrivano una alla volta, ognuna con la sua nota | ok: la 3 eliminata, la 4 resta |
+| Ctrl+C alla domanda `[s/N]` | nessuna eliminazione, «Arrivederci!», porta 8000 liberata | da provare (a mano) |
+| `/docs` nel browser mentre l'assistente è in esecuzione | pagina della documentazione interattiva | da provare (a mano) |
 
-Le eliminazioni vanno provate a mano nel terminale, perché con le domande inviate da pipe la conferma legge la riga successiva (qualsiasi risposta diversa da s/si/sì annulla).
+**Limite del modello: giorni della settimana.** Con «Ricordami di consegnare il report venerdì» il modello chiama `get_current_time` e spesso `add_days` con un numero di giorni sbagliato, poi risponde «Ho salvato un promemoria…» **senza chiamare `add_note`**. Misura su 5 conversazioni (archivio temporaneo): prima della modifica al prompt 0 salvataggi; dopo, 1 su 5; con il controllo dei falsi successi 0 su 5, ma in tutte e 5 la risposta arriva con l'avviso `⚠ Attenzione: nessuna nota è stata salvata…`. Il rimedio è indicare la data nel formato AAAA-MM-GG.
 
-Se il modello sceglie male o dichiara un salvataggio non avvenuto, va annotato il punto esatto.
+**Falsi successi.** Senza controllo il modello dichiarava note salvate che non esistevano (1 volta su 5 con «Ricordami di comprare il latte», 3 su 5 con «venerdì»). Con il controllo, nelle stesse misure nessun falso successo è arrivato all'utente senza avviso. Il controllo non rende il modello affidabile: lo rende onesto verso l'utente. Può comparire un avviso ridondante quando il modello stesso dice che nulla è stato eliminato o salvato.
 
 ## Diagnosi
 
