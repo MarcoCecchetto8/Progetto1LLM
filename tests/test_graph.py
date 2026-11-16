@@ -2,13 +2,17 @@ import logging
 import os
 import sys
 
+import httpx
+import openai
 import pytest
+from langchain_core.exceptions import OutputParserException
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
 
 from assistant.graph import LIMIT_MESSAGE, build_graph, system_prompt
 from assistant.llm import REASONING_KEY
 from assistant.mcp_client import MCPClient, MCPConnectionError
+from assistant.router import REFUSAL, Route
 from tests.fakes import fake, fake_clock as clock, tool_call
 
 
@@ -239,3 +243,58 @@ def test_answer_check_logged(caplog):
     with caplog.at_level(logging.INFO, logger="assistant.graph"):
         build_graph(fake(AIMessage("Fatto.")), [clock], 5, answer_check=check).invoke(start("x"))
     assert "[controllo] falso successo: avviso all'utente → ⚠ A | ⚠ B" in caplog.text
+
+
+def make_router(category="conversazione", reason="saluto", error=None):
+    calls = []
+
+    def router(messages):
+        calls.append(messages)
+        if error:
+            raise error
+        return Route(categoria=category, motivo=reason)
+
+    router.calls = calls
+    return router
+
+
+def test_router_in_scope_runs_agent(caplog):
+    router = make_router()
+    with caplog.at_level(logging.INFO, logger="assistant.graph"):
+        out = build_graph(fake(AIMessage("Ciao!")), [clock], 5, router=router).invoke(start("ciao"))
+    assert out["messages"][-1].content == "Ciao!"
+    assert len(router.calls) == 1
+    assert "[router] categoria=conversazione motivo=saluto → agente" in caplog.text
+
+
+def test_router_out_of_scope_refuses_without_agent(caplog):
+    model = fake(AIMessage("non deve comparire"))
+    router = make_router("fuori_ambito", "cucina")
+    with caplog.at_level(logging.DEBUG, logger="assistant.graph"):
+        out = build_graph(model, [clock], 5, router=router).invoke(start("come si fa la carbonara?"))
+    assert out["messages"][-1].content == REFUSAL.format(motivo="cucina")
+    assert next(model.messages).content == "non deve comparire"
+    assert out["steps"] == 0
+    assert "[router] categoria=fuori_ambito motivo=cucina → rifiuto" in caplog.text
+    assert "[grafo] nodo model" not in caplog.text
+
+
+def test_router_invalid_output_falls_back_to_agent(caplog):
+    router = make_router(error=OutputParserException("x"))
+    with caplog.at_level(logging.WARNING, logger="assistant.graph"):
+        out = build_graph(fake(AIMessage("Ciao!")), [clock], 5, router=router).invoke(start("ciao"))
+    assert out["messages"][-1].content == "Ciao!"
+    assert any(r.levelno == logging.WARNING and "[router] risposta non valida" in r.getMessage()
+               for r in caplog.records)
+
+
+def test_router_api_error_propagates():
+    error = openai.APIConnectionError(request=httpx.Request("POST", "http://localhost:1234/v1"))
+    graph = build_graph(fake(AIMessage("Ciao!")), [clock], 5, router=make_router(error=error))
+    with pytest.raises(openai.APIConnectionError):
+        graph.invoke(start("ciao"))
+
+
+def test_router_does_not_add_messages():
+    out = build_graph(fake(AIMessage("Ciao!")), [clock], 5, router=make_router()).invoke(start("ciao"))
+    assert [type(m) for m in out["messages"]] == [SystemMessage, HumanMessage, AIMessage]

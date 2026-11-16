@@ -3,6 +3,7 @@ from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, Too
 
 from assistant.graph import LIMIT_MESSAGE, build_graph
 from assistant.llm import REASONING_KEY
+from assistant.router import REFUSAL, Route
 from assistant.stream_view import TurnView, stream_turn
 from tests.fakes import FakeStreamGraph, fake, fake_clock, tool_call
 
@@ -151,3 +152,27 @@ def test_stream_turn_with_real_graph():
     expected = build().invoke(state)
     assert [(type(m), m.content) for m in final["messages"]] == \
            [(type(m), m.content) for m in expected["messages"]]
+
+
+def test_stream_turn_refusal_printed_once():
+    view, out = make_view()
+    refusal = REFUSAL.format(motivo="cucina")
+    graph = FakeStreamGraph([
+        ("messages", (AIMessageChunk("testo del router"), {"langgraph_node": "router"})),
+        ("updates", {"router": {"route": "fuori_ambito"}}),
+        ("updates", {"refusal": {"messages": [AIMessage(refusal)]}}),
+    ], {})
+    stream_turn(graph, {}, view)
+    text = "".join(out)
+    assert text == refusal + "\n"
+    assert "testo del router" not in text
+
+
+def test_stream_turn_with_real_graph_refusal():
+    router = lambda messages: Route(categoria="fuori_ambito", motivo="cucina")
+    graph = build_graph(fake(AIMessage("non deve comparire")), [fake_clock], 5, router=router)
+    view, out = make_view()
+    stream_turn(graph, {"messages": [HumanMessage("carbonara?")], "steps": 0}, view)
+    text = "".join(out)
+    assert REFUSAL.format(motivo="cucina") in text
+    assert "non deve comparire" not in text

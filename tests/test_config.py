@@ -1,6 +1,8 @@
+from pathlib import Path
+
 import pytest
 
-from assistant.config import ConfigError, load_settings
+from assistant.config import ConfigError, load_scope, load_settings
 
 BASE = {"LMSTUDIO_BASE_URL": "http://localhost:1234/v1", "LMSTUDIO_MODEL": "google/gemma-4-e2b"}
 
@@ -58,3 +60,26 @@ def test_show_reasoning(value, expected):
 def test_show_reasoning_invalid():
     with pytest.raises(ConfigError, match=r"SHOW_REASONING non valida: 'forse' \(valori ammessi: true, false\)\."):
         load_settings({**BASE, "SHOW_REASONING": "forse"})
+
+
+def test_scope_file_default_and_override():
+    assert load_settings(BASE).scope_file == "config/ambito.txt"
+    assert load_settings({**BASE, "SCOPE_FILE": "altro.txt"}).scope_file == "altro.txt"
+
+
+def test_load_scope_relative_and_absolute(tmp_path):
+    (tmp_path / "a.txt").write_text("  Ambito di prova \n", encoding="utf-8")
+    assert load_scope("a.txt", tmp_path) == "Ambito di prova"
+    assert load_scope(str(tmp_path / "a.txt"), Path("/altrove")) == "Ambito di prova"
+
+
+def test_load_scope_missing_or_blank(tmp_path):
+    (tmp_path / "vuoto.txt").write_text("  \n ", encoding="utf-8")
+    for name in ("manca.txt", "vuoto.txt"):
+        with pytest.raises(ConfigError, match="SCOPE_FILE non valida"):
+            load_scope(name, tmp_path)
+
+
+def test_real_scope_file():
+    text = load_scope("config/ambito.txt", Path(__file__).resolve().parent.parent)
+    assert text and "Esempi:" in text
