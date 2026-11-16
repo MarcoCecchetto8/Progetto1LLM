@@ -10,6 +10,8 @@ REVIEWER_INSTRUCTIONS = (
     "Sei il revisore dell'assistente del laboratorio. Ricevi la domanda dell'utente e la risposta proposta dall'assistente.\n"
     "Decidi se la risposta è coerente con la domanda: risponde a TUTTE le parti richieste e non devia dal tema.\n"
     "Non controllare se i numeri o i fatti sono giusti: controlla solo che ogni parte della domanda abbia una risposta.\n"
+    "Se l'assistente spiega perché una parte della domanda non si può soddisfare "
+    "(per esempio uno strumento non la supporta), quella parte ha una risposta.\n"
     "Un saluto o una frase di cortesia ricevono una risposta coerente se l'assistente risponde in modo cortese.\n"
     "Se non è coerente, il motivo dice in una frase breve in italiano che cosa manca o che cosa è fuori tema."
 )

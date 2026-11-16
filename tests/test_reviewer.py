@@ -61,3 +61,8 @@ def test_review_lines():
     assert review_line("retry", "manca X.", 1) == "[revisore] non coerente: manca X. → nuova risposta"
     assert review_line("limit", "manca X.", 2) == "[revisore] limite raggiunto (2 revisioni): resta l'ultima risposta"
     assert review_line("invalid", "", 0) == "[revisore] verdetto non valido: risposta approvata"
+
+
+def test_instructions_accept_explained_impossibility():
+    # Prova reale: senza questa frase il revisore bocciava 3 volte una conversione spiegata come impossibile
+    assert "spiega perché una parte della domanda non si può soddisfare" in REVIEWER_INSTRUCTIONS
