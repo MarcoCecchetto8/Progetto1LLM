@@ -7,7 +7,7 @@ from typing import Annotated, NotRequired, TypedDict
 
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, RemoveMessage
+from langchain_core.messages import AIMessage, AnyMessage, RemoveMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool, ToolException
 from langgraph.graph import END, START, StateGraph
@@ -15,6 +15,7 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
 from assistant.llm import REASONING_KEY
+from assistant.reviewer import last_question_index
 from assistant.router import Route, refusal_text
 
 logger = logging.getLogger("assistant.graph")
@@ -118,7 +119,7 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
     def step_limit_node(state: State) -> dict:
         logger.info("[grafo] limite di passaggi raggiunto (%d/%d)", state["steps"], max_steps)
         messages = state["messages"]
-        last_human = max(i for i, m in enumerate(messages) if isinstance(m, HumanMessage))
+        last_human = last_question_index(messages)
         removed = messages[last_human + 1:]
         logger.debug("[grafo] nodo step_limit: rimossi %d messaggi", len(removed))
         for m in removed:

@@ -12,6 +12,7 @@ from langchain_core.tools import tool
 from assistant.graph import LIMIT_MESSAGE, build_graph, system_prompt
 from assistant.llm import REASONING_KEY
 from assistant.mcp_client import MCPClient, MCPConnectionError
+from assistant.reviewer import feedback_message
 from assistant.router import REFUSAL, Route
 from tests.fakes import fake, fake_clock as clock, tool_call
 
@@ -39,6 +40,14 @@ def test_step_limit_cleans_history():
     assert out["steps"] == 5
     assert [m.content for m in out["messages"][1:]] == ["che ora è?", LIMIT_MESSAGE]
     assert not any(isinstance(m, ToolMessage) for m in out["messages"])
+
+
+def test_step_limit_starts_from_real_question():
+    model = fake(*[tool_call({}, f"c{i}") for i in range(10)])
+    state = start("che ora è?")
+    state["messages"] += [AIMessage("bozza"), feedback_message("manca X.")]
+    out = build_graph(model, [clock], 5).invoke(state)
+    assert [m.content for m in out["messages"][1:]] == ["che ora è?", LIMIT_MESSAGE]
 
 
 def test_previous_turns_survive_cleanup():

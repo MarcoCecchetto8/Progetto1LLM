@@ -12,6 +12,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langchain_core.tools import ToolException
 
 from assistant.graph import build_graph
+from assistant.reviewer import feedback_message
 from assistant.notes import (DELETE_WARNING, SAVE_WARNING, NotesConnectionError, ask_in_terminal,
                              build_note_tools, check_note_claims, confirmation_pending, due_phrase,
                              reset_confirmation)
@@ -250,6 +251,13 @@ def test_added_days_is_not_a_claim():
 
 def test_add_note_success_confirms():
     msgs = turn("Ho salvato la nota.", tool_msg("Nota 1 salvata: «x»", "add_note"))
+    assert check_note_claims(msgs) == []
+
+
+def test_add_note_before_review_feedback_still_confirms():
+    # l'indicazione del revisore non è una nuova domanda: il turno parte dalla domanda vera
+    msgs = [SystemMessage("s"), HumanMessage("q"), tool_msg("Nota 1 salvata: «x»", "add_note"),
+            AIMessage("bozza"), feedback_message("manca X."), AIMessage("Ho salvato la nota.")]
     assert check_note_claims(msgs) == []
 
 

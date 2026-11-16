@@ -13,8 +13,10 @@ from datetime import date
 from pathlib import Path
 
 import httpx
-from langchain_core.messages import AnyMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AnyMessage, ToolMessage
 from langchain_core.tools import BaseTool, ToolException, tool
+
+from assistant.reviewer import last_question_index
 
 logger = logging.getLogger("assistant.notes")
 
@@ -160,7 +162,7 @@ def check_note_claims(messages: list[AnyMessage]) -> list[str]:
     answer = messages[-1].content
     if not isinstance(answer, str):
         return []
-    last_human = max((i for i, m in enumerate(messages) if isinstance(m, HumanMessage)), default=-1)
+    last_human = last_question_index(messages)
     confirmed = {m.name for m in messages[last_human + 1:]
                  if isinstance(m, ToolMessage) and m.status != "error"}
     text = _normalize(answer)
