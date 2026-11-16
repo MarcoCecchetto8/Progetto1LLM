@@ -1,17 +1,21 @@
+import _thread
 import dataclasses
 import logging
+import threading
+import time
 
 import httpx
 import openai
 import pytest
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, SystemMessage
+from langchain_core.outputs import ChatGenerationChunk
 
 from assistant.cli import TOOLS_DOWN, clear_screen, run
 from assistant.config import load_settings
 from assistant.stream_view import INTERRUPTED, THINKING
 from assistant.graph import build_graph
 from assistant.mcp_client import MCPConnectionError
-from tests.fakes import fake, fake_clock
+from tests.fakes import FakeToolModel, fake, fake_clock
 
 REQ = httpx.Request("POST", "http://localhost:1234/v1/chat/completions")
 BASE = load_settings({"LMSTUDIO_BASE_URL": "http://localhost:1234/v1", "LMSTUDIO_MODEL": "m"})
@@ -42,9 +46,9 @@ class Recorder:
         self.graph = graph
         self.calls = []
 
-    def stream(self, state, stream_mode):
+    def stream(self, state, config=None, stream_mode=None):
         self.calls.append(state)
-        return self.graph.stream(state, stream_mode=stream_mode)
+        return self.graph.stream(state, config, stream_mode=stream_mode)
 
 
 class Stub:
@@ -54,7 +58,7 @@ class Stub:
         self.errors = list(errors)
         self.calls = []
 
-    def stream(self, state, stream_mode):
+    def stream(self, state, config=None, stream_mode=None):
         self.calls.append(state)
         if self.errors:
             raise self.errors.pop(0)
@@ -177,7 +181,7 @@ def test_ctrl_c_at_confirmation_exits():
         raise KeyboardInterrupt
 
     class Asking:
-        def stream(self, state, stream_mode):
+        def stream(self, state, config=None, stream_mode=None):
             ask_in_terminal("?", interrupted)
             raise KeyboardInterrupt
             yield
@@ -204,7 +208,7 @@ class Partial:
         self.error = error
         self.calls = []
 
-    def stream(self, state, stream_mode):
+    def stream(self, state, config=None, stream_mode=None):
         self.calls.append(state)
         if len(self.calls) == 1:
             yield ("messages", (AIMessageChunk("Ecco un po"), {"langgraph_node": "model"}))
@@ -309,3 +313,45 @@ def test_notes_down_keeps_session():
     _, out = session(graph, "ricorda latte", "seconda", "quit")
     assert out[out.index("…sto pensando") + 1] == NOTES_DOWN
     assert [m.content for m in graph.calls[1]["messages"][1:]] == ["seconda"]
+
+
+class SlowModel(FakeToolModel):
+    """Modello finto lento: una risposta che comincia con «lento» esce a pezzi, 0,1 s l'uno."""
+
+    def _stream(self, messages, stop=None, run_manager=None, **kwargs):
+        for chunk in super()._stream(messages, stop, run_manager, **kwargs):
+            text = chunk.message.content
+            if not text.startswith("lento"):
+                yield chunk
+                continue
+            for piece in text:
+                time.sleep(0.1)
+                SLOW_PIECES.append(piece)
+                yield ChatGenerationChunk(message=AIMessageChunk(piece))
+
+
+SLOW_PIECES = []
+
+
+def test_ctrl_c_stops_the_model_thread():
+    # Grafo vero: LangGraph esegue il modello in un thread e, senza fermarlo, ne aspetta la fine
+    SLOW_PIECES.clear()
+    model = SlowModel(messages=iter([AIMessage("lento" + "." * 25), AIMessage("r2")]))
+    graph = Recorder(build_graph(model, [fake_clock], 5))
+    timer = threading.Timer(0.5, _thread.interrupt_main)
+    start = time.monotonic()
+    timer.start()
+    try:
+        _, out = session(graph, "ciao", "seconda", "quit")
+    finally:
+        timer.cancel()
+    elapsed = time.monotonic() - start
+    print(f"durata della sessione interrotta: {elapsed:.2f} s")
+    assert elapsed < 1.5
+    assert INTERRUPTED in out
+    assert [m.content for m in graph.calls[1]["messages"][1:]] == ["seconda"]
+    assert out[-1] == "Arrivederci!"
+    # Il thread del modello non continua a generare dopo l'interruzione
+    emitted = len(SLOW_PIECES)
+    time.sleep(0.3)
+    assert len(SLOW_PIECES) == emitted < 30

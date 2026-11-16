@@ -155,13 +155,19 @@ def test_confirmation_cleared_after_normal_answer(clean_confirmation):
     assert not confirmation_pending()
 
 
-@pytest.mark.parametrize("exc", [EOFError, KeyboardInterrupt])
-def test_confirmation_stays_pending_on_interrupt(clean_confirmation, exc):
+def test_confirmation_stays_pending_on_interrupt(clean_confirmation):
     def broken(q):
-        raise exc
+        raise KeyboardInterrupt
     assert ask_in_terminal("?", broken) is False
     assert confirmation_pending()
     reset_confirmation()
+    assert not confirmation_pending()
+
+
+def test_confirmation_cleared_after_eof(clean_confirmation):
+    def eof(q):
+        raise EOFError
+    assert ask_in_terminal("?", eof) is False
     assert not confirmation_pending()
 
 

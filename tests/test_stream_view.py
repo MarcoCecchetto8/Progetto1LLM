@@ -31,8 +31,16 @@ def test_reasoning_then_answer_plain():
     view.answer("!")
     view.finish()
     text = "".join(out)
-    assert text == "[ragionamento]\nPenso.\nCiao!\n"
+    # Senza colori la risposta ha un'intestazione propria, altrimenti si confonde col ragionamento
+    assert text == "[ragionamento]\nPenso.\n[risposta]\nCiao!\n"
     assert "\x1b" not in text
+
+
+def test_answer_without_reasoning_has_no_header():
+    view, out = make_view()
+    view.answer("Ciao!")
+    view.finish()
+    assert "".join(out) == "Ciao!\n"
 
 
 def test_reasoning_dimmed_with_color():
@@ -118,7 +126,7 @@ def test_stream_turn_step_limit():
 
 def test_stream_turn_finishes_line_on_error():
     class Boom:
-        def stream(self, state, stream_mode):
+        def stream(self, state, config=None, stream_mode=None):
             yield a_chunk("Ciao")
             raise RuntimeError("giù")
 

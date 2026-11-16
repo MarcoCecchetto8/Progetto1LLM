@@ -59,7 +59,10 @@ def ask_in_terminal(question: str, input_fn=input) -> bool:
     _pending.set()
     try:
         answer = input_fn(question)
-    except (EOFError, KeyboardInterrupt):
+    except EOFError:
+        _pending.clear()
+        return False
+    except KeyboardInterrupt:
         # Resta segnata: chi sta in ascolto sa che l'utente ha interrotto proprio la conferma
         return False
     _pending.clear()

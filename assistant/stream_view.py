@@ -8,6 +8,7 @@ from langchain_core.messages import AIMessageChunk
 from assistant.llm import REASONING_KEY
 
 REASONING_HEADER = "[ragionamento]"
+ANSWER_HEADER = "[risposta]"
 INTERRUPTED = "Risposta interrotta."
 THINKING = "…sto pensando"
 DIM = "\x1b[2m"
@@ -48,6 +49,9 @@ class TurnView:
     def answer(self, text: str) -> None:
         if self._section != "answer":
             self._newline_if_needed()
+            # Senza il grigio la risposta non si distinguerebbe dal ragionamento appena sopra
+            if self._section == "reasoning" and not self._color:
+                self._emit(ANSWER_HEADER + "\n")
             self._section = "answer"
         self._emit(text)
 
@@ -75,12 +79,12 @@ def _last_message(update) -> object | None:
     return messages[-1] if messages else None
 
 
-def stream_turn(graph, state: dict, view: TurnView) -> dict:
+def stream_turn(graph, state: dict, view: TurnView, config: dict | None = None) -> dict:
     final: dict = {}
     shown = ""          # testo di risposta già mostrato
     got_chunks = False  # in questo passaggio del modello sono arrivati pezzi di risposta
     try:
-        for mode, payload in graph.stream(state, stream_mode=["messages", "updates", "values"]):
+        for mode, payload in graph.stream(state, config, stream_mode=["messages", "updates", "values"]):
             if mode == "values":
                 final = payload
             elif mode == "messages":

@@ -96,7 +96,7 @@ Non usare insieme l'assistente locale e quello Docker: entrambi vogliono la port
 
 I comandi non distinguono maiuscole e minuscole.
 
-Un turno interrotto con Ctrl+C non entra nella cronologia. Uno strumento già eseguito non viene annullato: una nota già salvata resta salvata. Il servizio delle note e il server degli strumenti restano attivi dopo l'interruzione.
+Un turno interrotto con Ctrl+C non entra nella cronologia. Uno strumento già eseguito non viene annullato: una nota già salvata resta salvata. Il Ctrl+C ferma il modello al pezzo successivo della risposta; uno strumento già in esecuzione (chiamata MCP o HTTP al servizio delle note) viene invece atteso fino alla fine, poi compare `Risposta interrotta.`. Il servizio delle note e il server degli strumenti dovrebbero restare attivi dopo l'interruzione: è da verificare nella prova reale.
 
 ## Che cosa si vede durante un turno
 
@@ -104,7 +104,7 @@ La risposta arriva in streaming, mentre il modello la scrive:
 
 - il **ragionamento** del modello, attenuato (grigio), sotto l'intestazione `[ragionamento]`, nella lingua in cui il modello lo scrive;
 - ogni **strumento** richiesto, su una riga propria con nome e argomenti (`[strumento] <nome> <argomenti>`), poi l'esito (`[strumento] <nome> → <risultato>`, oppure `[strumento] <nome> errore → <risultato>`);
-- la **risposta**, token per token;
+- la **risposta**, token per token; senza colori (pipe, file, `-T`), se prima c'è il ragionamento, la risposta comincia sotto l'intestazione `[risposta]`, su una riga propria;
 - l'eventuale avviso del controllo dei falsi successi, in fondo, dopo la risposta.
 
 Con `SHOW_REASONING=false` il ragionamento non compare e resta solo la riga «…sto pensando» fino al primo strumento o al primo token della risposta. Se il modello non invia il ragionamento, non c'è nulla da mostrare. Il ragionamento non entra nella cronologia. I colori compaiono solo se l'uscita è un terminale: con pipe, file o `docker compose run -T` il contenuto è lo stesso, senza sequenze di colore.
@@ -289,10 +289,11 @@ Da fare con LM Studio acceso, in locale (PowerShell) e con Docker. Gli esiti non
 | `Quanto fa 17*23?` | ragionamento attenuato che scorre, poi risposta che scorre | da provare |
 | `Che ore sono a Tokyo?` | ragionamento, riga dello strumento con argomenti, esito, risposta | da provare |
 | `SHOW_REASONING=false` | solo «…sto pensando», strumenti e risposta | da provare |
-| Ctrl+C durante un ragionamento lungo, poi una domanda con uno strumento MCP e una nota | `Risposta interrotta.`, poi strumento e nota funzionano; Ctrl+C al prompt chiude | da provare |
+| Ctrl+C durante un ragionamento lungo, poi una domanda con uno strumento MCP e una nota | `Risposta interrotta.` subito, poi strumento e nota funzionano; Ctrl+C al prompt chiude | da provare |
+| Ctrl+C alla domanda `[s/N]` di un'eliminazione | nessuna eliminazione, `Arrivederci!` | da provare (Windows e Docker) |
 | `Ricordami di consegnare il report venerdì` | se il modello dichiara un salvataggio mai avvenuto, avviso in fondo | da provare |
 | Docker con terminale (`docker compose run --rm app`) | colori e streaming | da provare |
-| Docker con `-T` e input da pipe | stesso contenuto, nessun colore | da provare |
+| Docker con `-T` e input da pipe | stesso contenuto, nessun colore, `[risposta]` prima della risposta se c'è il ragionamento | da provare |
 
 ## Diagnosi
 

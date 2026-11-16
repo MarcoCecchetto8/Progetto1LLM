@@ -58,6 +58,6 @@ class FakeStreamGraph:
         self.events = events
         self.final = final
 
-    def stream(self, state, stream_mode):
+    def stream(self, state, config=None, stream_mode=None):
         yield from self.events
         yield ("values", self.final)

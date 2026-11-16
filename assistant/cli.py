@@ -2,9 +2,13 @@
 
 import logging
 import os
+import signal
 import sys
+import threading
+from contextlib import contextmanager
 
 import openai
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from assistant import GOODBYE
@@ -52,6 +56,42 @@ def clear_screen(stream=None, windows: bool = os.name == "nt", system=os.system)
         stream.flush()
 
 
+class TurnCancelled(Exception):
+    """Ctrl+C durante il turno: ferma il thread del modello."""
+
+
+class CancelOnInterrupt(BaseCallbackHandler):
+    # Senza raise_error LangChain registrerebbe l'eccezione e lascerebbe proseguire il modello
+    raise_error = True
+
+    def __init__(self, cancelled: threading.Event):
+        self._cancelled = cancelled
+
+    def on_llm_new_token(self, token, **kwargs) -> None:
+        if self._cancelled.is_set():
+            raise TurnCancelled
+
+
+@contextmanager
+def cancel_on_ctrl_c(cancelled: threading.Event):
+    # LangGraph esegue il modello in un thread e all'interruzione ne aspetta la fine:
+    # l'Event lo fa fermare al pezzo successivo. Il KeyboardInterrupt resta quello di sempre.
+    def handler(signum, frame):
+        cancelled.set()
+        signal.default_int_handler(signum, frame)
+
+    cancelled.clear()
+    try:
+        previous = signal.signal(signal.SIGINT, handler)
+    except ValueError:  # fuori dal thread principale non si può installare un gestore
+        yield
+        return
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGINT, previous)
+
+
 def write_stdout(text: str) -> None:
     sys.stdout.write(text)
     sys.stdout.flush()
@@ -67,6 +107,8 @@ def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=cle
         output_fn(f"Assistente del laboratorio — modello: {settings.model}")
         output_fn("Scrivi la tua domanda. Comandi: help, clear. Per uscire: quit, exit o Ctrl+C.")
 
+    cancelled = threading.Event()
+    config = {"callbacks": [CancelOnInterrupt(cancelled)]}
     header()
     try:
         while True:
@@ -90,7 +132,9 @@ def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=cle
                 output_fn(THINKING)
             view = TurnView(write_fn, color, settings.show_reasoning)
             try:
-                result = stream_turn(graph, {"messages": history + [HumanMessage(text)], "steps": 0}, view)
+                with cancel_on_ctrl_c(cancelled):
+                    result = stream_turn(graph, {"messages": history + [HumanMessage(text)], "steps": 0},
+                                         view, config)
             except KeyboardInterrupt:
                 if confirmation_pending():
                     raise  # Ctrl+C alla conferma di eliminazione: si esce come prima
