@@ -410,3 +410,19 @@ def test_reviewer_then_answer_check():
                       reviewer=reviewer).invoke(start("salva una nota"))
     assert out["messages"][-1].content == "Nota salvata.\n\nAttenzione: falso successo."
     assert [m.content for m in out["messages"]][:2] == ["s", "salva una nota"] and len(out["messages"]) == 3
+
+
+
+def test_reviewer_skips_blank_answer():
+    reviewer = make_reviewer()
+    build_graph(fake(AIMessage("   ")), [clock], 5, reviewer=reviewer).invoke(start("ciao"))
+    assert reviewer.calls == []
+
+
+@pytest.mark.parametrize("motivo,expected", [("manca\nil  calcolo.", "manca il calcolo."),
+                                             ("  ", "il motivo non è stato indicato")])
+def test_reviewer_reason_normalized(motivo, expected):
+    # Il motivo finisce in una riga del terminale e nell'indicazione all'agente: una riga sola, mai vuoto
+    reviewer = make_reviewer((False, motivo))
+    out = build_graph(fake(AIMessage("bozza")), [clock], 5, reviewer=reviewer, max_reviews=0).invoke(start("q"))
+    assert out["review_reason"] == expected

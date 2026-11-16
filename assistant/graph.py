@@ -118,7 +118,7 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
     def route_after_model(state: State) -> str:
         last = state["messages"][-1]
         if not getattr(last, "tool_calls", None):
-            if reviewer and isinstance(last.content, str) and last.content:
+            if reviewer and isinstance(last.content, str) and last.content.strip():
                 target = "reviewer"
             else:
                 target = "answer_check" if answer_check else END
@@ -167,18 +167,19 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
             logger.warning("[revisore] risposta non valida (%s): risposta approvata", error)
             return {"messages": cleanup_review(messages), "review_outcome": "invalid", "review_reason": "",
                     "reviews": reviews}
-        reason = " ".join(result.motivo.split())
+        # Il motivo va in una riga del terminale e nell'indicazione all'agente: una riga sola, mai vuoto
+        reason = " ".join(result.motivo.split()) or "il motivo non è stato indicato"
         logger.info("[revisore] coerente=%s motivo=%s revisione %d/%d", "sì" if result.coerente else "no", reason,
                     reviews, max_reviews)
         if result.coerente:
-            return {"messages": cleanup_review(messages), "review_outcome": "approved", "review_reason": result.motivo,
+            return {"messages": cleanup_review(messages), "review_outcome": "approved", "review_reason": reason,
                     "reviews": reviews}
         if reviews < max_reviews:
             # Nuovo tentativo: i passaggi ripartono da zero
-            return {"messages": [feedback_message(result.motivo)], "steps": 0, "reviews": reviews + 1,
-                    "review_outcome": "retry", "review_reason": result.motivo}
+            return {"messages": [feedback_message(reason)], "steps": 0, "reviews": reviews + 1,
+                    "review_outcome": "retry", "review_reason": reason}
         logger.info("[revisore] limite raggiunto (%d revisioni): resta l'ultima risposta", reviews)
-        return {"messages": cleanup_review(messages), "review_outcome": "limit", "review_reason": result.motivo,
+        return {"messages": cleanup_review(messages), "review_outcome": "limit", "review_reason": reason,
                 "reviews": reviews}
 
     def route_after_reviewer(state: State) -> str:
