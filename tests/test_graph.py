@@ -7,6 +7,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langchain_core.tools import tool
 
 from assistant.graph import LIMIT_MESSAGE, build_graph, system_prompt
+from assistant.llm import REASONING_KEY
 from assistant.mcp_client import MCPClient, MCPConnectionError
 from tests.fakes import fake, fake_clock as clock, tool_call
 
@@ -103,11 +104,31 @@ def test_connection_error_propagates():
 
 def test_tool_call_logged_with_call_id(caplog):
     model = fake(tool_call({}, "a"), tool_call({"timezone": "Marte/Base"}, "b"), AIMessage("ok"))
-    with caplog.at_level(logging.INFO, logger="assistant.graph"):
+    with caplog.at_level(logging.DEBUG, logger="assistant.graph"):
         build_graph(model, [clock], 5).invoke(start("ora?"))
     assert ("[strumento] get_current_time call_id=a argomenti={} esito=ok → "
             "Europe/Rome: 2026-10-26T14:32:05+01:00") in caplog.text
     assert '[strumento] get_current_time call_id=b argomenti={"timezone": "Marte/Base"} esito=errore' in caplog.text
+
+
+def test_tool_call_not_logged_at_info(caplog):
+    model = fake(tool_call({}, "a"), AIMessage("ok"))
+    with caplog.at_level(logging.INFO, logger="assistant.graph"):
+        build_graph(model, [clock], 5).invoke(start("ora?"))
+    assert "[strumento]" not in caplog.text
+
+
+def test_reasoning_not_saved_in_history():
+    extra = {REASONING_KEY: "pensiero", "altro": 1}
+    out = build_graph(fake(AIMessage("ok", additional_kwargs=dict(extra))), [clock], 5).invoke(start("ciao"))
+    last = out["messages"][-1]
+    assert last.content == "ok" and last.additional_kwargs == {"altro": 1}
+    with_call = AIMessage("", tool_calls=[{"name": "get_current_time", "args": {}, "id": "a"}],
+                          additional_kwargs=dict(extra))
+    out = build_graph(fake(with_call, AIMessage("ok")), [clock], 5).invoke(start("ora?"))
+    ai = out["messages"][-3]
+    assert ai.tool_calls[0]["id"] == "a" and REASONING_KEY not in ai.additional_kwargs
+    assert ai.additional_kwargs["altro"] == 1 and isinstance(out["messages"][-2], ToolMessage)
 
 
 def test_graph_with_mcp_tool():

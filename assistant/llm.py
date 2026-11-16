@@ -8,6 +8,8 @@ from langchain_openai import ChatOpenAI
 
 from assistant.config import Settings
 
+REASONING_KEY = "reasoning_content"
+
 
 class LMStudioUnavailable(Exception):
     """LM Studio non raggiungibile o risposta non valida; il messaggio contiene l'URL provato."""
@@ -38,8 +40,21 @@ def check_model(settings: Settings) -> None:
         raise ModelNotFound(settings.model, available)
 
 
-def build_chat_model(settings: Settings) -> ChatOpenAI:
-    return ChatOpenAI(
+class ReasoningChatOpenAI(ChatOpenAI):
+    def _convert_chunk_to_generation_chunk(self, chunk: dict, default_chunk_class: type,
+                                           base_generation_info: dict | None):
+        result = super()._convert_chunk_to_generation_chunk(chunk, default_chunk_class, base_generation_info)
+        # langchain-openai scarta delta.reasoning_content (verificato con la 1.7.2): lo ricopiamo noi
+        choices = chunk.get("choices")
+        if result is not None and choices:
+            reasoning = (choices[0].get("delta") or {}).get(REASONING_KEY)
+            if reasoning:
+                result.message.additional_kwargs[REASONING_KEY] = reasoning
+        return result
+
+
+def build_chat_model(settings: Settings) -> ReasoningChatOpenAI:
+    return ReasoningChatOpenAI(
         base_url=settings.base_url,
         model=settings.model,
         api_key="lm-studio",

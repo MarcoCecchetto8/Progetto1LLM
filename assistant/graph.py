@@ -13,6 +13,8 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
+from assistant.llm import REASONING_KEY
+
 logger = logging.getLogger("assistant.graph")
 
 LIMIT_MESSAGE = "Limite di passaggi raggiunto: prova a riformulare la domanda o chiedimi altro."
@@ -71,7 +73,7 @@ def log_tool_calls(calls: list[dict], messages: list) -> None:
     for message in messages:
         call = by_id.get(message.tool_call_id, {"name": message.name, "args": {}})
         outcome = "errore" if message.status == "error" else "ok"
-        logger.info("[strumento] %s call_id=%s argomenti=%s esito=%s → %s", call["name"], message.tool_call_id,
+        logger.debug("[strumento] %s call_id=%s argomenti=%s esito=%s → %s", call["name"], message.tool_call_id,
                     json.dumps(call["args"], ensure_ascii=False), outcome, message.content)
 
 
@@ -86,6 +88,10 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
         steps = state["steps"] + 1
         logger.debug("[grafo] nodo model: passaggio %d/%d", steps, max_steps)
         response = model_with_tools.invoke(state["messages"])
+        if REASONING_KEY in response.additional_kwargs:
+            # Il ragionamento si mostra in streaming ma non entra nella cronologia
+            extra = {k: v for k, v in response.additional_kwargs.items() if k != REASONING_KEY}
+            response = response.model_copy(update={"additional_kwargs": extra})
         return {"messages": [response], "steps": steps}
 
     def route_after_model(state: State) -> str:
