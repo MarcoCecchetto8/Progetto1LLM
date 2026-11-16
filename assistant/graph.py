@@ -5,9 +5,10 @@ import logging
 from collections.abc import Callable
 from typing import Annotated, NotRequired, TypedDict
 
+import openai
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, AnyMessage, RemoveMessage
+from langchain_core.messages import AIMessage, AnyMessage, RemoveMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool, ToolException
 from langgraph.graph import END, START, StateGraph
@@ -17,6 +18,7 @@ from langgraph.prebuilt import ToolNode
 from assistant.llm import REASONING_KEY
 from assistant.reviewer import Review, feedback_message, is_review_feedback, last_question_index
 from assistant.router import Route, refusal_text
+from assistant.summarizer import estimate_tokens, summary_cut, summary_line, transcript, with_summary
 
 logger = logging.getLogger("assistant.graph")
 
@@ -31,6 +33,8 @@ class State(TypedDict):
     reviews: NotRequired[int]
     review_outcome: NotRequired[str]  # approved, retry, limit o invalid
     review_reason: NotRequired[str]
+    summary: NotRequired[str]  # riassunto in vigore: si aggiunge al prompt solo per la chiamata al modello
+    summary_line: NotRequired[str]  # riga per il terminale, scritta quando il riassunto cambia
 
 
 def system_prompt(default_timezone: str) -> str:
@@ -99,7 +103,9 @@ def cleanup_review(messages: list[AnyMessage]) -> list[RemoveMessage]:
 def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
                 answer_check: Callable[[list[AnyMessage]], list[str]] | None = None,
                 router: Callable[[list[AnyMessage]], Route] | None = None,
-                reviewer: Callable[[str, str], Review] | None = None, max_reviews: int = 3):
+                reviewer: Callable[[str, str], Review] | None = None, max_reviews: int = 3,
+                summarizer: Callable[[str, str], str] | None = None, summary_threshold: int = 4000,
+                summary_keep_turns: int = 2):
     model_with_tools = model.bind_tools(tools)
     # Gli errori dello strumento tornano al modello come ToolMessage con stato "error".
     # Niente wrap_tool_call: con un wrapper il ToolNode convertirebbe in messaggio anche gli errori di collegamento
@@ -108,7 +114,7 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
     def model_node(state: State) -> dict:
         steps = state["steps"] + 1
         logger.debug("[grafo] nodo model: passaggio %d/%d", steps, max_steps)
-        response = model_with_tools.invoke(state["messages"])
+        response = model_with_tools.invoke(with_summary(state["messages"], state.get("summary", "")))
         if REASONING_KEY in response.additional_kwargs:
             # Il ragionamento si mostra in streaming ma non entra nella cronologia
             extra = {k: v for k, v in response.additional_kwargs.items() if k != REASONING_KEY}
@@ -206,18 +212,46 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
         route = Route(categoria="fuori_ambito", motivo=state["route_reason"])
         return {"messages": [AIMessage(refusal_text(route))]}
 
+    def summarizer_node(state: State) -> dict:
+        messages = state["messages"]
+        summary = state.get("summary", "")
+        before = estimate_tokens(messages, summary)
+        if before <= summary_threshold:
+            return {}
+        cut = summary_cut(messages, summary_keep_turns)
+        if cut == 0:
+            return {}
+        first = 1 if isinstance(messages[0], SystemMessage) else 0
+        try:
+            new_summary = summarizer(summary, transcript(messages[first:cut])).strip()
+        except openai.APIError as error:
+            logger.warning("[riassunto] non riuscito (%s): cronologia invariata", error)
+            return {}
+        if not new_summary:
+            logger.warning("[riassunto] non riuscito (testo vuoto): cronologia invariata")
+            return {}
+        kept = messages[:first] + messages[cut:]
+        line = summary_line(len(messages), len(kept), before, estimate_tokens(kept, new_summary))
+        logger.debug(line)
+        return {"messages": [RemoveMessage(id=m.id) for m in messages[first:cut]], "summary": new_summary,
+                "summary_line": line}
+
     graph = StateGraph(State)
     graph.add_node("model", model_node)
     graph.add_node("tools", tools_node)
     graph.add_node("step_limit", step_limit_node)
+    entry = "router" if router else "model"
+    if summarizer:
+        graph.add_node("summarizer", summarizer_node)
+        graph.add_edge(START, "summarizer")
+        graph.add_edge("summarizer", entry)
+    else:
+        graph.add_edge(START, entry)
     if router:
         graph.add_node("router", router_node)
         graph.add_node("refusal", refusal_node)
-        graph.add_edge(START, "router")
         graph.add_conditional_edges("router", route_after_router, ["model", "refusal"])
         graph.add_edge("refusal", END)
-    else:
-        graph.add_edge(START, "model")
     destinations = ["tools", "step_limit", END]
     if reviewer:
         graph.add_node("reviewer", reviewer_node)

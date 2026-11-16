@@ -434,3 +434,110 @@ def test_reviewer_logs_only_at_debug(caplog):
     with caplog.at_level(logging.INFO, logger="assistant.graph"):
         build_graph(fake(AIMessage("bozza")), [clock], 5, reviewer=reviewer, max_reviews=0).invoke(start("q"))
     assert "[revisore]" not in caplog.text
+
+
+# --- Riassunto della cronologia ---
+
+def past_history(turns):
+    history = [SystemMessage("s")]
+    for i in range(1, turns + 1):
+        history += [HumanMessage(f"domanda {i}"), AIMessage(f"risposta {i}")]
+    return history
+
+
+def recording_summarizer(text="RIASSUNTO"):
+    calls = []
+
+    def summarize(previous, conversation):
+        calls.append((previous, conversation))
+        return text
+
+    summarize.calls = calls
+    return summarize
+
+
+def test_summarizer_below_threshold_not_called():
+    summarize = recording_summarizer()
+    state = start("ultima", history=past_history(3))
+    out = build_graph(fake(AIMessage("ok")), [clock], 5, summarizer=summarize, summary_threshold=10_000,
+                      summary_keep_turns=2).invoke(state)
+    assert summarize.calls == []
+    assert len(out["messages"]) == 9
+    assert "summary" not in out
+
+
+def test_summarizer_compresses_old_turns():
+    summarize = recording_summarizer()
+    out = build_graph(fake(AIMessage("ok")), [clock], 5, summarizer=summarize, summary_threshold=1,
+                      summary_keep_turns=2).invoke(start("ultima", history=past_history(3)))
+    assert summarize.calls == [("", "Utente: domanda 1\nAssistente: risposta 1")]
+    assert [m.content for m in out["messages"]] == ["s", "domanda 2", "risposta 2", "domanda 3", "risposta 3",
+                                                    "ultima", "ok"]
+    assert out["summary"] == "RIASSUNTO"
+    assert out["summary_line"].startswith("[riassunto] 8 → 6 messaggi (circa ")
+
+
+def test_summarizer_replaces_previous_summary():
+    summarize = recording_summarizer("NUOVO")
+    state = start("ultima", history=past_history(3))
+    state["summary"] = "VECCHIO"
+    out = build_graph(fake(AIMessage("ok")), [clock], 5, summarizer=summarize, summary_threshold=1,
+                      summary_keep_turns=2).invoke(state)
+    assert summarize.calls[0][0] == "VECCHIO"
+    assert out["summary"] == "NUOVO"
+
+
+def test_summarizer_failure_keeps_history(caplog):
+    def failing(previous, conversation):
+        raise openai.APIConnectionError(request=httpx.Request("POST", "http://x"))
+
+    for summarize, reason in ((failing, "Connection error"), (lambda p, c: "  ", "testo vuoto")):
+        caplog.clear()
+        state = start("ultima", history=past_history(3))
+        with caplog.at_level(logging.WARNING, logger="assistant.graph"):
+            out = build_graph(fake(AIMessage("ok")), [clock], 5, summarizer=summarize, summary_threshold=1,
+                              summary_keep_turns=2).invoke(state)
+        assert [m.content for m in out["messages"]][:-1] == [m.content for m in state["messages"]]
+        assert out["messages"][-1].content == "ok"
+        assert "summary" not in out
+        assert any("cronologia invariata" in r.message and reason in r.message for r in caplog.records)
+
+
+def test_model_receives_summary_in_system_prompt():
+    seen = []
+
+    class Recording(FakeToolModel):
+        def _generate(self, messages, *args, **kwargs):
+            seen.append(list(messages))
+            return super()._generate(messages, *args, **kwargs)
+
+    state = start("ciao")
+    state["summary"] = "R"
+    out = build_graph(Recording(messages=iter([AIMessage("ok")])), [clock], 5).invoke(state)
+    assert seen[0][0].content == "s\n\nRiassunto della conversazione precedente:\nR"
+    assert out["messages"][0].content == "s"
+
+
+def test_summarizer_runs_once_with_reviewer_retry():
+    summarize = recording_summarizer()
+    verdicts = iter([Review(coerente=False, motivo="no"), Review(coerente=True, motivo="ok")])
+    build_graph(fake(AIMessage("a"), AIMessage("b")), [clock], 5, summarizer=summarize, summary_threshold=1,
+                summary_keep_turns=2, reviewer=lambda q, a: next(verdicts)).invoke(
+        start("ultima", history=past_history(3)))
+    assert len(summarize.calls) == 1
+
+
+def test_summarizer_runs_before_router():
+    order = []
+
+    def summarize(previous, conversation):
+        order.append("riassunto")
+        return "R"
+
+    def route(messages):
+        order.append("router")
+        return Route(categoria="conversazione", motivo="")
+
+    build_graph(fake(AIMessage("ok")), [clock], 5, summarizer=summarize, summary_threshold=1,
+                summary_keep_turns=2, router=route).invoke(start("ultima", history=past_history(3)))
+    assert order == ["riassunto", "router"]
