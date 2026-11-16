@@ -41,11 +41,28 @@ class NotesConnectionError(Exception):
     """Servizio non raggiungibile. Non è una ToolException: deve uscire dal grafo."""
 
 
+# La conferma gira in un thread del ToolNode: lo stato è a livello di modulo e thread-safe.
+# Serve al ciclo da terminale per distinguere un Ctrl+C alla conferma da uno durante il modello.
+_pending = threading.Event()
+
+
+def confirmation_pending() -> bool:
+    return _pending.is_set()
+
+
+def reset_confirmation() -> None:
+    _pending.clear()
+
+
 def ask_in_terminal(question: str, input_fn=input) -> bool:
+    _pending.set()
     try:
-        return input_fn(question).strip().casefold() in YES
-    except EOFError:
+        answer = input_fn(question)
+    except (EOFError, KeyboardInterrupt):
+        # Resta segnata: chi sta in ascolto sa che l'utente ha interrotto proprio la conferma
         return False
+    _pending.clear()
+    return answer.strip().casefold() in YES
 
 
 def _days(n: int) -> str:

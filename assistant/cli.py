@@ -11,7 +11,8 @@ from assistant import GOODBYE
 from assistant.config import Settings
 from assistant.graph import system_prompt
 from assistant.mcp_client import MCPConnectionError
-from assistant.notes import NotesConnectionError
+from assistant.notes import NotesConnectionError, confirmation_pending, reset_confirmation
+from assistant.stream_view import INTERRUPTED, THINKING, TurnView, stream_turn
 
 HELP_TEXT = (
     "Comandi:\n"
@@ -51,8 +52,14 @@ def clear_screen(stream=None, windows: bool = os.name == "nt", system=os.system)
         stream.flush()
 
 
+def write_stdout(text: str) -> None:
+    sys.stdout.write(text)
+    sys.stdout.flush()
+
+
 def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=clear_screen,
-        newline_on_interrupt: bool = os.name != "nt") -> int:
+        newline_on_interrupt: bool = os.name != "nt", write_fn=None, color: bool = False) -> int:
+    write_fn = write_fn or write_stdout
     initial = [SystemMessage(system_prompt(settings.default_timezone))]
     history = list(initial)
 
@@ -78,9 +85,17 @@ def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=cle
                 header()
                 output_fn("Cronologia svuotata.")
                 continue
-            output_fn("…sto pensando")
+            reset_confirmation()
+            if not settings.show_reasoning:
+                output_fn(THINKING)
+            view = TurnView(write_fn, color, settings.show_reasoning)
             try:
-                result = graph.invoke({"messages": history + [HumanMessage(text)], "steps": 0})
+                result = stream_turn(graph, {"messages": history + [HumanMessage(text)], "steps": 0}, view)
+            except KeyboardInterrupt:
+                if confirmation_pending():
+                    raise  # Ctrl+C alla conferma di eliminazione: si esce come prima
+                output_fn(INTERRUPTED)
+                continue
             except openai.APIError as error:
                 output_fn(error_message(error, settings))
                 continue
@@ -99,13 +114,13 @@ def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=cle
                 logger.debug("Errore imprevisto durante il turno", exc_info=True)
                 output_fn(f"Errore imprevisto: {error}. Riprova o usa 'clear'.")
                 continue
+            # La risposta è già stata scritta in streaming: qui si controlla solo che non sia vuota
             answer = result["messages"][-1].content
             if not answer.strip():
                 # es. chiamata allo strumento con JSON non valido: il turno non entra in cronologia
                 output_fn(EMPTY_ANSWER)
                 continue
             history = result["messages"]
-            output_fn(answer)
     except (EOFError, KeyboardInterrupt):
         # Su Linux (anche in Docker) il terminale scrive "^C" senza andare a capo
         if newline_on_interrupt:

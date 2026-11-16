@@ -1,18 +1,22 @@
+import dataclasses
 import logging
 
 import httpx
 import openai
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, SystemMessage
 
 from assistant.cli import TOOLS_DOWN, clear_screen, run
 from assistant.config import load_settings
+from assistant.stream_view import INTERRUPTED, THINKING
 from assistant.graph import build_graph
 from assistant.mcp_client import MCPConnectionError
 from tests.fakes import fake, fake_clock
 
 REQ = httpx.Request("POST", "http://localhost:1234/v1/chat/completions")
-SETTINGS = load_settings({"LMSTUDIO_BASE_URL": "http://localhost:1234/v1", "LMSTUDIO_MODEL": "m"})
+BASE = load_settings({"LMSTUDIO_BASE_URL": "http://localhost:1234/v1", "LMSTUDIO_MODEL": "m"})
+# Senza ragionamento compare la riga «…sto pensando», usata come riferimento nei test
+SETTINGS = dataclasses.replace(BASE, show_reasoning=False)
 
 
 def bad_request(text):
@@ -38,9 +42,9 @@ class Recorder:
         self.graph = graph
         self.calls = []
 
-    def invoke(self, state):
+    def stream(self, state, stream_mode):
         self.calls.append(state)
-        return self.graph.invoke(state)
+        return self.graph.stream(state, stream_mode=stream_mode)
 
 
 class Stub:
@@ -50,20 +54,23 @@ class Stub:
         self.errors = list(errors)
         self.calls = []
 
-    def invoke(self, state):
+    def stream(self, state, stream_mode):
         self.calls.append(state)
         if self.errors:
             raise self.errors.pop(0)
-        return {"messages": state["messages"] + [AIMessage("ok")]}
+        reply = AIMessage("ok")
+        yield ("updates", {"model": {"messages": [reply]}})
+        yield ("values", {"messages": state["messages"] + [reply]})
 
 
 def real_graph(*msgs):
     return Recorder(build_graph(fake(*msgs), [fake_clock], 5))
 
 
-def session(graph, *lines):
+def session(graph, *lines, settings=SETTINGS):
+    # output_fn e write_fn finiscono nella stessa lista, nell'ordine in cui il terminale li mostrerebbe
     out = []
-    code = run(graph, SETTINGS, inputs(*lines), out.append)
+    code = run(graph, settings, inputs(*lines), out.append, write_fn=out.append)
     return code, out
 
 
@@ -86,9 +93,10 @@ def test_clear_resets_history():
 
 def test_clear_clears_screen_and_reprints_header():
     out, cleared = [], []
-    run(Stub(), SETTINGS, inputs("d1", "clear", "quit"), out.append, lambda: cleared.append(len(out)))
-    assert cleared == [4]  # due righe d'intestazione, "…sto pensando", "ok", poi la pulizia
-    assert out[4:7] == out[0:2] + ["Cronologia svuotata."]
+    run(Stub(), SETTINGS, inputs("d1", "clear", "quit"), out.append, lambda: cleared.append(len(out)),
+        write_fn=lambda text: None)
+    assert cleared == [3]  # due righe d'intestazione, "…sto pensando", poi la pulizia
+    assert out[3:6] == out[0:2] + ["Cronologia svuotata."]
 
 
 class FakeStream:
@@ -154,9 +162,69 @@ def test_eof_exits_cleanly():
 
 
 def test_ctrl_c_during_model():
-    code, out = session(Stub(KeyboardInterrupt()), "ciao")
+    graph = Stub(KeyboardInterrupt())
+    code, out = session(graph, "ciao", "seconda", "quit")
+    assert code == 0
+    assert INTERRUPTED in out
+    assert out[-1] == "Arrivederci!"
+    assert [m.content for m in graph.calls[1]["messages"][1:]] == ["seconda"]
+
+
+def test_ctrl_c_at_confirmation_exits():
+    from assistant.notes import ask_in_terminal, reset_confirmation
+
+    def interrupted(prompt=""):
+        raise KeyboardInterrupt
+
+    class Asking:
+        def stream(self, state, stream_mode):
+            ask_in_terminal("?", interrupted)
+            raise KeyboardInterrupt
+            yield
+
+    reset_confirmation()
+    try:
+        code, out = session(Asking(), "elimina", "quit")
+    finally:
+        reset_confirmation()
     assert code == 0
     assert out[-1] == "Arrivederci!"
+    assert INTERRUPTED not in out
+
+
+def test_thinking_line_only_without_reasoning():
+    _, hidden = session(Stub(), "ciao", "quit", settings=SETTINGS)
+    _, shown = session(Stub(), "ciao", "quit", settings=dataclasses.replace(BASE, show_reasoning=True))
+    assert THINKING in hidden
+    assert THINKING not in shown
+
+
+class Partial:
+    def __init__(self, error):
+        self.error = error
+        self.calls = []
+
+    def stream(self, state, stream_mode):
+        self.calls.append(state)
+        if len(self.calls) == 1:
+            yield ("messages", (AIMessageChunk("Ecco un po"), {"langgraph_node": "model"}))
+            raise self.error
+        reply = AIMessage("ok")
+        yield ("values", {"messages": state["messages"] + [reply]})
+
+
+def test_error_after_partial_answer():
+    graph = Partial(openai.APITimeoutError(request=REQ))
+    _, out = session(graph, "ciao", "seconda", "quit")
+    i = out.index("Ecco un po")
+    assert out[i + 1] == "\n"
+    assert "120" in out[i + 2]
+    assert [m.content for m in graph.calls[1]["messages"][1:]] == ["seconda"]
+
+
+def test_answer_not_printed_twice():
+    _, out = session(real_graph(AIMessage("risposta unica")), "ciao", "quit")
+    assert "".join(out).count("risposta unica") == 1
 
 
 @pytest.mark.parametrize("graph,lines", [(Stub(), ()), (Stub(KeyboardInterrupt()), ("ciao",))])
