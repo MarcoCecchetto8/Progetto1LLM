@@ -282,17 +282,17 @@ Esiti del 2026-11-15 con `google/gemma-4-e2b`, domande inviate da pipe (la confe
 
 ### Prova reale dello streaming
 
-Esiti del 2026-11-16 con `google/gemma-4-e2b`. Le prove con input da pipe (senza terminale, quindi senza colori) le ha eseguite Claude; quelle che richiedono un terminale vero (colori, Ctrl+C) restano all'utente.
+Esiti del 2026-11-16 con `google/gemma-4-e2b`. Le prove con input da pipe (senza terminale, quindi senza colori) le ha eseguite Claude; quelle in un terminale vero (colori, Ctrl+C) le ha eseguite l'utente, tutte con esito positivo.
 
 | Prova | Atteso | Esito |
 |---|---|---|
-| `Quanto fa 17*23?` | ragionamento attenuato che scorre, poi risposta che scorre | ok via pipe: ragionamento (in inglese), `calculate`, esito `391`, risposta; colori da provare in un terminale |
+| `Quanto fa 17*23?` | ragionamento attenuato che scorre, poi risposta che scorre | ok: via pipe ragionamento (in inglese), `calculate`, esito `391`, risposta; in PowerShell ragionamento attenuato (prova dell'utente) |
 | `Che ore sono a Tokyo?` | ragionamento, riga dello strumento con argomenti, esito, risposta | ok via pipe, in locale e con Docker |
 | `SHOW_REASONING=false` | solo «…sto pensando», strumenti e risposta | ok via pipe |
-| Ctrl+C durante un ragionamento lungo, poi una domanda con uno strumento MCP e una nota | `Risposta interrotta.` subito, poi strumento e nota funzionano; Ctrl+C al prompt chiude | da provare |
-| Ctrl+C alla domanda `[s/N]` di un'eliminazione | nessuna eliminazione, `Arrivederci!` | da provare (Windows e Docker) |
+| Ctrl+C durante un ragionamento lungo, poi una domanda con uno strumento MCP e una nota | `Risposta interrotta.` subito, poi strumento e nota funzionano; Ctrl+C al prompt chiude | ok (prova a mano dell'utente) |
+| Ctrl+C alla domanda `[s/N]` di un'eliminazione | nessuna eliminazione, `Arrivederci!` | ok in Windows e Docker (prova a mano dell'utente) |
 | `Ricordami di consegnare il report venerdì` | se il modello dichiara un salvataggio mai avvenuto, avviso in fondo | ok via pipe: `get_current_time`, `add_days` sbagliato, poi l'avviso in fondo (limite del modello già noto) |
-| Docker con terminale (`docker compose run --rm app`) | colori e streaming | da provare |
+| Docker con terminale (`docker compose run --rm app`) | colori e streaming | ok (prova a mano dell'utente) |
 | Docker con `-T` e input da pipe | stesso contenuto, nessun colore, `[risposta]` prima della risposta se c'è il ragionamento | ok (nessun carattere di colore nell'uscita) |
 
 ## Diagnosi
