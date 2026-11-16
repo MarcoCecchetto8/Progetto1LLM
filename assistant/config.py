@@ -22,6 +22,7 @@ class Settings:
     default_timezone: str
     log_level: str
     notes_service_url: str = ""
+    show_reasoning: bool = True
 
 
 def _get(env: Mapping[str, str], name: str, default: str | None = None) -> str:
@@ -64,4 +65,9 @@ def load_settings(env: Mapping[str, str]) -> Settings:
 
     notes_url = env.get("NOTES_SERVICE_URL", "").strip().rstrip("/")
 
-    return Settings(base_url, model, timeout, temperature, max_steps, timezone, log_level, notes_url)
+    show_reasoning = _get(env, "SHOW_REASONING", "true").lower()
+    if show_reasoning not in ("true", "false"):
+        raise ConfigError(f"SHOW_REASONING non valida: '{show_reasoning}' (valori ammessi: true, false).")
+
+    return Settings(base_url, model, timeout, temperature, max_steps, timezone, log_level, notes_url,
+                    show_reasoning == "true")

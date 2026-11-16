@@ -46,3 +46,15 @@ def test_notes_service_url_default_and_normalized():
     base = {"LMSTUDIO_BASE_URL": "http://localhost:1234/v1", "LMSTUDIO_MODEL": "m"}
     assert load_settings(base).notes_service_url == ""
     assert load_settings({**base, "NOTES_SERVICE_URL": " http://notes:8000/ "}).notes_service_url == "http://notes:8000"
+
+
+@pytest.mark.parametrize("value,expected", [(None, True), ("true", True), ("TRUE", True), (" True ", True),
+                                            ("false", False), ("False", False)])
+def test_show_reasoning(value, expected):
+    env = {**BASE} if value is None else {**BASE, "SHOW_REASONING": value}
+    assert load_settings(env).show_reasoning is expected
+
+
+def test_show_reasoning_invalid():
+    with pytest.raises(ConfigError, match=r"SHOW_REASONING non valida: 'forse' \(valori ammessi: true, false\)\."):
+        load_settings({**BASE, "SHOW_REASONING": "forse"})
