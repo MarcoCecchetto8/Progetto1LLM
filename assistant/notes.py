@@ -1,6 +1,7 @@
 """Tool delle note: wrapper LangChain sul servizio HTTP FastAPI, con conferma prima di eliminare."""
 
 import logging
+import os
 import re
 import subprocess
 import sys
@@ -208,7 +209,13 @@ class LocalNotesService:
             command.append("--quiet")
         if self.db:
             command += ["--db", str(self.db)]
-        proc = self._proc = subprocess.Popen(command)
+        # Su Windows Ctrl+C arriva a tutti i processi della console: senza gruppo separato il servizio
+        # morirebbe quando Ctrl+C ferma solo il turno.
+        if os.name == "nt":
+            isolation = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+        else:
+            isolation = {"start_new_session": True}
+        proc = self._proc = subprocess.Popen(command, **isolation)
         try:
             wait_until_ready(url, alive=lambda: proc.poll() is None)
         except NotesConnectionError as error:
