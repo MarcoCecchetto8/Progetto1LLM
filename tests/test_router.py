@@ -73,3 +73,18 @@ def test_refusal_text():
 def test_route_schema_enum():
     schema = Route.model_json_schema()
     assert schema["properties"]["categoria"]["enum"] == ["conversazione", "fuori_ambito"]
+
+
+def test_router_context_never_starts_with_assistant():
+    # Alcuni template di chat (Gemma 2/3, Mistral) rifiutano un assistente subito dopo il sistema
+    turns = []
+    for i in range(4):
+        turns += [HumanMessage(f"d{i}"), AIMessage(f"r{i}")]
+    context = router_context(turns + [HumanMessage("ultima")])
+    assert isinstance(context[0], HumanMessage)
+    assert context[-1].content == "ultima"
+    assert len(context) <= ROUTER_CONTEXT_MESSAGES
+
+
+def test_refusal_text_with_blank_reason():
+    assert refusal_text(Route(categoria="fuori_ambito", motivo="  ")) == REFUSAL.format(motivo="argomento fuori ambito")

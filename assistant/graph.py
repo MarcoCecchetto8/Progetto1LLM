@@ -145,7 +145,7 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
             logger.warning("[router] risposta non valida (%s): la domanda passa all'agente", error)
             return {"route": "conversazione", "route_reason": ""}
         target = "agente" if result.categoria == "conversazione" else "rifiuto"
-        logger.info("[router] categoria=%s motivo=%s → %s", result.categoria, result.motivo, target)
+        logger.info("[router] categoria=%s motivo=%s → %s", result.categoria, " ".join(result.motivo.split()), target)
         return {"route": result.categoria, "route_reason": result.motivo}
 
     def route_after_router(state: State) -> str:

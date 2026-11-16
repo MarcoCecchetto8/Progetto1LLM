@@ -42,7 +42,11 @@ def router_context(messages: list[AnyMessage]) -> list[AnyMessage]:
         and isinstance(m.content, str) and m.content
         and not (isinstance(m, AIMessage) and m.tool_calls)
     ]
-    return kept[-ROUTER_CONTEXT_MESSAGES:]
+    kept = kept[-ROUTER_CONTEXT_MESSAGES:]
+    # Alcuni template di chat rifiutano un messaggio dell'assistente subito dopo quello di sistema
+    while kept and isinstance(kept[0], AIMessage):
+        kept = kept[1:]
+    return kept
 
 
 def build_router(model: BaseChatModel, scope: str) -> Callable[[list[AnyMessage]], Route]:
@@ -58,4 +62,4 @@ def build_router(model: BaseChatModel, scope: str) -> Callable[[list[AnyMessage]
 
 
 def refusal_text(route: Route) -> str:
-    return REFUSAL.format(motivo=route.motivo)
+    return REFUSAL.format(motivo=route.motivo.strip() or "argomento fuori ambito")
