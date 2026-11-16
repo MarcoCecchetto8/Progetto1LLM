@@ -48,6 +48,7 @@ Invoke-RestMethod http://localhost:1234/v1/models | Select-Object -ExpandPropert
 | `DEFAULT_TIMEZONE` | no | `Europe/Rome` | nome IANA esatto (maiuscole comprese), validato all'avvio sull'elenco del pacchetto `tzdata` |
 | `LOG_LEVEL` | no | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `SHOW_REASONING` | no | `true` | `true` o `false`: mostra o nasconde il ragionamento del modello durante il turno |
+| `SCOPE_FILE` | no | `config/ambito.txt` | file con l'ambito dell'assistente per il router (percorso relativo alla radice del progetto); se manca o è vuoto l'avvio si ferma con `SCOPE_FILE non valida: '<percorso>' non esiste o è vuoto.` |
 | `NOTES_SERVICE_URL` | no | vuota | vuota in locale: l'assistente avvia da solo il servizio delle note su `http://127.0.0.1:8000`; con Docker Compose viene impostata a `http://notes:8000` |
 
 ## Avvio locale (PowerShell)
@@ -108,6 +109,18 @@ La risposta arriva in streaming, mentre il modello la scrive:
 - l'eventuale avviso del controllo dei falsi successi, in fondo, dopo la risposta.
 
 Con `SHOW_REASONING=false` il ragionamento non compare e resta solo la riga «…sto pensando» fino al primo strumento o al primo token della risposta. Se il modello non invia il ragionamento, non c'è nulla da mostrare. Il ragionamento non entra nella cronologia. I colori compaiono solo se l'uscita è un terminale: con pipe, file o `docker compose run -T` il contenuto è lo stesso, senza sequenze di colore.
+
+## Router dell'ambito
+
+Prima dell'agente, un router decide se la domanda rientra nell'ambito dell'assistente: strumenti del laboratorio, linguaggi di programmazione, informatica, intelligenza artificiale, saluti e domande sull'assistente stesso. Usa lo stesso modello di LM Studio, con il ragionamento spento e un output strutturato (categoria e motivo); riceve la domanda e gli ultimi messaggi di testo della conversazione, così un seguito come «e a Tokyo?» resta in ambito.
+
+- **In ambito**: la domanda passa all'agente come sempre.
+- **Fuori ambito**: nessuna chiamata al modello dell'agente e nessuno strumento; la risposta è un messaggio fisso con il motivo: `Posso aiutarti solo con gli strumenti del laboratorio, i linguaggi di programmazione, l'informatica e l'intelligenza artificiale. Motivo: <motivo>`. Domanda e rifiuto entrano nella cronologia.
+- **Errore del router** (risposta non valida): la domanda passa all'agente e nel log compare un avviso.
+- **Dove si modifica l'ambito**: `config/ambito.txt` (descrizione ed esempi con la categoria attesa); un altro file si indica con `SCOPE_FILE`. La modifica vale dalla sessione successiva, senza toccare il codice. Con Docker il file è copiato nell'immagine: dopo una modifica serve `docker compose build`.
+- **Log**: a ogni decisione una riga `[router] categoria=<categoria> motivo=<motivo> → agente` oppure `→ rifiuto`; all'avvio `[router] ambito: <percorso> (<n> righe)`.
+- **Limite, il tempo**: il router è una chiamata in più al modello per ogni domanda: circa 23 s per decisione, misurati su questo computer.
+- **Limite, la precisione**: nelle sonde con 9 domande il router ha classificato bene 6 su 9 con la sola descrizione dell'ambito e 9 su 9 con gli esempi di `config/ambito.txt`. Sono domande di sonda, non ancora la prova reale; il modello può comunque sbagliare.
 
 ## Log
 
@@ -295,6 +308,19 @@ Esiti del 2026-11-16 con `google/gemma-4-e2b`. Le prove con input da pipe (senza
 | Docker con terminale (`docker compose run --rm app`) | colori e streaming | ok (prova a mano dell'utente) |
 | Docker con `-T` e input da pipe | stesso contenuto, nessun colore, `[risposta]` prima della risposta se c'è il ragionamento | ok (nessun carattere di colore nell'uscita) |
 
+### Prova reale del router
+
+Da eseguire con LM Studio (locale e Docker `-T` con input da pipe). Non ancora eseguita.
+
+| Prova | Atteso | Esito |
+|---|---|---|
+| Le 9 domande della sonda | ogni domanda classificata come previsto; tempo del router per ciascuna | da provare |
+| Almeno 3 domande nuove, non presenti fra gli esempi di `config/ambito.txt` | classificate come previsto | da provare |
+| Domanda in ambito | log con categoria, motivo e `→ agente`, poi la risposta dell'agente | da provare |
+| Domanda fuori ambito | rifiuto con il motivo, nessuna riga del nodo agente nei log | da provare |
+| Modifica di `config/ambito.txt` (per esempio togliere «note») e nuova sessione | il comportamento cambia senza toccare il codice | da provare |
+| Docker (`docker compose run --rm -T app` con input da pipe) | stesso comportamento del locale | da provare |
+
 ## Diagnosi
 
 | Sintomo | Causa probabile e rimedio |
@@ -311,6 +337,7 @@ Esiti del 2026-11-16 con `google/gemma-4-e2b`. Le prove con input da pipe (senza
 | `Il server degli strumenti non risponde: esci e riavvia l'assistente.` | il server MCP si è fermato durante la sessione: uscire e riavviare l'assistente (con `LOG_LEVEL=DEBUG` si vede il dettaglio) |
 | `La porta 8000 è già in uso ...` all'avvio | un altro servizio delle note è già acceso (di solito quello di Docker): `docker compose down` e riavviare |
 | `Il servizio delle note non risponde: esci e riavvia l'assistente.` | il servizio delle note si è fermato durante la sessione: uscire e riavviare l'assistente |
+| Domande in ambito rifiutate dal router | il modello classifica male: aggiungere esempi di quel tipo in `config/ambito.txt` e riavviare |
 | Il ragionamento non compare | il modello non invia `reasoning_content` oppure `SHOW_REASONING=false` nel `.env` |
 | Il modello risponde senza riga `[strumento]` nel log | il modello non ha chiamato lo strumento: la risposta non è verificata; riformulare la domanda |
 | Il container non raggiunge LM Studio | controllare che il server sia attivo sull'host; se serve, attivare in LM Studio l'opzione per servire sulla rete locale e riprovare |

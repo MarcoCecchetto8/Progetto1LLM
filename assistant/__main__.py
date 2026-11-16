@@ -4,6 +4,7 @@ import logging
 import os
 import signal
 import sys
+from pathlib import Path
 
 from assistant import GOODBYE
 
@@ -40,8 +41,9 @@ def _start() -> int:
     from dotenv import load_dotenv
 
     from assistant.cli import run
-    from assistant.config import ConfigError, load_settings
+    from assistant.config import ConfigError, load_scope, load_settings
     from assistant.graph import build_graph
+    from assistant.router import build_router
     from assistant.llm import LMStudioUnavailable, ModelNotFound, build_chat_model, check_model
     from datetime import datetime
 
@@ -59,7 +61,11 @@ def _start() -> int:
     load_dotenv()
     try:
         settings = load_settings(os.environ)
+        root = Path(__file__).resolve().parent.parent
+        scope = load_scope(settings.scope_file, root)
         configure_logging(settings.log_level)
+        logging.getLogger("assistant").info(
+            "[router] ambito: %s (%d righe)", settings.scope_file, len(scope.splitlines()))
         check_model(settings)
     except (ConfigError, LMStudioUnavailable, ModelNotFound) as error:
         print(error, file=sys.stderr)
@@ -89,8 +95,9 @@ def _start() -> int:
             logging.getLogger("assistant").info("[note] servizio: %s", url)
             zone = get_timezone(settings.default_timezone)
             tools = tools + build_note_tools(http, lambda: datetime.now(zone).date(), ask_in_terminal)
-            graph = build_graph(build_chat_model(settings), tools, settings.max_steps,
-                                answer_check=check_note_claims)
+            model = build_chat_model(settings)
+            graph = build_graph(model, tools, settings.max_steps, answer_check=check_note_claims,
+                                router=build_router(model, scope))
             color = sys.stdout.isatty()
             if color and os.name == "nt":
                 # Abilita l'elaborazione VT nella console classica; Windows Terminal e VS Code la hanno già
