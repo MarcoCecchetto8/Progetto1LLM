@@ -3,8 +3,9 @@
 import json
 import logging
 from collections.abc import Callable
-from typing import Annotated, TypedDict
+from typing import Annotated, NotRequired, TypedDict
 
+from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, RemoveMessage
 from langchain_core.runnables import RunnableConfig
@@ -14,6 +15,7 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
 from assistant.llm import REASONING_KEY
+from assistant.router import Route, refusal_text
 
 logger = logging.getLogger("assistant.graph")
 
@@ -23,6 +25,8 @@ LIMIT_MESSAGE = "Limite di passaggi raggiunto: prova a riformulare la domanda o 
 class State(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
     steps: int
+    route: NotRequired[str]
+    route_reason: NotRequired[str]  # serve al nodo refusal per il testo del rifiuto
 
 
 def system_prompt(default_timezone: str) -> str:
@@ -78,7 +82,8 @@ def log_tool_calls(calls: list[dict], messages: list) -> None:
 
 
 def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
-                answer_check: Callable[[list[AnyMessage]], list[str]] | None = None):
+                answer_check: Callable[[list[AnyMessage]], list[str]] | None = None,
+                router: Callable[[list[AnyMessage]], Route] | None = None):
     model_with_tools = model.bind_tools(tools)
     # Gli errori dello strumento tornano al modello come ToolMessage con stato "error".
     # Niente wrap_tool_call: con un wrapper il ToolNode convertirebbe in messaggio anche gli errori di collegamento
@@ -132,11 +137,36 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
         logger.info("[controllo] falso successo: avviso all'utente → %s", " | ".join(warnings))
         return {"messages": [AIMessage(content=last.content + "\n\n" + "\n".join(warnings), id=last.id)]}
 
+    def router_node(state: State) -> dict:
+        try:
+            result = router(state["messages"])
+        except (OutputParserException, ValueError) as error:
+            # Risposta non valida del classificatore: nel dubbio decide l'agente
+            logger.warning("[router] risposta non valida (%s): la domanda passa all'agente", error)
+            return {"route": "conversazione", "route_reason": ""}
+        target = "agente" if result.categoria == "conversazione" else "rifiuto"
+        logger.info("[router] categoria=%s motivo=%s → %s", result.categoria, result.motivo, target)
+        return {"route": result.categoria, "route_reason": result.motivo}
+
+    def route_after_router(state: State) -> str:
+        return "model" if state["route"] == "conversazione" else "refusal"
+
+    def refusal_node(state: State) -> dict:
+        route = Route(categoria="fuori_ambito", motivo=state["route_reason"])
+        return {"messages": [AIMessage(refusal_text(route))]}
+
     graph = StateGraph(State)
     graph.add_node("model", model_node)
     graph.add_node("tools", tools_node)
     graph.add_node("step_limit", step_limit_node)
-    graph.add_edge(START, "model")
+    if router:
+        graph.add_node("router", router_node)
+        graph.add_node("refusal", refusal_node)
+        graph.add_edge(START, "router")
+        graph.add_conditional_edges("router", route_after_router, ["model", "refusal"])
+        graph.add_edge("refusal", END)
+    else:
+        graph.add_edge(START, "model")
     destinations = ["tools", "step_limit", END]
     if answer_check:
         graph.add_node("answer_check", answer_check_node)

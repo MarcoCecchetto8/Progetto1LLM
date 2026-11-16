@@ -119,7 +119,7 @@ def stream_turn(graph, state: dict, view: TurnView, config: dict | None = None) 
                             view.extra(content[len(shown):].lstrip("\n"))
                         else:
                             view.extra(content)
-                    elif node == "step_limit":
+                    elif node in ("step_limit", "refusal"):
                         view.extra(message.content)
     finally:
         view.finish()
