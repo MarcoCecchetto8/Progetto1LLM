@@ -153,7 +153,7 @@ All'inizio di ogni turno, prima del router, un nodo controlla la dimensione dell
 - **`clear`**: svuota anche il riassunto.
 - **Errore**: se il riassunto non riesce (errore di LM Studio o testo vuoto) cronologia e riassunto restano come prima, nel log compare un avviso `[riassunto] non riuscito (...): cronologia invariata` e il turno prosegue.
 - **Log**: all'avvio `[riassunto] soglia: <n> token stimati, turni conservati: <k>`; con `LOG_LEVEL=DEBUG` anche la riga dei conteggi.
-- **Limite, il tempo**: il riassunto è una chiamata in più al modello, circa 10 s nelle sonde (8–14 s).
+- **Limite, il tempo**: il riassunto è una chiamata in più al modello, 8–14 s nelle sonde.
 - **Limite accettato, la memoria dei riassunti successivi**: con `google/gemma-4-e2b` nome, città e ID delle note sopravvivono ai riassunti successivi, ma gli argomenti più vecchi tendono a sparire al secondo riassunto. È un limite del modello.
 
 ## Log

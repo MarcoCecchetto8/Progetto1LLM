@@ -104,5 +104,13 @@ def test_build_summarizer_uses_no_reasoning():
     assert result == "Riassunto breve"
 
 
+def test_build_summarizer_returns_string_for_list_content():
+    class ListModel(FakeModel):
+        def invoke(self, messages):
+            return AIMessage(content=[{"type": "text", "text": "R"}])
+
+    assert build_summarizer(ListModel())("", "Utente: ciao") == "R"
+
+
 def test_summary_line():
     assert summary_line(24, 5, 5200, 1400) == "[riassunto] 24 → 5 messaggi (circa 5200 → 1400 token)"

@@ -74,7 +74,7 @@ def build_summarizer(model: BaseChatModel) -> Callable[[str, str], str]:
         reply = plain.invoke(
             [SystemMessage(SUMMARIZER_INSTRUCTIONS), HumanMessage(summary_request(previous, conversation))]
         )
-        return reply.content
+        return reply.text
 
     return summarize
 
