@@ -95,3 +95,17 @@ def test_max_reviews(value, expected):
 def test_max_reviews_invalid(value):
     with pytest.raises(ConfigError, match="MAX_REVIEWS"):
         load_settings({**BASE, "MAX_REVIEWS": value})
+
+
+@pytest.mark.parametrize("env,threshold,keep", [({}, 4000, 2), ({"SUMMARY_THRESHOLD": "1500"}, 1500, 2),
+                                               ({"SUMMARY_KEEP_TURNS": "3"}, 4000, 3)])
+def test_summary_settings(env, threshold, keep):
+    s = load_settings({**BASE, **env})
+    assert (s.summary_threshold, s.summary_keep_turns) == (threshold, keep)
+
+
+@pytest.mark.parametrize("var", ["SUMMARY_THRESHOLD", "SUMMARY_KEEP_TURNS"])
+@pytest.mark.parametrize("value", ["0", "-1", "abc"])
+def test_summary_settings_invalid(var, value):
+    with pytest.raises(ConfigError, match=var):
+        load_settings({**BASE, var: value})
