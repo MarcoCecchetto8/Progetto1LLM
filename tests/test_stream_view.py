@@ -176,3 +176,18 @@ def test_stream_turn_with_real_graph_refusal():
     text = "".join(out)
     assert REFUSAL.format(motivo="cucina") in text
     assert "non deve comparire" not in text
+
+
+def test_stream_turn_review_lines():
+    from assistant.reviewer import Review
+    verdicts = iter([Review(coerente=False, motivo="manca il calcolo."), Review(coerente=True, motivo="ok")])
+    graph = build_graph(fake(AIMessage("bozza"), AIMessage("risposta completa")), [fake_clock], 5,
+                        reviewer=lambda q, a: next(verdicts))
+    view, out = make_view()
+    stream_turn(graph, {"messages": [HumanMessage("q")], "steps": 0}, view)
+    text = "".join(out)
+    order = ["bozza", "[revisore] non coerente: manca il calcolo. → nuova risposta", "risposta completa",
+             "[revisore] coerente"]
+    positions = [text.index(s) for s in order]
+    assert positions == sorted(positions) and all(text.count(s) == 1 for s in order)
+    assert text.count("\n[revisore] non coerente") == 1

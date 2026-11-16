@@ -12,8 +12,9 @@ from langchain_core.tools import tool
 from assistant.graph import LIMIT_MESSAGE, build_graph, system_prompt
 from assistant.llm import REASONING_KEY
 from assistant.mcp_client import MCPClient, MCPConnectionError
+from assistant.reviewer import Review, feedback_message, is_review_feedback
 from assistant.router import REFUSAL, Route
-from tests.fakes import fake, fake_clock as clock, tool_call
+from tests.fakes import FakeToolModel, fake, fake_clock as clock, tool_call
 
 
 def start(text, history=None):
@@ -39,6 +40,14 @@ def test_step_limit_cleans_history():
     assert out["steps"] == 5
     assert [m.content for m in out["messages"][1:]] == ["che ora è?", LIMIT_MESSAGE]
     assert not any(isinstance(m, ToolMessage) for m in out["messages"])
+
+
+def test_step_limit_starts_from_real_question():
+    model = fake(*[tool_call({}, f"c{i}") for i in range(10)])
+    state = start("che ora è?")
+    state["messages"] += [AIMessage("bozza"), feedback_message("manca X.")]
+    out = build_graph(model, [clock], 5).invoke(state)
+    assert [m.content for m in out["messages"][1:]] == ["che ora è?", LIMIT_MESSAGE]
 
 
 def test_previous_turns_survive_cleanup():
@@ -298,3 +307,130 @@ def test_router_api_error_propagates():
 def test_router_does_not_add_messages():
     out = build_graph(fake(AIMessage("Ciao!")), [clock], 5, router=make_router()).invoke(start("ciao"))
     assert [type(m) for m in out["messages"]] == [SystemMessage, HumanMessage, AIMessage]
+
+
+def make_reviewer(*verdicts):
+    # verdicts: (coerente, motivo) oppure un'eccezione; registra (domanda, risposta)
+    calls = []
+    queue = iter(verdicts)
+
+    def reviewer(question, answer):
+        calls.append((question, answer))
+        verdict = next(queue)
+        if isinstance(verdict, Exception):
+            raise verdict
+        return Review(coerente=verdict[0], motivo=verdict[1])
+
+    reviewer.calls = calls
+    return reviewer
+
+
+def test_reviewer_approves_first_time(caplog):
+    reviewer = make_reviewer((True, "ok"))
+    with caplog.at_level(logging.DEBUG, logger="assistant.graph"):
+        out = build_graph(fake(AIMessage("Ciao!")), [clock], 5, reviewer=reviewer).invoke(start("ciao"))
+    assert [m.content for m in out["messages"]] == ["s", "ciao", "Ciao!"]
+    assert out["reviews"] == 0 and reviewer.calls == [("ciao", "Ciao!")]
+    assert "[revisore] coerente=sì motivo=ok revisione 0/3" in caplog.text
+
+
+def test_reviewer_rejects_then_approves():
+    seen = []
+
+    class RecordingModel(FakeToolModel):
+        def invoke(self, messages, *args, **kwargs):
+            seen.append(list(messages))
+            return super().invoke(messages, *args, **kwargs)
+
+    model = RecordingModel(messages=iter([AIMessage("A Tokyo sono le 19:03."),
+                                          AIMessage("A Tokyo sono le 19:03 e il 15% di 80 fa 12.")]))
+    reviewer = make_reviewer((False, "manca il calcolo."), (True, "ok"))
+    out = build_graph(model, [clock], 5, reviewer=reviewer).invoke(start("ora a Tokyo e il 15% di 80"))
+    assert reviewer.calls[0][0] == reviewer.calls[1][0] == "ora a Tokyo e il 15% di 80"
+    assert "manca il calcolo." in seen[1][-1].content and is_review_feedback(seen[1][-1])
+    assert [type(m).__name__ for m in out["messages"]] == ["SystemMessage", "HumanMessage", "AIMessage"]
+    assert out["messages"][-1].content.endswith("fa 12.") and out["reviews"] == 1
+
+
+def test_reviewer_limit(caplog):
+    model = fake(*[AIMessage(f"r{i}") for i in range(4)])
+    reviewer = make_reviewer(*[(False, "no")] * 4)
+    with caplog.at_level(logging.DEBUG, logger="assistant.graph"):
+        out = build_graph(model, [clock], 5, reviewer=reviewer, max_reviews=3).invoke(start("q"))
+    assert len(reviewer.calls) == 4 and out["reviews"] == 3
+    assert "[revisore] limite raggiunto (3 revisioni): resta l'ultima risposta" in caplog.text
+    assert [m.content for m in out["messages"]] == ["s", "q", "r3"]
+
+
+def test_reviewer_zero_reviews():
+    reviewer = make_reviewer((False, "no"))
+    out = build_graph(fake(AIMessage("r0")), [clock], 5, reviewer=reviewer, max_reviews=0).invoke(start("q"))
+    assert len(reviewer.calls) == 1 and out["review_outcome"] == "limit"
+    assert [m.content for m in out["messages"]] == ["s", "q", "r0"]
+
+
+def test_reviewer_invalid_output_approves(caplog):
+    reviewer = make_reviewer(OutputParserException("x"))
+    out = build_graph(fake(AIMessage("Ciao!")), [clock], 5, reviewer=reviewer).invoke(start("ciao"))
+    assert out["messages"][-1].content == "Ciao!" and out["review_outcome"] == "invalid"
+    assert any(r.levelno == logging.WARNING and "[revisore] risposta non valida" in r.getMessage()
+               for r in caplog.records)
+
+
+def test_reviewer_skipped():
+    reviewer = make_reviewer()
+    router = make_router("fuori_ambito", "cucina")
+    build_graph(fake(AIMessage("x")), [clock], 5, router=router, reviewer=reviewer).invoke(start("carbonara?"))
+    build_graph(fake(*[tool_call({}, f"c{i}") for i in range(5)]), [clock], 2, reviewer=reviewer).invoke(start("ora?"))
+    build_graph(fake(AIMessage("")), [clock], 5, reviewer=reviewer).invoke(start("ciao"))
+    assert reviewer.calls == []
+
+
+def test_reviewer_keeps_tool_traffic():
+    model = fake(tool_call({}, "a"), AIMessage("Sono le 14:32."), AIMessage("Sono le 14:32 e 12 è il calcolo."))
+    reviewer = make_reviewer((False, "manca."), (True, "ok"))
+    out = build_graph(model, [clock], 5, reviewer=reviewer).invoke(start("ora e calcolo"))
+    kinds = [type(m).__name__ for m in out["messages"]]
+    assert kinds == ["SystemMessage", "HumanMessage", "AIMessage", "ToolMessage", "AIMessage"]
+    assert out["messages"][2].tool_calls and out["messages"][-1].content.endswith("calcolo.")
+
+
+def test_reviewer_resets_steps():
+    model = fake(tool_call({}, "a"), AIMessage("bozza"), tool_call({}, "b"), AIMessage("finale"))
+    reviewer = make_reviewer((False, "manca."), (True, "ok"))
+    out = build_graph(model, [clock], 2, reviewer=reviewer).invoke(start("ora?"))
+    assert all(m.content != LIMIT_MESSAGE for m in out["messages"])
+    assert out["messages"][-1].content == "finale"
+
+
+def test_reviewer_then_answer_check():
+    model = fake(AIMessage("bozza"), AIMessage("Nota salvata."))
+    reviewer = make_reviewer((False, "manca."), (True, "ok"))
+    out = build_graph(model, [clock], 5, answer_check=lambda m: ["Attenzione: falso successo."],
+                      reviewer=reviewer).invoke(start("salva una nota"))
+    assert out["messages"][-1].content == "Nota salvata.\n\nAttenzione: falso successo."
+    assert [m.content for m in out["messages"]][:2] == ["s", "salva una nota"] and len(out["messages"]) == 3
+
+
+
+def test_reviewer_skips_blank_answer():
+    reviewer = make_reviewer()
+    build_graph(fake(AIMessage("   ")), [clock], 5, reviewer=reviewer).invoke(start("ciao"))
+    assert reviewer.calls == []
+
+
+@pytest.mark.parametrize("motivo,expected", [("manca\nil  calcolo.", "manca il calcolo."),
+                                             ("  ", "il motivo non è stato indicato")])
+def test_reviewer_reason_normalized(motivo, expected):
+    # Il motivo finisce in una riga del terminale e nell'indicazione all'agente: una riga sola, mai vuoto
+    reviewer = make_reviewer((False, motivo))
+    out = build_graph(fake(AIMessage("bozza")), [clock], 5, reviewer=reviewer, max_reviews=0).invoke(start("q"))
+    assert out["review_reason"] == expected
+
+
+def test_reviewer_logs_only_at_debug(caplog):
+    # Le righe del revisore compaiono già nello streaming: a INFO il log non le ripete
+    reviewer = make_reviewer((False, "manca."))
+    with caplog.at_level(logging.INFO, logger="assistant.graph"):
+        build_graph(fake(AIMessage("bozza")), [clock], 5, reviewer=reviewer, max_reviews=0).invoke(start("q"))
+    assert "[revisore]" not in caplog.text

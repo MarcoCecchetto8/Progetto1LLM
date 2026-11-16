@@ -48,6 +48,7 @@ Invoke-RestMethod http://localhost:1234/v1/models | Select-Object -ExpandPropert
 | `DEFAULT_TIMEZONE` | no | `Europe/Rome` | nome IANA esatto (maiuscole comprese), validato all'avvio sull'elenco del pacchetto `tzdata` |
 | `LOG_LEVEL` | no | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `SHOW_REASONING` | no | `true` | `true` o `false`: mostra o nasconde il ragionamento del modello durante il turno |
+| `MAX_REVIEWS` | no | `3` | revisioni massime della risposta per domanda (≥ 0); con `0` il revisore giudica ma non rimanda mai indietro |
 | `SCOPE_FILE` | no | `config/ambito.txt` | file con l'ambito dell'assistente per il router (percorso relativo alla radice del progetto); se manca o è vuoto l'avvio si ferma con `SCOPE_FILE non valida: '<percorso>' non esiste o è vuoto.` |
 | `NOTES_SERVICE_URL` | no | vuota | vuota in locale: l'assistente avvia da solo il servizio delle note su `http://127.0.0.1:8000`; con Docker Compose viene impostata a `http://notes:8000` |
 
@@ -97,7 +98,7 @@ Non usare insieme l'assistente locale e quello Docker: entrambi vogliono la port
 
 I comandi non distinguono maiuscole e minuscole.
 
-Un turno interrotto con Ctrl+C non entra nella cronologia. Uno strumento già eseguito non viene annullato: una nota già salvata resta salvata. Il Ctrl+C ferma il modello al pezzo successivo della risposta; uno strumento già in esecuzione (chiamata MCP o HTTP al servizio delle note) viene invece atteso fino alla fine, poi compare `Risposta interrotta.`. Il servizio delle note e il server degli strumenti dovrebbero restare attivi dopo l'interruzione: è da verificare nella prova reale.
+Un turno interrotto con Ctrl+C non entra nella cronologia. Uno strumento già eseguito non viene annullato: una nota già salvata resta salvata. Il Ctrl+C ferma il modello al pezzo successivo della risposta; uno strumento già in esecuzione (chiamata MCP o HTTP al servizio delle note) viene invece atteso fino alla fine, poi compare `Risposta interrotta.`. Il servizio delle note e il server degli strumenti restano attivi dopo l'interruzione (verificato nella prova reale dello streaming).
 
 ## Che cosa si vede durante un turno
 
@@ -106,6 +107,7 @@ La risposta arriva in streaming, mentre il modello la scrive:
 - il **ragionamento** del modello, attenuato (grigio), sotto l'intestazione `[ragionamento]`, nella lingua in cui il modello lo scrive;
 - ogni **strumento** richiesto, su una riga propria con nome e argomenti (`[strumento] <nome> <argomenti>`), poi l'esito (`[strumento] <nome> → <risultato>`, oppure `[strumento] <nome> errore → <risultato>`);
 - la **risposta**, token per token; senza colori (pipe, file, `-T`), se prima c'è il ragionamento, la risposta comincia sotto l'intestazione `[risposta]`, su una riga propria;
+- dopo ogni risposta, la riga del **revisore** (`[revisore] coerente`, oppure `[revisore] non coerente: <motivo> → nuova risposta` seguita dalla nuova risposta);
 - l'eventuale avviso del controllo dei falsi successi, in fondo, dopo la risposta.
 
 Con `SHOW_REASONING=false` il ragionamento non compare e resta solo la riga «…sto pensando» fino al primo strumento o al primo token della risposta. Se il modello non invia il ragionamento, non c'è nulla da mostrare. Il ragionamento non entra nella cronologia. I colori compaiono solo se l'uscita è un terminale: con pipe, file o `docker compose run -T` il contenuto è lo stesso, senza sequenze di colore.
@@ -120,7 +122,22 @@ Prima dell'agente, un router decide se la domanda rientra nell'ambito dell'assis
 - **Dove si modifica l'ambito**: `config/ambito.txt` (descrizione ed esempi con la categoria attesa); un altro file si indica con `SCOPE_FILE`. La modifica vale dalla sessione successiva, senza toccare il codice. Con Docker il file è copiato nell'immagine: dopo una modifica serve `docker compose build`.
 - **Log**: a ogni decisione una riga `[router] categoria=<categoria> motivo=<motivo> → agente` oppure `→ rifiuto`; all'avvio `[router] ambito: <percorso> (<n> righe)`.
 - **Limite, il tempo**: il router è una chiamata in più al modello per ogni domanda: circa 23 s per decisione, misurati su questo computer.
-- **Limite, la precisione**: nelle sonde con 9 domande il router ha classificato bene 6 su 9 con la sola descrizione dell'ambito e 9 su 9 con gli esempi di `config/ambito.txt`. Sono domande di sonda, non ancora la prova reale; il modello può comunque sbagliare.
+- **Limite, la precisione**: nelle sonde con 9 domande il router ha classificato bene 6 su 9 con la sola descrizione dell'ambito e 9 su 9 con gli esempi di `config/ambito.txt`. Nella prova reale ha classificato bene 12 domande su 12; il modello può comunque sbagliare.
+
+## Revisore della risposta
+
+Dopo la risposta finale dell'agente, un revisore controlla che risponda a **tutte** le parti della domanda e che resti in tema. Usa lo stesso modello di LM Studio, con il ragionamento spento e un output strutturato (`coerente` sì/no e `motivo`). Riceve solo la domanda e la risposta, non i risultati degli strumenti: controlla la coerenza, non la correttezza dei dati.
+
+- **Coerente**: la risposta resta e il turno finisce (`[revisore] coerente`).
+- **Non coerente**: il motivo torna all'agente come indicazione e l'agente risponde di nuovo (`[revisore] non coerente: <motivo> → nuova risposta`), con un nuovo budget di `MAX_STEPS` passaggi.
+- **Limite**: al massimo `MAX_REVIEWS` revisioni (predefinito 3); al limite resta l'ultima risposta (`[revisore] limite raggiunto (<n> revisioni): resta l'ultima risposta`).
+- **Verdetto non valido**: la risposta è approvata (`[revisore] verdetto non valido: risposta approvata`) e nel log compare un avviso.
+- **Quando non interviene**: rifiuto del router, messaggio di limite di passaggi, risposta vuota.
+- **Cronologia**: a fine turno restano la domanda, le chiamate agli strumenti con i loro risultati e la risposta finale; bozze bocciate e indicazioni del revisore vengono tolte. L'avviso dei falsi successi si applica alla risposta finale, dopo il revisore.
+- **Scelta di streaming (slide 18 della lezione 6)**: si mostrano anche le bozze mentre vengono scritte, con il verdetto del revisore subito sotto. Lo scopo è osservare l'agente al lavoro, compresa la correzione; nascondere le bozze lascerebbe lo schermo fermo per tutta la revisione (decine di secondi con questo modello).
+- **Log**: all'avvio `[revisore] limite: <n> revisioni`; con `LOG_LEVEL=DEBUG` anche `[revisore] coerente=<sì|no> motivo=<motivo> revisione <n>/<max>` a ogni giudizio (a livello normale il verdetto si vede già nel terminale).
+- **Limite, il tempo**: ogni giudizio è una chiamata in più al modello, circa 23 s su questo computer; ogni bocciatura aggiunge anche una nuova risposta dell'agente.
+- **Limiti osservati nelle sonde**: giudizi corretti 6 su 6; dopo l'indicazione l'agente ha completato la risposta 3 volte su 3, ma calcolando a mente invece di usare `calculate` (il revisore non controlla come è stato ottenuto il dato).
 
 ## Log
 
@@ -321,10 +338,23 @@ Esiti del 2026-11-16 con `google/gemma-4-e2b`, domande inviate da pipe in una so
 | Modifica di `config/ambito.txt` (per esempio togliere «note») e nuova sessione | ok: con `SCOPE_FILE` che punta a una copia senza le righe sulle note, «Ricordami di comprare il latte» viene rifiutata |
 | Docker (`docker compose run --rm -T app` con input da pipe) | ok: carbonara rifiutata, «Che ore sono a Tokyo?» passa all'agente e usa `get_current_time` |
 
+### Prova reale del revisore
+
+Esiti del 2026-11-16 con `google/gemma-4-e2b`, domande inviate da pipe.
+
+| Prova | Atteso | Esito |
+|---|---|---|
+| `Che ore sono a Tokyo e quanto fa il 15% di 80?` | se la prima risposta è parziale: rifiuto motivato e nuova risposta completa; se è completa: approvata (si ripete con un'altra domanda in due parti) | completa al primo colpo (`get_current_time` e `calculate`), approvata. Con «Converti 5 chilometri in miglia e dimmi chi ha creato Python» la prima risposta dava solo l'anno di Python: **bocciata con motivo** («la risposta sulla creazione di Python è incompleta») e rifatta due volte; la terza è stata approvata ma diceva ancora solo «creato nel 1991», senza l'autore (giudizio sbagliato del revisore; l'agente non ha chiamato `get_item`). In una sonda controllata la correzione dopo l'indicazione era riuscita 3 volte su 3 |
+| Altre tre domande in due parti (Rust e 37 per 19; 25 dicembre 2026 e creatore del C; anno di Java e 10 km in metri) | se una parte manca: rifiuto motivato | tutte approvate al primo giudizio, nessuna bocciatura. Il revisore non controlla la correttezza: ha approvato `37 / 19` al posto di `37 * 19` e un autore di Rust scritto a memoria senza `get_item`. Per il C la prima bozza dava solo l'anno, ma conteneva anche la chiamata a `get_item`: è un passaggio intermedio, quindi il revisore non interviene, e il modello ha completato da solo («Dennis Ritchie») |
+| Una domanda semplice | approvata al primo passaggio | ok: «ciao, chi sei?», «Cos'è una rete neurale?» e la domanda in tre parti su Haskell, 2^10 e il 1/1/2000 approvate al primo passaggio |
+| Tempi del revisore e revisioni usate | registrati | circa 20–30 s per giudizio. Prima della correzione del prompt, una conversione spiegata come impossibile (miglia non supportate) veniva bocciata 3 volte fino al limite; con la regola «una parte spiegata come impossibile ha una risposta» la sonda dà 8 giudizi corretti su 8. Una domanda in tre parti (Natale, New York, Java) è finita in timeout del modello (120 s) dopo gli strumenti |
+| Docker (`docker compose run --rm -T app` con input da pipe) | stesso comportamento del locale | ok: «Cos'è un compilatore?» approvata, righe del router e del revisore come in locale |
+
 ## Diagnosi
 
 | Sintomo | Causa probabile e rimedio |
 |---|---|
+| il revisore rimanda indietro risposte corrette, o il turno è lento | il revisore è un modello piccolo e ogni giudizio costa circa 23 s: ridurre `MAX_REVIEWS` (anche a `0`) |
 | `... non valida` o `... mancante` all'avvio | variabile del `.env` assente o con valore non valido: il messaggio indica quale |
 | `LM Studio non raggiungibile o risposta non valida su .../models` all'avvio | server di LM Studio spento o su un'altra porta: avviarlo e controllare `LMSTUDIO_BASE_URL` |
 | `Modello '...' non trovato. Modelli disponibili: ...` | `LMSTUDIO_MODEL` non corrisponde a un id di `GET /v1/models`: copiarne uno dall'elenco |

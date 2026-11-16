@@ -7,7 +7,7 @@ from typing import Annotated, NotRequired, TypedDict
 
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, RemoveMessage
+from langchain_core.messages import AIMessage, AnyMessage, RemoveMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool, ToolException
 from langgraph.graph import END, START, StateGraph
@@ -15,6 +15,7 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
 from assistant.llm import REASONING_KEY
+from assistant.reviewer import Review, feedback_message, is_review_feedback, last_question_index
 from assistant.router import Route, refusal_text
 
 logger = logging.getLogger("assistant.graph")
@@ -27,6 +28,9 @@ class State(TypedDict):
     steps: int
     route: NotRequired[str]
     route_reason: NotRequired[str]  # serve al nodo refusal per il testo del rifiuto
+    reviews: NotRequired[int]
+    review_outcome: NotRequired[str]  # approved, retry, limit o invalid
+    review_reason: NotRequired[str]
 
 
 def system_prompt(default_timezone: str) -> str:
@@ -81,9 +85,21 @@ def log_tool_calls(calls: list[dict], messages: list) -> None:
                     json.dumps(call["args"], ensure_ascii=False), outcome, message.content)
 
 
+def cleanup_review(messages: list[AnyMessage]) -> list[RemoveMessage]:
+    # Toglie ogni indicazione del revisore e la bozza bocciata subito prima; chiamate e risultati degli strumenti restano
+    removed = []
+    for i, m in enumerate(messages):
+        if is_review_feedback(m):
+            removed.append(RemoveMessage(id=m.id))
+            if i > 0:
+                removed.append(RemoveMessage(id=messages[i - 1].id))
+    return removed
+
+
 def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
                 answer_check: Callable[[list[AnyMessage]], list[str]] | None = None,
-                router: Callable[[list[AnyMessage]], Route] | None = None):
+                router: Callable[[list[AnyMessage]], Route] | None = None,
+                reviewer: Callable[[str, str], Review] | None = None, max_reviews: int = 3):
     model_with_tools = model.bind_tools(tools)
     # Gli errori dello strumento tornano al modello come ToolMessage con stato "error".
     # Niente wrap_tool_call: con un wrapper il ToolNode convertirebbe in messaggio anche gli errori di collegamento
@@ -102,7 +118,10 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
     def route_after_model(state: State) -> str:
         last = state["messages"][-1]
         if not getattr(last, "tool_calls", None):
-            target = "answer_check" if answer_check else END
+            if reviewer and isinstance(last.content, str) and last.content.strip():
+                target = "reviewer"
+            else:
+                target = "answer_check" if answer_check else END
         elif state["steps"] < max_steps:
             target = "tools"
         else:
@@ -118,7 +137,7 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
     def step_limit_node(state: State) -> dict:
         logger.info("[grafo] limite di passaggi raggiunto (%d/%d)", state["steps"], max_steps)
         messages = state["messages"]
-        last_human = max(i for i, m in enumerate(messages) if isinstance(m, HumanMessage))
+        last_human = last_question_index(messages)
         removed = messages[last_human + 1:]
         logger.debug("[grafo] nodo step_limit: rimossi %d messaggi", len(removed))
         for m in removed:
@@ -136,6 +155,38 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
             return {}
         logger.info("[controllo] falso successo: avviso all'utente → %s", " | ".join(warnings))
         return {"messages": [AIMessage(content=last.content + "\n\n" + "\n".join(warnings), id=last.id)]}
+
+    def reviewer_node(state: State) -> dict:
+        messages = state["messages"]
+        reviews = state.get("reviews", 0)
+        question = messages[last_question_index(messages)].content
+        try:
+            result = reviewer(question, messages[-1].content)
+        except (OutputParserException, ValueError) as error:
+            # Giudizio non valido: nel dubbio la risposta passa
+            logger.warning("[revisore] risposta non valida (%s): risposta approvata", error)
+            return {"messages": cleanup_review(messages), "review_outcome": "invalid", "review_reason": "",
+                    "reviews": reviews}
+        # Il motivo va in una riga del terminale e nell'indicazione all'agente: una riga sola, mai vuoto
+        reason = " ".join(result.motivo.split()) or "il motivo non è stato indicato"
+        # DEBUG: lo streaming mostra già il verdetto all'utente
+        logger.debug("[revisore] coerente=%s motivo=%s revisione %d/%d", "sì" if result.coerente else "no", reason,
+                    reviews, max_reviews)
+        if result.coerente:
+            return {"messages": cleanup_review(messages), "review_outcome": "approved", "review_reason": reason,
+                    "reviews": reviews}
+        if reviews < max_reviews:
+            # Nuovo tentativo: i passaggi ripartono da zero
+            return {"messages": [feedback_message(reason)], "steps": 0, "reviews": reviews + 1,
+                    "review_outcome": "retry", "review_reason": reason}
+        logger.debug("[revisore] limite raggiunto (%d revisioni): resta l'ultima risposta", reviews)
+        return {"messages": cleanup_review(messages), "review_outcome": "limit", "review_reason": reason,
+                "reviews": reviews}
+
+    def route_after_reviewer(state: State) -> str:
+        if state["review_outcome"] == "retry":
+            return "model"
+        return "answer_check" if answer_check else END
 
     def router_node(state: State) -> dict:
         try:
@@ -168,6 +219,11 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
     else:
         graph.add_edge(START, "model")
     destinations = ["tools", "step_limit", END]
+    if reviewer:
+        graph.add_node("reviewer", reviewer_node)
+        graph.add_conditional_edges("reviewer", route_after_reviewer,
+                                    ["model", END] + (["answer_check"] if answer_check else []))
+        destinations.append("reviewer")
     if answer_check:
         graph.add_node("answer_check", answer_check_node)
         graph.add_edge("answer_check", END)

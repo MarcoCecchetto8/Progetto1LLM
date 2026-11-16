@@ -83,3 +83,15 @@ def test_load_scope_missing_or_blank(tmp_path):
 def test_real_scope_file():
     text = load_scope("config/ambito.txt", Path(__file__).resolve().parent.parent)
     assert text and "Esempi:" in text
+
+
+@pytest.mark.parametrize("value,expected", [(None, 3), ("0", 0), ("5", 5)])
+def test_max_reviews(value, expected):
+    env = {**BASE} if value is None else {**BASE, "MAX_REVIEWS": value}
+    assert load_settings(env).max_reviews == expected
+
+
+@pytest.mark.parametrize("value", ["-1", "abc"])
+def test_max_reviews_invalid(value):
+    with pytest.raises(ConfigError, match="MAX_REVIEWS"):
+        load_settings({**BASE, "MAX_REVIEWS": value})

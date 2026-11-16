@@ -4,6 +4,7 @@ import logging
 import os
 import signal
 import sys
+import warnings
 from pathlib import Path
 
 from assistant import GOODBYE
@@ -17,6 +18,12 @@ def configure_logging(level: str) -> None:
         # "httpx2" è il nome del logger HTTP nell'ambiente installato (verificato con LOG_LEVEL=DEBUG)
         for name in ("httpx", "httpx2", "openai", "httpcore"):
             logging.getLogger(name).setLevel(logging.WARNING)
+
+
+def quiet_library_warnings() -> None:
+    # Con l'output strutturato langchain-openai fa emettere a pydantic un avviso innocuo a ogni chiamata
+    # (campo "parsed"): sporcherebbe il terminale a ogni domanda (router e revisore)
+    warnings.filterwarnings("ignore", message="Pydantic serializer warnings", category=UserWarning)
 
 
 def close_quietly(client) -> None:
@@ -43,6 +50,7 @@ def _start() -> int:
     from assistant.cli import run
     from assistant.config import ConfigError, load_scope, load_settings
     from assistant.graph import build_graph
+    from assistant.reviewer import build_reviewer
     from assistant.router import build_router
     from assistant.llm import LMStudioUnavailable, ModelNotFound, build_chat_model, check_model
     from datetime import datetime
@@ -59,6 +67,7 @@ def _start() -> int:
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")
     load_dotenv()
+    quiet_library_warnings()
     try:
         settings = load_settings(os.environ)
         root = Path(__file__).resolve().parent.parent
@@ -97,7 +106,9 @@ def _start() -> int:
             tools = tools + build_note_tools(http, lambda: datetime.now(zone).date(), ask_in_terminal)
             model = build_chat_model(settings)
             graph = build_graph(model, tools, settings.max_steps, answer_check=check_note_claims,
-                                router=build_router(model, scope))
+                                router=build_router(model, scope), reviewer=build_reviewer(model),
+                                max_reviews=settings.max_reviews)
+            logging.getLogger("assistant").info("[revisore] limite: %d revisioni", settings.max_reviews)
             color = sys.stdout.isatty()
             if color and os.name == "nt":
                 # Abilita l'elaborazione VT nella console classica; Windows Terminal e VS Code la hanno già

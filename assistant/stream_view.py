@@ -6,6 +6,7 @@ from typing import Callable
 from langchain_core.messages import AIMessageChunk
 
 from assistant.llm import REASONING_KEY
+from assistant.reviewer import review_line
 
 REASONING_HEADER = "[ragionamento]"
 ANSWER_HEADER = "[risposta]"
@@ -99,6 +100,9 @@ def stream_turn(graph, state: dict, view: TurnView, config: dict | None = None) 
                     got_chunks = True
             elif mode == "updates":
                 for node, update in payload.items():
+                    if node == "reviewer":
+                        view.extra(review_line(update["review_outcome"], update["review_reason"], update["reviews"]))
+                        continue
                     message = _last_message(update)
                     if message is None:
                         continue
