@@ -340,14 +340,14 @@ Esiti del 2026-11-16 con `google/gemma-4-e2b`, domande inviate da pipe in una so
 
 ### Prova reale del revisore
 
-Da eseguire con LM Studio (locale e Docker `-T` con input da pipe).
+Esiti del 2026-11-16 con `google/gemma-4-e2b`, domande inviate da pipe.
 
 | Prova | Atteso | Esito |
 |---|---|---|
-| `Che ore sono a Tokyo e quanto fa il 15% di 80?` | se la prima risposta è parziale: rifiuto motivato e nuova risposta completa; se è completa: approvata (si ripete con un'altra domanda in due parti) | da provare |
-| Una domanda semplice | approvata al primo passaggio | da provare |
-| Tempi del revisore e revisioni usate | registrati | da provare |
-| Docker (`docker compose run --rm -T app` con input da pipe) | stesso comportamento del locale | da provare |
+| `Che ore sono a Tokyo e quanto fa il 15% di 80?` | se la prima risposta è parziale: rifiuto motivato e nuova risposta completa; se è completa: approvata (si ripete con un'altra domanda in due parti) | completa al primo colpo (`get_current_time` e `calculate`), approvata. Con «Converti 5 chilometri in miglia e dimmi chi ha creato Python» la prima risposta dava solo l'anno di Python: **bocciata con motivo** («la risposta sulla creazione di Python è incompleta») e rifatta due volte; la terza è stata approvata ma diceva ancora solo «creato nel 1991», senza l'autore (giudizio sbagliato del revisore; l'agente non ha chiamato `get_item`). In una sonda controllata la correzione dopo l'indicazione era riuscita 3 volte su 3 |
+| Una domanda semplice | approvata al primo passaggio | ok: «ciao, chi sei?», «Cos'è una rete neurale?» e la domanda in tre parti su Haskell, 2^10 e il 1/1/2000 approvate al primo passaggio |
+| Tempi del revisore e revisioni usate | registrati | circa 20–30 s per giudizio. Prima della correzione del prompt, una conversione spiegata come impossibile (miglia non supportate) veniva bocciata 3 volte fino al limite; con la regola «una parte spiegata come impossibile ha una risposta» la sonda dà 8 giudizi corretti su 8. Una domanda in tre parti (Natale, New York, Java) è finita in timeout del modello (120 s) dopo gli strumenti |
+| Docker (`docker compose run --rm -T app` con input da pipe) | stesso comportamento del locale | ok: «Cos'è un compilatore?» approvata, righe del router e del revisore come in locale |
 
 ## Diagnosi
 
