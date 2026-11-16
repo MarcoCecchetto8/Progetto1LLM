@@ -1,13 +1,30 @@
 """Modello e strumento finti per i test del grafo (nessun modello reale, nessun server MCP)."""
 
+import json
+
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, AIMessageChunk
+from langchain_core.outputs import ChatGenerationChunk
 from langchain_core.tools import ToolException, tool
 
 
 class FakeToolModel(GenericFakeChatModel):
     def bind_tools(self, tools, **kw):
         return self
+
+    def _stream(self, messages, stop=None, run_manager=None, **kwargs):
+        # Il modello finto di base in streaming perde le chiamate agli strumenti
+        # e non emette nulla per un contenuto vuoto: qui il messaggio esce intero.
+        msg = next(self.messages)
+        chunk = AIMessageChunk(
+            content=msg.content,
+            additional_kwargs=msg.additional_kwargs,
+            tool_call_chunks=[
+                {"name": c["name"], "args": json.dumps(c["args"]), "id": c["id"], "index": i}
+                for i, c in enumerate(msg.tool_calls)
+            ],
+        )
+        yield ChatGenerationChunk(message=chunk)
 
 
 def tool_call(args: dict, id: str, name: str = "get_current_time") -> AIMessage:
@@ -32,3 +49,15 @@ def fake_clock(timezone: str | None = None) -> str:
 
 
 fake_clock.name = "get_current_time"
+
+
+class FakeStreamGraph:
+    """Grafo finto: restituisce gli eventi dati e, alla fine, lo stato finale."""
+
+    def __init__(self, events: list[tuple[str, object]], final: dict):
+        self.events = events
+        self.final = final
+
+    def stream(self, state, stream_mode):
+        yield from self.events
+        yield ("values", self.final)
