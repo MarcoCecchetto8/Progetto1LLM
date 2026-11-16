@@ -49,6 +49,8 @@ Invoke-RestMethod http://localhost:1234/v1/models | Select-Object -ExpandPropert
 | `LOG_LEVEL` | no | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `SHOW_REASONING` | no | `true` | `true` o `false`: mostra o nasconde il ragionamento del modello durante il turno |
 | `MAX_REVIEWS` | no | `3` | revisioni massime della risposta per domanda (≥ 0); con `0` il revisore giudica ma non rimanda mai indietro |
+| `SUMMARY_THRESHOLD` | no | `4000` | token stimati (caratteri ÷ 4, riassunto compreso) oltre i quali la cronologia viene riassunta (≥ 1) |
+| `SUMMARY_KEEP_TURNS` | no | `2` | ultimi turni lasciati intatti dal riassunto (≥ 1) |
 | `SCOPE_FILE` | no | `config/ambito.txt` | file con l'ambito dell'assistente per il router (percorso relativo alla radice del progetto); se manca o è vuoto l'avvio si ferma con `SCOPE_FILE non valida: '<percorso>' non esiste o è vuoto.` |
 | `NOTES_SERVICE_URL` | no | vuota | vuota in locale: l'assistente avvia da solo il servizio delle note su `http://127.0.0.1:8000`; con Docker Compose viene impostata a `http://notes:8000` |
 
@@ -138,6 +140,21 @@ Dopo la risposta finale dell'agente, un revisore controlla che risponda a **tutt
 - **Log**: all'avvio `[revisore] limite: <n> revisioni`; con `LOG_LEVEL=DEBUG` anche `[revisore] coerente=<sì|no> motivo=<motivo> revisione <n>/<max>` a ogni giudizio (a livello normale il verdetto si vede già nel terminale).
 - **Limite, il tempo**: ogni giudizio è una chiamata in più al modello, circa 23 s su questo computer; ogni bocciatura aggiunge anche una nuova risposta dell'agente.
 - **Limiti osservati nelle sonde**: giudizi corretti 6 su 6; dopo l'indicazione l'agente ha completato la risposta 3 volte su 3, ma calcolando a mente invece di usare `calculate` (il revisore non controlla come è stato ottenuto il dato).
+
+## Riassunto della cronologia
+
+All'inizio di ogni turno, prima del router, un nodo controlla la dimensione della conversazione. Se supera la soglia, un riassunto sostituisce i messaggi più vecchi. Usa lo stesso modello di LM Studio, con il ragionamento spento e un'uscita testuale semplice. Serve a mantenere la conversazione utilizzabile su molti turni con il contesto limitato del modello locale (su questo computer 8192 token), senza il messaggio «Il contesto del modello è pieno».
+
+- **Quando scatta**: quando la stima dei token supera `SUMMARY_THRESHOLD` (predefinito 4000). La stima è la somma dei caratteri dei messaggi, prompt di sistema compreso, più il riassunto in vigore, divisa per 4; gli schemi degli strumenti (circa 1365 token) non sono inclusi e sono coperti dal margine della soglia. Sotto la soglia, o se i turni precedenti sono al massimo `SUMMARY_KEEP_TURNS`, il nodo non chiama il modello.
+- **Che cosa conserva**: il prompt di sistema, gli ultimi `SUMMARY_KEEP_TURNS` turni completi (predefinito 2) e la domanda del turno corrente. Il taglio cade sempre all'inizio di un turno, quindi una chiamata a uno strumento e il suo risultato non vengono mai separati.
+- **Che cosa chiede al modello**: un riassunto in italiano di al massimo 120 parole che conservi nome dell'utente, fuso orario o città, ID e testo delle note, argomenti principali.
+- **Dove finisce il riassunto**: in un campo dello stato, sostituito a ogni nuovo riassunto e non accumulato. A ogni chiamata il modello lo riceve in cima al prompt di sistema («Riassunto della conversazione precedente»); non viene salvato nella cronologia.
+- **Nel terminale**: prima del router compaiono una riga `[riassunto] <n> → <m> messaggi (circa <t1> → <t2> token)` e il testo del riassunto, mostrati una sola volta.
+- **`clear`**: svuota anche il riassunto.
+- **Errore**: se il riassunto non riesce (errore di LM Studio o testo vuoto) cronologia e riassunto restano come prima, nel log compare un avviso `[riassunto] non riuscito (...): cronologia invariata` e il turno prosegue.
+- **Log**: all'avvio `[riassunto] soglia: <n> token stimati, turni conservati: <k>`; con `LOG_LEVEL=DEBUG` anche la riga dei conteggi.
+- **Limite, il tempo**: il riassunto è una chiamata in più al modello, circa 10 s nelle sonde (8–14 s).
+- **Limite accettato, la memoria dei riassunti successivi**: con `google/gemma-4-e2b` nome, città e ID delle note sopravvivono ai riassunti successivi, ma gli argomenti più vecchi tendono a sparire al secondo riassunto. È un limite del modello.
 
 ## Log
 
@@ -350,10 +367,24 @@ Esiti del 2026-11-16 con `google/gemma-4-e2b`, domande inviate da pipe.
 | Tempi del revisore e revisioni usate | registrati | circa 20–30 s per giudizio. Prima della correzione del prompt, una conversione spiegata come impossibile (miglia non supportate) veniva bocciata 3 volte fino al limite; con la regola «una parte spiegata come impossibile ha una risposta» la sonda dà 8 giudizi corretti su 8. Una domanda in tre parti (Natale, New York, Java) è finita in timeout del modello (120 s) dopo gli strumenti |
 | Docker (`docker compose run --rm -T app` con input da pipe) | stesso comportamento del locale | ok: «Cos'è un compilatore?» approvata, righe del router e del revisore come in locale |
 
+### Prova reale del riassunto
+
+Da eseguire con una soglia bassa (per esempio `SUMMARY_THRESHOLD=1500` nel `.env`), domande inviate da pipe.
+
+| Prova | Atteso | Esito |
+|---|---|---|
+| «ciao, mi chiamo Marco» al primo turno, poi alcune domande con strumenti e una nota; dopo il riassunto «come mi chiamo?» | riga e testo del riassunto visibili; la risposta contiene il nome | da provare |
+| Sessione sotto la soglia | nessuna riga `[riassunto]` (il nodo non chiama il modello) | da provare |
+| Tempo del riassunto | registrato | da provare |
+| Secondo riassunto nella stessa sessione | registrare che cosa resta | da provare |
+| Docker (`docker compose run --rm -T app` con input da pipe) | stesso comportamento del locale | da provare |
+
 ## Diagnosi
 
 | Sintomo | Causa probabile e rimedio |
 |---|---|
+| il riassunto è lento o scatta troppo spesso | ogni riassunto è una chiamata in più al modello: alzare `SUMMARY_THRESHOLD` |
+| `[riassunto] non riuscito (...): cronologia invariata` | il riassunto non è riuscito (errore di LM Studio o testo vuoto): la cronologia resta invariata e il turno prosegue |
 | il revisore rimanda indietro risposte corrette, o il turno è lento | il revisore è un modello piccolo e ogni giudizio costa circa 23 s: ridurre `MAX_REVIEWS` (anche a `0`) |
 | `... non valida` o `... mancante` all'avvio | variabile del `.env` assente o con valore non valido: il messaggio indica quale |
 | `LM Studio non raggiungibile o risposta non valida su .../models` all'avvio | server di LM Studio spento o su un'altra porta: avviarlo e controllare `LMSTUDIO_BASE_URL` |
