@@ -310,16 +310,16 @@ Esiti del 2026-11-16 con `google/gemma-4-e2b`. Le prove con input da pipe (senza
 
 ### Prova reale del router
 
-Da eseguire con LM Studio (locale e Docker `-T` con input da pipe). Non ancora eseguita.
+Esiti del 2026-11-16 con `google/gemma-4-e2b`, domande inviate da pipe in una sola sessione (con `LOG_LEVEL=DEBUG` per vedere i passaggi del nodo agente).
 
 | Prova | Atteso | Esito |
 |---|---|---|
-| Le 9 domande della sonda | ogni domanda classificata come previsto; tempo del router per ciascuna | da provare |
-| Almeno 3 domande nuove, non presenti fra gli esempi di `config/ambito.txt` | classificate come previsto | da provare |
-| Domanda in ambito | log con categoria, motivo e `→ agente`, poi la risposta dell'agente | da provare |
-| Domanda fuori ambito | rifiuto con il motivo, nessuna riga del nodo agente nei log | da provare |
-| Modifica di `config/ambito.txt` (per esempio togliere «note») e nuova sessione | il comportamento cambia senza toccare il codice | da provare |
-| Docker (`docker compose run --rm -T app` con input da pipe) | stesso comportamento del locale | da provare |
+| Le 9 domande della sonda | ok, 9 su 9 (Roma, «e a Tokyo?», saluto, rete neurale, latte, «Quali strumenti hai?» in ambito; carbonara, mondiale 2006, Parigi rifiutate). Tempo del router fra circa 8 e 26 s per decisione |
+| Almeno 3 domande nuove, non presenti fra gli esempi di `config/ambito.txt` | ok, 3 su 3: «Converti 10 miglia in chilometri» e «Che differenza c'è tra Python e Java?» in ambito, «Qual è il fiume più lungo d'Italia?» rifiutata |
+| Domanda in ambito | ok |
+| Domanda fuori ambito | ok: dopo `→ rifiuto` nessuna riga `[grafo] nodo model`. Il motivo dei rifiuti è spesso generico («La richiesta è fuori dall'ambito delle mie capacità di assistenza.») |
+| Modifica di `config/ambito.txt` (per esempio togliere «note») e nuova sessione | ok: con `SCOPE_FILE` che punta a una copia senza le righe sulle note, «Ricordami di comprare il latte» viene rifiutata |
+| Docker (`docker compose run --rm -T app` con input da pipe) | ok: carbonara rifiutata, «Che ore sono a Tokyo?» passa all'agente e usa `get_current_time` |
 
 ## Diagnosi
 
