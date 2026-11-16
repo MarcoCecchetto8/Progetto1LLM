@@ -106,3 +106,14 @@ def test_missing_scope_file_stops_startup_with_clear_message(tmp_path):
     assert "SCOPE_FILE non valida" in result.stderr
     assert "Traceback" not in result.stderr
     assert "[mcp]" not in result.stderr
+
+
+def test_library_serializer_warnings_silenced():
+    import warnings
+    from assistant.__main__ import quiet_library_warnings
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        quiet_library_warnings()
+        warnings.warn("Pydantic serializer warnings:\n  PydanticSerializationUnexpectedValue(...)", UserWarning)
+        warnings.warn("altro avviso", UserWarning)
+    assert [str(w.message) for w in caught] == ["altro avviso"]

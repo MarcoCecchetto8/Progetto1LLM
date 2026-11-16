@@ -327,7 +327,7 @@ def make_reviewer(*verdicts):
 
 def test_reviewer_approves_first_time(caplog):
     reviewer = make_reviewer((True, "ok"))
-    with caplog.at_level(logging.INFO, logger="assistant.graph"):
+    with caplog.at_level(logging.DEBUG, logger="assistant.graph"):
         out = build_graph(fake(AIMessage("Ciao!")), [clock], 5, reviewer=reviewer).invoke(start("ciao"))
     assert [m.content for m in out["messages"]] == ["s", "ciao", "Ciao!"]
     assert out["reviews"] == 0 and reviewer.calls == [("ciao", "Ciao!")]
@@ -355,7 +355,7 @@ def test_reviewer_rejects_then_approves():
 def test_reviewer_limit(caplog):
     model = fake(*[AIMessage(f"r{i}") for i in range(4)])
     reviewer = make_reviewer(*[(False, "no")] * 4)
-    with caplog.at_level(logging.INFO, logger="assistant.graph"):
+    with caplog.at_level(logging.DEBUG, logger="assistant.graph"):
         out = build_graph(model, [clock], 5, reviewer=reviewer, max_reviews=3).invoke(start("q"))
     assert len(reviewer.calls) == 4 and out["reviews"] == 3
     assert "[revisore] limite raggiunto (3 revisioni): resta l'ultima risposta" in caplog.text
@@ -426,3 +426,11 @@ def test_reviewer_reason_normalized(motivo, expected):
     reviewer = make_reviewer((False, motivo))
     out = build_graph(fake(AIMessage("bozza")), [clock], 5, reviewer=reviewer, max_reviews=0).invoke(start("q"))
     assert out["review_reason"] == expected
+
+
+def test_reviewer_logs_only_at_debug(caplog):
+    # Le righe del revisore compaiono già nello streaming: a INFO il log non le ripete
+    reviewer = make_reviewer((False, "manca."))
+    with caplog.at_level(logging.INFO, logger="assistant.graph"):
+        build_graph(fake(AIMessage("bozza")), [clock], 5, reviewer=reviewer, max_reviews=0).invoke(start("q"))
+    assert "[revisore]" not in caplog.text

@@ -135,7 +135,7 @@ Dopo la risposta finale dell'agente, un revisore controlla che risponda a **tutt
 - **Quando non interviene**: rifiuto del router, messaggio di limite di passaggi, risposta vuota.
 - **Cronologia**: a fine turno restano la domanda, le chiamate agli strumenti con i loro risultati e la risposta finale; bozze bocciate e indicazioni del revisore vengono tolte. L'avviso dei falsi successi si applica alla risposta finale, dopo il revisore.
 - **Scelta di streaming (slide 18 della lezione 6)**: si mostrano anche le bozze mentre vengono scritte, con il verdetto del revisore subito sotto. Lo scopo è osservare l'agente al lavoro, compresa la correzione; nascondere le bozze lascerebbe lo schermo fermo per tutta la revisione (decine di secondi con questo modello).
-- **Log**: `[revisore] coerente=<sì|no> motivo=<motivo> revisione <n>/<max>` a ogni giudizio; all'avvio `[revisore] limite: <n> revisioni`.
+- **Log**: all'avvio `[revisore] limite: <n> revisioni`; con `LOG_LEVEL=DEBUG` anche `[revisore] coerente=<sì|no> motivo=<motivo> revisione <n>/<max>` a ogni giudizio (a livello normale il verdetto si vede già nel terminale).
 - **Limite, il tempo**: ogni giudizio è una chiamata in più al modello, circa 23 s su questo computer; ogni bocciatura aggiunge anche una nuova risposta dell'agente.
 - **Limiti osservati nelle sonde**: giudizi corretti 6 su 6; dopo l'indicazione l'agente ha completato la risposta 3 volte su 3, ma calcolando a mente invece di usare `calculate` (il revisore non controlla come è stato ottenuto il dato).
 

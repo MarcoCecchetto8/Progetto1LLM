@@ -169,7 +169,8 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
                     "reviews": reviews}
         # Il motivo va in una riga del terminale e nell'indicazione all'agente: una riga sola, mai vuoto
         reason = " ".join(result.motivo.split()) or "il motivo non è stato indicato"
-        logger.info("[revisore] coerente=%s motivo=%s revisione %d/%d", "sì" if result.coerente else "no", reason,
+        # DEBUG: lo streaming mostra già il verdetto all'utente
+        logger.debug("[revisore] coerente=%s motivo=%s revisione %d/%d", "sì" if result.coerente else "no", reason,
                     reviews, max_reviews)
         if result.coerente:
             return {"messages": cleanup_review(messages), "review_outcome": "approved", "review_reason": reason,
@@ -178,7 +179,7 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
             # Nuovo tentativo: i passaggi ripartono da zero
             return {"messages": [feedback_message(reason)], "steps": 0, "reviews": reviews + 1,
                     "review_outcome": "retry", "review_reason": reason}
-        logger.info("[revisore] limite raggiunto (%d revisioni): resta l'ultima risposta", reviews)
+        logger.debug("[revisore] limite raggiunto (%d revisioni): resta l'ultima risposta", reviews)
         return {"messages": cleanup_review(messages), "review_outcome": "limit", "review_reason": reason,
                 "reviews": reviews}
 

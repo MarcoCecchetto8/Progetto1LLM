@@ -4,6 +4,7 @@ import logging
 import os
 import signal
 import sys
+import warnings
 from pathlib import Path
 
 from assistant import GOODBYE
@@ -17,6 +18,12 @@ def configure_logging(level: str) -> None:
         # "httpx2" è il nome del logger HTTP nell'ambiente installato (verificato con LOG_LEVEL=DEBUG)
         for name in ("httpx", "httpx2", "openai", "httpcore"):
             logging.getLogger(name).setLevel(logging.WARNING)
+
+
+def quiet_library_warnings() -> None:
+    # Con l'output strutturato langchain-openai fa emettere a pydantic un avviso innocuo a ogni chiamata
+    # (campo "parsed"): sporcherebbe il terminale a ogni domanda (router e revisore)
+    warnings.filterwarnings("ignore", message="Pydantic serializer warnings", category=UserWarning)
 
 
 def close_quietly(client) -> None:
@@ -60,6 +67,7 @@ def _start() -> int:
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")
     load_dotenv()
+    quiet_library_warnings()
     try:
         settings = load_settings(os.environ)
         root = Path(__file__).resolve().parent.parent
