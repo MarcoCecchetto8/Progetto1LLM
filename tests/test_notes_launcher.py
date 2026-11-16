@@ -1,4 +1,6 @@
+import os
 import socket
+import subprocess
 
 import httpx
 import pytest
@@ -50,3 +52,33 @@ def test_port_in_use_is_reported(services):
 def test_wait_until_ready_times_out():
     with pytest.raises(NotesConnectionError):
         wait_until_ready("http://127.0.0.1:9", timeout=0.5)
+
+
+def test_service_started_in_own_process_group(monkeypatch):
+    # Verifica il ramo della piattaforma corrente: l'altro ramo non è eseguibile qui senza finti flag
+    calls = []
+
+    class FakeProc:
+        def poll(self):
+            return None
+
+        def terminate(self):
+            pass
+
+        def wait(self, timeout=None):
+            pass
+
+    def fake_popen(command, **kwargs):
+        calls.append(kwargs)
+        return FakeProc()
+
+    monkeypatch.setattr("assistant.notes.subprocess.Popen", fake_popen)
+    monkeypatch.setattr("assistant.notes._responds", lambda url: False)
+    monkeypatch.setattr("assistant.notes.wait_until_ready", lambda url, alive=None: None)
+    service = LocalNotesService(port=free_port())
+    service.start()
+    service.close()
+    if os.name == "nt":
+        assert calls == [{"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}]
+    else:
+        assert calls == [{"start_new_session": True}]

@@ -2,16 +2,21 @@
 
 import logging
 import os
+import signal
 import sys
+import threading
+from contextlib import contextmanager
 
 import openai
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from assistant import GOODBYE
 from assistant.config import Settings
 from assistant.graph import system_prompt
 from assistant.mcp_client import MCPConnectionError
-from assistant.notes import NotesConnectionError
+from assistant.notes import NotesConnectionError, confirmation_pending, reset_confirmation
+from assistant.stream_view import INTERRUPTED, THINKING, TurnView, stream_turn
 
 HELP_TEXT = (
     "Comandi:\n"
@@ -51,8 +56,50 @@ def clear_screen(stream=None, windows: bool = os.name == "nt", system=os.system)
         stream.flush()
 
 
+class TurnCancelled(Exception):
+    """Ctrl+C durante il turno: ferma il thread del modello."""
+
+
+class CancelOnInterrupt(BaseCallbackHandler):
+    # Senza raise_error LangChain registrerebbe l'eccezione e lascerebbe proseguire il modello
+    raise_error = True
+
+    def __init__(self, cancelled: threading.Event):
+        self._cancelled = cancelled
+
+    def on_llm_new_token(self, token, **kwargs) -> None:
+        if self._cancelled.is_set():
+            raise TurnCancelled
+
+
+@contextmanager
+def cancel_on_ctrl_c(cancelled: threading.Event):
+    # LangGraph esegue il modello in un thread e all'interruzione ne aspetta la fine:
+    # l'Event lo fa fermare al pezzo successivo. Il KeyboardInterrupt resta quello di sempre.
+    def handler(signum, frame):
+        cancelled.set()
+        signal.default_int_handler(signum, frame)
+
+    cancelled.clear()
+    try:
+        previous = signal.signal(signal.SIGINT, handler)
+    except ValueError:  # fuori dal thread principale non si può installare un gestore
+        yield
+        return
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGINT, previous)
+
+
+def write_stdout(text: str) -> None:
+    sys.stdout.write(text)
+    sys.stdout.flush()
+
+
 def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=clear_screen,
-        newline_on_interrupt: bool = os.name != "nt") -> int:
+        newline_on_interrupt: bool = os.name != "nt", write_fn=None, color: bool = False) -> int:
+    write_fn = write_fn or write_stdout
     initial = [SystemMessage(system_prompt(settings.default_timezone))]
     history = list(initial)
 
@@ -60,6 +107,8 @@ def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=cle
         output_fn(f"Assistente del laboratorio — modello: {settings.model}")
         output_fn("Scrivi la tua domanda. Comandi: help, clear. Per uscire: quit, exit o Ctrl+C.")
 
+    cancelled = threading.Event()
+    config = {"callbacks": [CancelOnInterrupt(cancelled)]}
     header()
     try:
         while True:
@@ -78,9 +127,19 @@ def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=cle
                 header()
                 output_fn("Cronologia svuotata.")
                 continue
-            output_fn("…sto pensando")
+            reset_confirmation()
+            if not settings.show_reasoning:
+                output_fn(THINKING)
+            view = TurnView(write_fn, color, settings.show_reasoning)
             try:
-                result = graph.invoke({"messages": history + [HumanMessage(text)], "steps": 0})
+                with cancel_on_ctrl_c(cancelled):
+                    result = stream_turn(graph, {"messages": history + [HumanMessage(text)], "steps": 0},
+                                         view, config)
+            except KeyboardInterrupt:
+                if confirmation_pending():
+                    raise  # Ctrl+C alla conferma di eliminazione: si esce come prima
+                output_fn(INTERRUPTED)
+                continue
             except openai.APIError as error:
                 output_fn(error_message(error, settings))
                 continue
@@ -99,13 +158,13 @@ def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=cle
                 logger.debug("Errore imprevisto durante il turno", exc_info=True)
                 output_fn(f"Errore imprevisto: {error}. Riprova o usa 'clear'.")
                 continue
+            # La risposta è già stata scritta in streaming: qui si controlla solo che non sia vuota
             answer = result["messages"][-1].content
             if not answer.strip():
                 # es. chiamata allo strumento con JSON non valido: il turno non entra in cronologia
                 output_fn(EMPTY_ANSWER)
                 continue
             history = result["messages"]
-            output_fn(answer)
     except (EOFError, KeyboardInterrupt):
         # Su Linux (anche in Docker) il terminale scrive "^C" senza andare a capo
         if newline_on_interrupt:

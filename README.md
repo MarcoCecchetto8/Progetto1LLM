@@ -47,6 +47,7 @@ Invoke-RestMethod http://localhost:1234/v1/models | Select-Object -ExpandPropert
 | `MAX_STEPS` | no | `5` | invocazioni massime del modello per domanda (≥ 1) |
 | `DEFAULT_TIMEZONE` | no | `Europe/Rome` | nome IANA esatto (maiuscole comprese), validato all'avvio sull'elenco del pacchetto `tzdata` |
 | `LOG_LEVEL` | no | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+| `SHOW_REASONING` | no | `true` | `true` o `false`: mostra o nasconde il ragionamento del modello durante il turno |
 | `NOTES_SERVICE_URL` | no | vuota | vuota in locale: l'assistente avvia da solo il servizio delle note su `http://127.0.0.1:8000`; con Docker Compose viene impostata a `http://notes:8000` |
 
 ## Avvio locale (PowerShell)
@@ -88,10 +89,25 @@ Non usare insieme l'assistente locale e quello Docker: entrambi vogliono la port
 | `help` | elenca comandi e modi di uscita |
 | `clear` | svuota la cronologia, pulisce lo schermo (solo se l'output è un terminale), ristampa l'intestazione e conferma con `Cronologia svuotata.` |
 | `quit`, `exit` | uscita con `Arrivederci!` |
-| Ctrl+C, Ctrl+D (Linux/Docker), Ctrl+Z + Invio (Windows) | uscita con `Arrivederci!` |
+| Ctrl+C al prompt, Ctrl+D (Linux/Docker), Ctrl+Z + Invio (Windows) | uscita con `Arrivederci!` |
+| Ctrl+C mentre il modello lavora | ferma solo il turno: compare `Risposta interrotta.` e si torna al prompt |
+| Ctrl+C alla domanda `[s/N]` di un'eliminazione | esce senza eliminare nulla |
 | riga vuota | ignorata |
 
 I comandi non distinguono maiuscole e minuscole.
+
+Un turno interrotto con Ctrl+C non entra nella cronologia. Uno strumento già eseguito non viene annullato: una nota già salvata resta salvata. Il Ctrl+C ferma il modello al pezzo successivo della risposta; uno strumento già in esecuzione (chiamata MCP o HTTP al servizio delle note) viene invece atteso fino alla fine, poi compare `Risposta interrotta.`. Il servizio delle note e il server degli strumenti dovrebbero restare attivi dopo l'interruzione: è da verificare nella prova reale.
+
+## Che cosa si vede durante un turno
+
+La risposta arriva in streaming, mentre il modello la scrive:
+
+- il **ragionamento** del modello, attenuato (grigio), sotto l'intestazione `[ragionamento]`, nella lingua in cui il modello lo scrive;
+- ogni **strumento** richiesto, su una riga propria con nome e argomenti (`[strumento] <nome> <argomenti>`), poi l'esito (`[strumento] <nome> → <risultato>`, oppure `[strumento] <nome> errore → <risultato>`);
+- la **risposta**, token per token; senza colori (pipe, file, `-T`), se prima c'è il ragionamento, la risposta comincia sotto l'intestazione `[risposta]`, su una riga propria;
+- l'eventuale avviso del controllo dei falsi successi, in fondo, dopo la risposta.
+
+Con `SHOW_REASONING=false` il ragionamento non compare e resta solo la riga «…sto pensando» fino al primo strumento o al primo token della risposta. Se il modello non invia il ragionamento, non c'è nulla da mostrare. Il ragionamento non entra nella cronologia. I colori compaiono solo se l'uscita è un terminale: con pipe, file o `docker compose run -T` il contenuto è lo stesso, senza sequenze di colore.
 
 ## Log
 
@@ -102,7 +118,7 @@ I log vanno su stderr. All'avvio compare il catalogo letto dal server MCP; con `
 [strumento] get_current_time call_id=1polVGvPjXs42xILRLFmbMpl47V0LucQ argomenti={"timezone": "Asia/Tokyo"} esito=ok → Asia/Tokyo: 2026-11-09T02:09:34+09:00
 ```
 
-Compaiono anche un avviso quando si raggiunge il limite di passaggi e, se il server MCP si ferma durante la sessione, la riga `[mcp] collegamento con il server perso: ...`, distinta dagli errori degli strumenti (`esito=errore`). Con `LOG_LEVEL=DEBUG` si vedono anche i nodi del grafo, l'instradamento, il contatore `steps/MAX_STEPS`, i messaggi rimossi dalla pulizia, i log HTTP delle librerie e i log del server MCP, che altrimenti non scrive nulla sul terminale.
+Compaiono anche un avviso quando si raggiunge il limite di passaggi e, se il server MCP si ferma durante la sessione, la riga `[mcp] collegamento con il server perso: ...`, distinta dagli errori degli strumenti (`esito=errore`). Le righe `[strumento] ... call_id=... esito=...` sono a livello `DEBUG`: si vedono con `LOG_LEVEL=DEBUG` (durante il turno gli strumenti si vedono già nel flusso descritto sopra). Con `LOG_LEVEL=DEBUG` si vedono anche i nodi del grafo, l'instradamento, il contatore `steps/MAX_STEPS`, i messaggi rimossi dalla pulizia, i log HTTP delle librerie e i log del server MCP, che altrimenti non scrive nulla sul terminale.
 
 ## Test
 
@@ -264,6 +280,21 @@ Esiti del 2026-11-15 con `google/gemma-4-e2b`, domande inviate da pipe (la confe
 
 **Falsi successi.** Senza controllo il modello dichiarava note salvate che non esistevano (1 volta su 5 con «Ricordami di comprare il latte», 3 su 5 con «venerdì»). Con il controllo, nelle stesse misure nessun falso successo è arrivato all'utente senza avviso. Il controllo non rende il modello affidabile: lo rende onesto verso l'utente. Può comparire un avviso ridondante quando il modello stesso dice che nulla è stato eliminato o salvato.
 
+### Prova reale dello streaming
+
+Esiti del 2026-11-16 con `google/gemma-4-e2b`. Le prove con input da pipe (senza terminale, quindi senza colori) le ha eseguite Claude; quelle in un terminale vero (colori, Ctrl+C) le ha eseguite l'utente, tutte con esito positivo.
+
+| Prova | Atteso | Esito |
+|---|---|---|
+| `Quanto fa 17*23?` | ragionamento attenuato che scorre, poi risposta che scorre | ok: via pipe ragionamento (in inglese), `calculate`, esito `391`, risposta; in PowerShell ragionamento attenuato (prova dell'utente) |
+| `Che ore sono a Tokyo?` | ragionamento, riga dello strumento con argomenti, esito, risposta | ok via pipe, in locale e con Docker |
+| `SHOW_REASONING=false` | solo «…sto pensando», strumenti e risposta | ok via pipe |
+| Ctrl+C durante un ragionamento lungo, poi una domanda con uno strumento MCP e una nota | `Risposta interrotta.` subito, poi strumento e nota funzionano; Ctrl+C al prompt chiude | ok (prova a mano dell'utente) |
+| Ctrl+C alla domanda `[s/N]` di un'eliminazione | nessuna eliminazione, `Arrivederci!` | ok in Windows e Docker (prova a mano dell'utente) |
+| `Ricordami di consegnare il report venerdì` | se il modello dichiara un salvataggio mai avvenuto, avviso in fondo | ok via pipe: `get_current_time`, `add_days` sbagliato, poi l'avviso in fondo (limite del modello già noto) |
+| Docker con terminale (`docker compose run --rm app`) | colori e streaming | ok (prova a mano dell'utente) |
+| Docker con `-T` e input da pipe | stesso contenuto, nessun colore, `[risposta]` prima della risposta se c'è il ragionamento | ok (nessun carattere di colore nell'uscita) |
+
 ## Diagnosi
 
 | Sintomo | Causa probabile e rimedio |
@@ -280,5 +311,6 @@ Esiti del 2026-11-15 con `google/gemma-4-e2b`, domande inviate da pipe (la confe
 | `Il server degli strumenti non risponde: esci e riavvia l'assistente.` | il server MCP si è fermato durante la sessione: uscire e riavviare l'assistente (con `LOG_LEVEL=DEBUG` si vede il dettaglio) |
 | `La porta 8000 è già in uso ...` all'avvio | un altro servizio delle note è già acceso (di solito quello di Docker): `docker compose down` e riavviare |
 | `Il servizio delle note non risponde: esci e riavvia l'assistente.` | il servizio delle note si è fermato durante la sessione: uscire e riavviare l'assistente |
+| Il ragionamento non compare | il modello non invia `reasoning_content` oppure `SHOW_REASONING=false` nel `.env` |
 | Il modello risponde senza riga `[strumento]` nel log | il modello non ha chiamato lo strumento: la risposta non è verificata; riformulare la domanda |
 | Il container non raggiunge LM Studio | controllare che il server sia attivo sull'host; se serve, attivare in LM Studio l'opzione per servire sulla rete locale e riprovare |

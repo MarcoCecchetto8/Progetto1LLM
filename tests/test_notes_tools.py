@@ -13,7 +13,8 @@ from langchain_core.tools import ToolException
 
 from assistant.graph import build_graph
 from assistant.notes import (DELETE_WARNING, SAVE_WARNING, NotesConnectionError, ask_in_terminal,
-                             build_note_tools, check_note_claims, due_phrase)
+                             build_note_tools, check_note_claims, confirmation_pending, due_phrase,
+                             reset_confirmation)
 from notes_service.app import create_app
 from tests.fakes import fake, tool_call
 
@@ -140,6 +141,34 @@ def test_ask_in_terminal_eof():
     def eof(q):
         raise EOFError
     assert ask_in_terminal("?", eof) is False
+
+
+@pytest.fixture(autouse=False)
+def clean_confirmation():
+    reset_confirmation()
+    yield
+    reset_confirmation()
+
+
+def test_confirmation_cleared_after_normal_answer(clean_confirmation):
+    assert ask_in_terminal("?", lambda q: "s") is True
+    assert not confirmation_pending()
+
+
+def test_confirmation_stays_pending_on_interrupt(clean_confirmation):
+    def broken(q):
+        raise KeyboardInterrupt
+    assert ask_in_terminal("?", broken) is False
+    assert confirmation_pending()
+    reset_confirmation()
+    assert not confirmation_pending()
+
+
+def test_confirmation_cleared_after_eof(clean_confirmation):
+    def eof(q):
+        raise EOFError
+    assert ask_in_terminal("?", eof) is False
+    assert not confirmation_pending()
 
 
 def test_connection_error():

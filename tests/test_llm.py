@@ -5,7 +5,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 
 from assistant.config import load_settings
-from assistant.llm import LMStudioUnavailable, ModelNotFound, build_chat_model, check_model, list_models
+from langchain_core.messages import AIMessageChunk
+
+from assistant.llm import (REASONING_KEY, LMStudioUnavailable, ModelNotFound, ReasoningChatOpenAI, build_chat_model,
+                           check_model, list_models)
 
 MODELS = {"data": [{"id": "google/gemma-4-e2b"}, {"id": "altro"}]}
 
@@ -68,3 +71,27 @@ def test_model_present(server):
 def test_build_chat_model():
     m = build_chat_model(settings("http://h:1234/v1", "google/gemma-4-e2b"))
     assert (m.model_name, m.max_retries, m.temperature) == ("google/gemma-4-e2b", 0, 0.2)
+
+
+def make_reasoning_model():
+    return ReasoningChatOpenAI(base_url="http://localhost:1/v1", model="m", api_key="x")
+
+
+def make_chunk(delta):
+    return {"choices": [{"index": 0, "delta": delta, "finish_reason": None}], "id": "x", "model": "m",
+            "object": "chat.completion.chunk", "created": 0}
+
+
+def test_reasoning_kept_in_stream_chunk():
+    model = make_reasoning_model()
+    result = model._convert_chunk_to_generation_chunk(
+        make_chunk({"role": "assistant", "reasoning_content": "Thinking"}), AIMessageChunk, None)
+    assert result.message.additional_kwargs[REASONING_KEY] == "Thinking"
+    result = model._convert_chunk_to_generation_chunk(make_chunk({"content": "Ciao"}), AIMessageChunk, None)
+    assert REASONING_KEY not in result.message.additional_kwargs and result.message.content == "Ciao"
+    empty = {"choices": [], "id": "x", "model": "m", "object": "chat.completion.chunk", "created": 0}
+    model._convert_chunk_to_generation_chunk(empty, AIMessageChunk, None)
+
+
+def test_build_chat_model_keeps_reasoning():
+    assert isinstance(build_chat_model(settings("http://h:1234/v1", "m")), ReasoningChatOpenAI)

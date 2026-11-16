@@ -91,7 +91,11 @@ def _start() -> int:
             tools = tools + build_note_tools(http, lambda: datetime.now(zone).date(), ask_in_terminal)
             graph = build_graph(build_chat_model(settings), tools, settings.max_steps,
                                 answer_check=check_note_claims)
-            return run(graph, settings)
+            color = sys.stdout.isatty()
+            if color and os.name == "nt":
+                # Abilita l'elaborazione VT nella console classica; Windows Terminal e VS Code la hanno già
+                os.system("")
+            return run(graph, settings, color=color)
         finally:
             if http is not None:
                 close_quietly(http)

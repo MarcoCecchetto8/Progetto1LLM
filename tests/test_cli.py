@@ -1,18 +1,26 @@
+import _thread
+import dataclasses
 import logging
+import threading
+import time
 
 import httpx
 import openai
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, SystemMessage
+from langchain_core.outputs import ChatGenerationChunk
 
 from assistant.cli import TOOLS_DOWN, clear_screen, run
 from assistant.config import load_settings
+from assistant.stream_view import INTERRUPTED, THINKING
 from assistant.graph import build_graph
 from assistant.mcp_client import MCPConnectionError
-from tests.fakes import fake, fake_clock
+from tests.fakes import FakeToolModel, fake, fake_clock
 
 REQ = httpx.Request("POST", "http://localhost:1234/v1/chat/completions")
-SETTINGS = load_settings({"LMSTUDIO_BASE_URL": "http://localhost:1234/v1", "LMSTUDIO_MODEL": "m"})
+BASE = load_settings({"LMSTUDIO_BASE_URL": "http://localhost:1234/v1", "LMSTUDIO_MODEL": "m"})
+# Senza ragionamento compare la riga «…sto pensando», usata come riferimento nei test
+SETTINGS = dataclasses.replace(BASE, show_reasoning=False)
 
 
 def bad_request(text):
@@ -38,9 +46,9 @@ class Recorder:
         self.graph = graph
         self.calls = []
 
-    def invoke(self, state):
+    def stream(self, state, config=None, stream_mode=None):
         self.calls.append(state)
-        return self.graph.invoke(state)
+        return self.graph.stream(state, config, stream_mode=stream_mode)
 
 
 class Stub:
@@ -50,20 +58,23 @@ class Stub:
         self.errors = list(errors)
         self.calls = []
 
-    def invoke(self, state):
+    def stream(self, state, config=None, stream_mode=None):
         self.calls.append(state)
         if self.errors:
             raise self.errors.pop(0)
-        return {"messages": state["messages"] + [AIMessage("ok")]}
+        reply = AIMessage("ok")
+        yield ("updates", {"model": {"messages": [reply]}})
+        yield ("values", {"messages": state["messages"] + [reply]})
 
 
 def real_graph(*msgs):
     return Recorder(build_graph(fake(*msgs), [fake_clock], 5))
 
 
-def session(graph, *lines):
+def session(graph, *lines, settings=SETTINGS):
+    # output_fn e write_fn finiscono nella stessa lista, nell'ordine in cui il terminale li mostrerebbe
     out = []
-    code = run(graph, SETTINGS, inputs(*lines), out.append)
+    code = run(graph, settings, inputs(*lines), out.append, write_fn=out.append)
     return code, out
 
 
@@ -86,9 +97,10 @@ def test_clear_resets_history():
 
 def test_clear_clears_screen_and_reprints_header():
     out, cleared = [], []
-    run(Stub(), SETTINGS, inputs("d1", "clear", "quit"), out.append, lambda: cleared.append(len(out)))
-    assert cleared == [4]  # due righe d'intestazione, "…sto pensando", "ok", poi la pulizia
-    assert out[4:7] == out[0:2] + ["Cronologia svuotata."]
+    run(Stub(), SETTINGS, inputs("d1", "clear", "quit"), out.append, lambda: cleared.append(len(out)),
+        write_fn=lambda text: None)
+    assert cleared == [3]  # due righe d'intestazione, "…sto pensando", poi la pulizia
+    assert out[3:6] == out[0:2] + ["Cronologia svuotata."]
 
 
 class FakeStream:
@@ -154,9 +166,69 @@ def test_eof_exits_cleanly():
 
 
 def test_ctrl_c_during_model():
-    code, out = session(Stub(KeyboardInterrupt()), "ciao")
+    graph = Stub(KeyboardInterrupt())
+    code, out = session(graph, "ciao", "seconda", "quit")
+    assert code == 0
+    assert INTERRUPTED in out
+    assert out[-1] == "Arrivederci!"
+    assert [m.content for m in graph.calls[1]["messages"][1:]] == ["seconda"]
+
+
+def test_ctrl_c_at_confirmation_exits():
+    from assistant.notes import ask_in_terminal, reset_confirmation
+
+    def interrupted(prompt=""):
+        raise KeyboardInterrupt
+
+    class Asking:
+        def stream(self, state, config=None, stream_mode=None):
+            ask_in_terminal("?", interrupted)
+            raise KeyboardInterrupt
+            yield
+
+    reset_confirmation()
+    try:
+        code, out = session(Asking(), "elimina", "quit")
+    finally:
+        reset_confirmation()
     assert code == 0
     assert out[-1] == "Arrivederci!"
+    assert INTERRUPTED not in out
+
+
+def test_thinking_line_only_without_reasoning():
+    _, hidden = session(Stub(), "ciao", "quit", settings=SETTINGS)
+    _, shown = session(Stub(), "ciao", "quit", settings=dataclasses.replace(BASE, show_reasoning=True))
+    assert THINKING in hidden
+    assert THINKING not in shown
+
+
+class Partial:
+    def __init__(self, error):
+        self.error = error
+        self.calls = []
+
+    def stream(self, state, config=None, stream_mode=None):
+        self.calls.append(state)
+        if len(self.calls) == 1:
+            yield ("messages", (AIMessageChunk("Ecco un po"), {"langgraph_node": "model"}))
+            raise self.error
+        reply = AIMessage("ok")
+        yield ("values", {"messages": state["messages"] + [reply]})
+
+
+def test_error_after_partial_answer():
+    graph = Partial(openai.APITimeoutError(request=REQ))
+    _, out = session(graph, "ciao", "seconda", "quit")
+    i = out.index("Ecco un po")
+    assert out[i + 1] == "\n"
+    assert "120" in out[i + 2]
+    assert [m.content for m in graph.calls[1]["messages"][1:]] == ["seconda"]
+
+
+def test_answer_not_printed_twice():
+    _, out = session(real_graph(AIMessage("risposta unica")), "ciao", "quit")
+    assert "".join(out).count("risposta unica") == 1
 
 
 @pytest.mark.parametrize("graph,lines", [(Stub(), ()), (Stub(KeyboardInterrupt()), ("ciao",))])
@@ -241,3 +313,45 @@ def test_notes_down_keeps_session():
     _, out = session(graph, "ricorda latte", "seconda", "quit")
     assert out[out.index("…sto pensando") + 1] == NOTES_DOWN
     assert [m.content for m in graph.calls[1]["messages"][1:]] == ["seconda"]
+
+
+class SlowModel(FakeToolModel):
+    """Modello finto lento: una risposta che comincia con «lento» esce a pezzi, 0,1 s l'uno."""
+
+    def _stream(self, messages, stop=None, run_manager=None, **kwargs):
+        for chunk in super()._stream(messages, stop, run_manager, **kwargs):
+            text = chunk.message.content
+            if not text.startswith("lento"):
+                yield chunk
+                continue
+            for piece in text:
+                time.sleep(0.1)
+                SLOW_PIECES.append(piece)
+                yield ChatGenerationChunk(message=AIMessageChunk(piece))
+
+
+SLOW_PIECES = []
+
+
+def test_ctrl_c_stops_the_model_thread():
+    # Grafo vero: LangGraph esegue il modello in un thread e, senza fermarlo, ne aspetta la fine
+    SLOW_PIECES.clear()
+    model = SlowModel(messages=iter([AIMessage("lento" + "." * 25), AIMessage("r2")]))
+    graph = Recorder(build_graph(model, [fake_clock], 5))
+    timer = threading.Timer(0.5, _thread.interrupt_main)
+    start = time.monotonic()
+    timer.start()
+    try:
+        _, out = session(graph, "ciao", "seconda", "quit")
+    finally:
+        timer.cancel()
+    elapsed = time.monotonic() - start
+    print(f"durata della sessione interrotta: {elapsed:.2f} s")
+    assert elapsed < 1.5
+    assert INTERRUPTED in out
+    assert [m.content for m in graph.calls[1]["messages"][1:]] == ["seconda"]
+    assert out[-1] == "Arrivederci!"
+    # Il thread del modello non continua a generare dopo l'interruzione
+    emitted = len(SLOW_PIECES)
+    time.sleep(0.3)
+    assert len(SLOW_PIECES) == emitted < 30
