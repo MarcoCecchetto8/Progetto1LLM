@@ -25,6 +25,7 @@ class Settings:
     notes_service_url: str = ""
     show_reasoning: bool = True
     scope_file: str = "config/ambito.txt"
+    max_reviews: int = 3
 
 
 def _get(env: Mapping[str, str], name: str, default: str | None = None) -> str:
@@ -72,9 +73,10 @@ def load_settings(env: Mapping[str, str]) -> Settings:
         raise ConfigError(f"SHOW_REASONING non valida: '{show_reasoning}' (valori ammessi: true, false).")
 
     scope_file = _get(env, "SCOPE_FILE", "config/ambito.txt")
+    max_reviews = _number(env, "MAX_REVIEWS", "3", int, 0, "un intero")
 
     return Settings(base_url, model, timeout, temperature, max_steps, timezone, log_level, notes_url,
-                    show_reasoning == "true", scope_file)
+                    show_reasoning == "true", scope_file, max_reviews)
 
 
 def load_scope(path: str, root: Path) -> str:
