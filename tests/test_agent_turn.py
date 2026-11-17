@@ -156,6 +156,8 @@ def valid_dict():
     lambda d: {**d, "decisioni": {"a": True}},
     lambda d: {**d, "decisioni": {"1": "sì"}},
     lambda d: {**d, "strumenti": "x"},
+    lambda d: {**d, "strumenti": [{"nome": "a", "argomenti": {}, "errore": False}]},
+    lambda d: {**d, "strumenti": [{"nome": "a", "argomenti": [], "esito": None, "errore": False}]},
     lambda d: {**d, "righe": [1]},
     lambda d: {**d, "messaggi": [{"tipo": "boh"}]},
     lambda d: [],

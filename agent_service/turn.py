@@ -94,7 +94,7 @@ class Suspended:
             raise ValueError(INVALID_SUSPENDED) from None
         valid = (isinstance(messages, list) and _is_int(steps) and _is_int(reviews) and isinstance(summary, str)
                  and isinstance(decisions, dict) and all(isinstance(v, bool) for v in decisions.values())
-                 and isinstance(tools, list) and all(isinstance(t, dict) for t in tools)
+                 and isinstance(tools, list) and all(_is_tool(t) for t in tools)
                  and isinstance(lines, list) and all(isinstance(r, str) for r in lines))
         if not valid:
             raise ValueError(INVALID_SUSPENDED)
@@ -107,6 +107,12 @@ class Suspended:
 
 def _is_int(value) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _is_tool(entry) -> bool:
+    return (isinstance(entry, dict) and isinstance(entry.get("nome"), str)
+            and isinstance(entry.get("argomenti"), dict) and isinstance(entry.get("esito", 0), (str, type(None)))
+            and isinstance(entry.get("errore"), bool))
 
 
 @dataclass
