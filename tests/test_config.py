@@ -67,6 +67,11 @@ def test_scope_file_default_and_override():
     assert load_settings({**BASE, "SCOPE_FILE": "altro.txt"}).scope_file == "altro.txt"
 
 
+def test_preferences_file_default_and_override():
+    assert load_settings(BASE).preferences_file == "config/preferenze.json"
+    assert load_settings({**BASE, "PREFERENCES_FILE": "p.json"}).preferences_file == "p.json"
+
+
 def test_load_scope_relative_and_absolute(tmp_path):
     (tmp_path / "a.txt").write_text("  Ambito di prova \n", encoding="utf-8")
     assert load_scope("a.txt", tmp_path) == "Ambito di prova"

@@ -58,6 +58,7 @@ def _start() -> int:
 
     import httpx
 
+    from assistant.preferences import load_preferences
     from assistant.mcp_client import MCPClient, MCPConnectionError, server_command, server_env
     from assistant.notes import (LocalNotesService, NotesConnectionError, TIMEOUT, ask_in_terminal,
                                  build_note_tools, check_note_claims, wait_until_ready)
@@ -86,11 +87,13 @@ def _start() -> int:
             tools = client.start()
             if not tools:
                 raise MCPConnectionError("Il server degli strumenti non espone nessuno strumento.")
+            # Il catalogo arriva dal server (discovery), non è scritto nell'assistente
+            logging.getLogger("assistant").info("[mcp] catalogo: %s", ", ".join(tool.name for tool in tools))
+            # Letta una volta, prima della prima domanda; un collegamento caduto è l'errore di sempre
+            preferences = load_preferences(client.read_resource, settings.default_timezone)
         except MCPConnectionError as error:
             print(error, file=sys.stderr)
             return 1
-        # Il catalogo arriva dal server (discovery), non è scritto nell'assistente
-        logging.getLogger("assistant").info("[mcp] catalogo: %s", ", ".join(tool.name for tool in tools))
         service = None if settings.notes_service_url else LocalNotesService(quiet=settings.log_level != "DEBUG")
         http = None
         try:
@@ -103,7 +106,7 @@ def _start() -> int:
                 return 1
             http = httpx.Client(base_url=url, timeout=TIMEOUT)
             logging.getLogger("assistant").info("[note] servizio: %s", url)
-            zone = get_timezone(settings.default_timezone)
+            zone = get_timezone(preferences.fuso_orario)
             tools = tools + build_note_tools(http, lambda: datetime.now(zone).date(), ask_in_terminal)
             model = build_chat_model(settings)
             graph = build_graph(model, tools, settings.max_steps, answer_check=check_note_claims,
@@ -119,7 +122,7 @@ def _start() -> int:
             if color and os.name == "nt":
                 # Abilita l'elaborazione VT nella console classica; Windows Terminal e VS Code la hanno già
                 os.system("")
-            return run(graph, settings, color=color)
+            return run(graph, settings, color=color, preferences=preferences)
         finally:
             if http is not None:
                 close_quietly(http)

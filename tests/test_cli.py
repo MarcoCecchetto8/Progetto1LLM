@@ -13,8 +13,9 @@ from langchain_core.outputs import ChatGenerationChunk
 from assistant.cli import TOOLS_DOWN, clear_screen, run
 from assistant.config import load_settings
 from assistant.stream_view import INTERRUPTED, THINKING
-from assistant.graph import build_graph
+from assistant.graph import build_graph, system_prompt
 from assistant.mcp_client import MCPConnectionError
+from lab_server.preferences import Preferences
 from tests.fakes import FakeToolModel, fake, fake_clock
 
 REQ = httpx.Request("POST", "http://localhost:1234/v1/chat/completions")
@@ -93,6 +94,24 @@ def test_clear_resets_history():
     assert [type(m) for m in messages] == [SystemMessage, HumanMessage]
     assert messages[1].content == "d2"
     assert "Cronologia svuotata." in out
+
+
+def test_run_uses_given_preferences_also_after_clear():
+    prefs = Preferences("inglese", "America/New_York", "dettagliato")
+    graph = real_graph(AIMessage("r1"), AIMessage("r2"))
+    run(graph, SETTINGS, inputs("d1", "clear", "d2", "quit"), lambda *_: None, write_fn=lambda *_: None,
+        preferences=prefs)
+    expected = system_prompt(prefs)
+    assert expected.startswith("Preferenze dell'utente (dalla resource utente://preferenze):\n- Rispondi sempre in inglese.\n")
+    assert graph.calls[0]["messages"][0].content == expected
+    assert graph.calls[1]["messages"][0].content == expected
+
+
+def test_run_default_preferences_from_settings():
+    graph = real_graph(AIMessage("r1"))
+    session(graph, "d1", "quit")
+    expected = system_prompt(Preferences("italiano", SETTINGS.default_timezone, "sintetico"))
+    assert graph.calls[0]["messages"][0].content == expected
 
 
 def test_clear_clears_screen_and_reprints_header():

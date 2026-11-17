@@ -36,6 +36,8 @@ async def check(argv: list[str]) -> int:
             for tool in await client.list_tools():
                 print(f"{tool.name}: {tool.description}")
                 print(json.dumps(tool.inputSchema, ensure_ascii=False, indent=2))
+            for resource in await client.list_resources():
+                print(f"resource {resource.uri}: {resource.name} ({resource.mimeType})")
             return 0
         result = await client.call_tool(argv[0], parse_args(argv[1:]), raise_on_error=False)
         text = "\n".join(block.text for block in result.content if block.type == "text")

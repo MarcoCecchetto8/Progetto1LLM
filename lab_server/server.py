@@ -3,6 +3,7 @@
 import logging
 from collections.abc import Callable
 from datetime import date, datetime
+from pathlib import Path
 from typing import Annotated
 
 from fastmcp import FastMCP
@@ -13,6 +14,7 @@ from lab_server.calculator import calculate as evaluate
 from lab_server import catalog, dates
 from lab_server.catalog import DEFAULT_RESULTS, MAX_RESULTS
 from lab_server.clock import current_time, utc_now
+from lab_server.preferences import PREFERENCES_URI
 from lab_server.timezones import get_timezone
 from lab_server.units import Unit, convert
 from lab_server.validation import ItalianValidationErrors
@@ -20,7 +22,8 @@ from lab_server.validation import ItalianValidationErrors
 logger = logging.getLogger("lab_server")
 
 
-def create_server(default_timezone: str, now: Callable[[], datetime] = utc_now) -> FastMCP:
+def create_server(default_timezone: str, now: Callable[[], datetime] = utc_now,
+                  preferences_file: Path | None = None) -> FastMCP:
     mcp = FastMCP("Strumenti del laboratorio", middleware=[ItalianValidationErrors()])
 
     @mcp.tool
@@ -126,5 +129,14 @@ def create_server(default_timezone: str, now: Callable[[], datetime] = utc_now) 
     def get_item(code: str) -> str:
         """Tutte le informazioni di un solo linguaggio dato il suo codice (es. PY, HS), ottenuto da search_catalog."""
         return run(f"get_item({code})", lambda: catalog.get_item(code))
+
+    if preferences_file is not None:
+        @mcp.resource(PREFERENCES_URI, name="preferenze", mime_type="application/json",
+                      description="Preferenze dell'utente per le risposte: lingua, fuso orario predefinito, stile.")
+        def preferences() -> str:
+            try:
+                return preferences_file.read_text(encoding="utf-8-sig")
+            except (OSError, UnicodeDecodeError):
+                raise ValueError(f"file delle preferenze non leggibile: {preferences_file}") from None
 
     return mcp
