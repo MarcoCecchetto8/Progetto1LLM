@@ -16,6 +16,7 @@ Esempi:
 - «Buongiorno!» → conversazione (saluto)
 - «Come mi chiamo?» → conversazione (domanda sulla conversazione)
 - «Di cosa abbiamo parlato?» → conversazione (domanda sulla conversazione)
+- «Riassumi la conversazione fin qui» → conversazione (domanda sulla conversazione)
 - «Come si fa il tiramisù?» → fuori_ambito (cucina)
 - «Qual è la capitale dell'Australia?» → fuori_ambito (geografia)
 - «Chi ha vinto Sanremo?» → fuori_ambito (attualità)

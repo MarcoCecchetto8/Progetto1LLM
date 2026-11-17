@@ -416,3 +416,122 @@ def test_failed_turn_keeps_summary(failure):
     session(graph, "d1", "d2", "d3", "quit")
     assert graph.calls[1]["summary"] == "R"
     assert graph.calls[2]["summary"] == "R"
+
+
+# --- comandi /prompts e /prompt ---
+
+from assistant.mcp_client import MCPPromptError, PromptArgument, PromptInfo
+
+PROMPTS = [
+    PromptInfo("spiega", "Spiega un concetto", (
+        PromptArgument("argomento", "il concetto", True),
+        PromptArgument("livello", "il livello", False))),
+    PromptInfo("riassumi_conversazione", "Riassume la conversazione", ()),
+]
+
+
+def prompt_session(graph, *lines, get_prompt=None, prompts=PROMPTS):
+    out = []
+    run(graph, SETTINGS, inputs(*lines), out.append, write_fn=out.append,
+        prompt_list=prompts, get_prompt=get_prompt)
+    return out
+
+
+def fake_get_prompt(calls=None, messages=None):
+    def get_prompt(name, arguments):
+        if calls is not None:
+            calls.append((name, arguments))
+        return messages if messages is not None else [("user", "Spiega MCP in breve.")]
+
+    return get_prompt
+
+
+def test_prompts_lists_and_help_mentions_commands():
+    out = prompt_session(Stub(), "/prompts", "help", "quit", get_prompt=fake_get_prompt())
+    text = "\n".join(out)
+    assert "spiega — Spiega un concetto" in text
+    assert "  /prompts    elenca i prompt del server" in text
+    assert "  /prompt     richiama un prompt: /prompt nome argomento=valore …" in text
+
+
+def test_prompt_runs_turn_with_prompt_message(caplog):
+    graph, calls = Stub(), []
+    with caplog.at_level(logging.INFO, logger="assistant.cli"):
+        prompt_session(graph, '/prompt spiega argomento="MCP"', "seconda", "quit",
+                       get_prompt=fake_get_prompt(calls))
+    assert calls == [("spiega", {"argomento": "MCP"})]
+    first = graph.calls[0]["messages"]
+    assert [m.content for m in first[1:]] == ["Spiega MCP in breve."]
+    assert isinstance(first[-1], HumanMessage)
+    assert "[prompt] spiega" in caplog.text
+    assert "Spiega MCP in breve." in [m.content for m in graph.calls[1]["messages"]]
+
+
+@pytest.mark.parametrize("line,expected", [
+    ("/prompt", "Uso: /prompt <nome> argomento=valore …  (elenco con /prompts)"),
+    ("/prompt spiega tema=x", "Argomento sconosciuto per spiega: tema (ammessi: argomento, livello)."),
+    ("/prompt spiega livello=base", "Argomento obbligatorio mancante per spiega: argomento."),
+    ("/prompt nessuno", "Prompt sconosciuto: nessuno. Disponibili: spiega, riassumi_conversazione."),
+    ("/promt x", "Comando sconosciuto: /promt. Comandi: help, clear, /prompts, /prompt."),
+])
+def test_prompt_errors_do_not_call_graph(line, expected):
+    graph, calls = Stub(), []
+    out = prompt_session(graph, line, "domanda", "quit", get_prompt=fake_get_prompt(calls))
+    assert expected in out
+    assert calls == []
+    assert len(graph.calls) == 1
+    assert [m.content for m in graph.calls[0]["messages"][1:]] == ["domanda"]
+
+
+def test_prompt_rejected_by_server():
+    graph = Stub()
+
+    def get_prompt(name, arguments):
+        raise MCPPromptError("argomento vuoto: indica il concetto da spiegare")
+
+    out = prompt_session(graph, '/prompt spiega argomento=" "', "quit", get_prompt=get_prompt)
+    assert "Il server ha rifiutato il prompt: argomento vuoto: indica il concetto da spiegare" in out
+    assert graph.calls == []
+
+
+def test_prompt_connection_lost():
+    graph = Stub()
+
+    def get_prompt(name, arguments):
+        raise MCPConnectionError("perso")
+
+    out = prompt_session(graph, "/prompt spiega argomento=x", "quit", get_prompt=get_prompt)
+    assert TOOLS_DOWN in out
+    assert graph.calls == []
+
+
+def test_prompt_without_messages_does_not_call_graph():
+    graph = Stub()
+    out = prompt_session(graph, "/prompt spiega argomento=x", "quit",
+                         get_prompt=fake_get_prompt(messages=[]))
+    assert "Il server non ha restituito messaggi per il prompt spiega." in out
+    assert graph.calls == []
+
+
+def test_prompt_without_get_prompt():
+    graph = Stub()
+    out = prompt_session(graph, "/prompt spiega argomento=x", "quit", prompts=())
+    assert "Nessun prompt disponibile sul server." in out
+    assert graph.calls == []
+
+
+def test_ctrl_c_during_prompt_turn_keeps_history():
+    graph = Stub(KeyboardInterrupt())
+    out = prompt_session(graph, "/prompt spiega argomento=x", "seconda", "quit",
+                         get_prompt=fake_get_prompt())
+    assert INTERRUPTED in out
+    assert [m.content for m in graph.calls[1]["messages"][1:]] == ["seconda"]
+
+
+def test_prompt_command_case():
+    graph, calls = Stub(), []
+    out = prompt_session(graph, "/PROMPTS", "/Prompt spiega argomento=x", "/prompt Spiega argomento=x",
+                         "quit", get_prompt=fake_get_prompt(calls))
+    assert any(line.startswith("spiega — ") for line in out)
+    assert calls == [("spiega", {"argomento": "x"})]
+    assert any(line.startswith("Prompt sconosciuto: Spiega.") for line in out)

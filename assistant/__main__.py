@@ -91,6 +91,9 @@ def _start() -> int:
             logging.getLogger("assistant").info("[mcp] catalogo: %s", ", ".join(tool.name for tool in tools))
             # Letta una volta, prima della prima domanda; un collegamento caduto è l'errore di sempre
             preferences = load_preferences(client.read_resource, settings.default_timezone)
+            prompt_list = client.list_prompts()
+            logging.getLogger("assistant").info(
+                "[mcp] prompt: %s", ", ".join(p.name for p in prompt_list) or "nessuno")
         except MCPConnectionError as error:
             print(error, file=sys.stderr)
             return 1
@@ -122,7 +125,8 @@ def _start() -> int:
             if color and os.name == "nt":
                 # Abilita l'elaborazione VT nella console classica; Windows Terminal e VS Code la hanno già
                 os.system("")
-            return run(graph, settings, color=color, preferences=preferences)
+            return run(graph, settings, color=color, preferences=preferences,
+                       prompt_list=prompt_list, get_prompt=client.get_prompt)
         finally:
             if http is not None:
                 close_quietly(http)
