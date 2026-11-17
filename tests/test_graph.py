@@ -14,6 +14,7 @@ from assistant.llm import REASONING_KEY
 from assistant.mcp_client import MCPClient, MCPConnectionError
 from assistant.reviewer import Review, feedback_message, is_review_feedback
 from assistant.router import REFUSAL, Route
+from assistant.summarizer import AGENT_SUMMARY_HEADER
 from tests.fakes import FakeToolModel, fake, fake_clock as clock, tool_call
 
 
@@ -559,7 +560,7 @@ def test_model_receives_summary_in_system_prompt():
     state = start("ciao")
     state["summary"] = "R"
     out = build_graph(Recording(messages=iter([AIMessage("ok")])), [clock], 5).invoke(state)
-    assert seen[0][0].content == "s\n\nRiassunto della conversazione precedente:\nR"
+    assert seen[0][0].content == f"s\n\n{AGENT_SUMMARY_HEADER}\nR"
     assert out["messages"][0].content == "s"
 
 

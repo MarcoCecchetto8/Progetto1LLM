@@ -21,6 +21,12 @@ SUMMARIZER_INSTRUCTIONS = (
 
 SUMMARY_HEADER = "Riassunto della conversazione precedente:"
 
+# Per l'agente: con l'intestazione breve, dopo turni con strumenti, ignorava il nome dell'utente nel riassunto
+AGENT_SUMMARY_HEADER = (
+    "Riassunto della conversazione precedente (fa parte di questa conversazione: usalo per rispondere "
+    "alle domande sull'utente, come nome e città, e su ciò di cui si è parlato):"
+)
+
 
 def estimate_tokens(messages: list[AnyMessage], summary: str = "") -> int:
     """Stima grossolana: un token ogni 4 caratteri, senza tokenizzatore."""
@@ -88,7 +94,8 @@ def with_summary(messages: list[AnyMessage], summary: str) -> list[AnyMessage]:
     result = list(messages)
     for i, message in enumerate(result):
         if isinstance(message, SystemMessage):
-            result[i] = message.model_copy(update={"content": f"{message.content}\n\n{SUMMARY_HEADER}\n{summary}"})
+            content = f"{message.content}\n\n{AGENT_SUMMARY_HEADER}\n{summary}"
+            result[i] = message.model_copy(update={"content": content})
             break
     return result
 

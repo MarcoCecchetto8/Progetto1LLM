@@ -1,7 +1,7 @@
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from assistant.reviewer import feedback_message
-from assistant.summarizer import (SUMMARIZER_INSTRUCTIONS, SUMMARY_HEADER, build_summarizer, estimate_tokens,
+from assistant.summarizer import (AGENT_SUMMARY_HEADER, SUMMARIZER_INSTRUCTIONS, SUMMARY_HEADER, build_summarizer, estimate_tokens,
                                   summary_cut, summary_line, summary_request, transcript, turn_starts,
                                   with_summary)
 
@@ -77,8 +77,10 @@ def test_with_summary_extends_system_only_for_call():
     system = SystemMessage("PROMPT")
     messages = [system, HumanMessage("q")]
     result = with_summary(messages, "R")
-    assert result[0].content == f"PROMPT\n\n{SUMMARY_HEADER}\nR"
-    assert result[0].content == "PROMPT\n\nRiassunto della conversazione precedente:\nR"
+    assert result[0].content == f"PROMPT\n\n{AGENT_SUMMARY_HEADER}\nR"
+    # Con l'intestazione breve l'agente ignorava il nome nel riassunto dopo turni con strumenti (sonda: 1/6 → 6/6)
+    assert AGENT_SUMMARY_HEADER.startswith("Riassunto della conversazione precedente (fa parte di questa conversazione")
+    assert "nome e città" in AGENT_SUMMARY_HEADER
     assert result[1] is messages[1]
     assert system.content == "PROMPT"
     assert messages[0] is system
