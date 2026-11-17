@@ -62,6 +62,13 @@ Specifica: `docs/superpowers/specs/2026-11-16-riassunto-design.md`, sezioni 5.7 
 - [ ] **Step 4: Suite verde.**
 - [ ] **Step 5: Commit** — `fix(riassunto): il riassunto chiama l'utente «l'utente» con nome e città`.
 
+### Task 2d: Intestazione esplicita del riassunto per l'agente (specifica 5.9)
+
+**Files:** Modify `assistant/summarizer.py`; Test `tests/test_summarizer.py`, `tests/test_graph.py`.
+
+- [x] Test aggiornati (nuova costante `AGENT_SUMMARY_HEADER` in `with_summary` e nel prompt del modello), falliti, implementazione, suite verde (451).
+- [x] Commit — `fix(riassunto): intestazione esplicita del riassunto per l'agente`.
+
 ### Task 3: Documentazione e prova reale
 
 - [ ] README (sezione del riassunto: che cosa ricevono router e revisore; limite «dove vivo?»), `CLAUDE.md` se cambia la descrizione dei moduli; commit `docs: ...`.

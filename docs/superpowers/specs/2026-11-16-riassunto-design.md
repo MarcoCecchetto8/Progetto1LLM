@@ -1,6 +1,6 @@
 # Riassunto della cronologia (lezione 6, step 3) — specifica
 
-Data: 2026-11-16 · Stato: approvata dall'utente il 2026-11-16; revisione 5.7 approvata il 2026-11-17; revisione 5.8 approvata il 2026-11-17
+Data: 2026-11-16 · Stato: approvata dall'utente il 2026-11-16; revisione 5.7 approvata il 2026-11-17; revisione 5.8 approvata il 2026-11-17; revisione 5.9 del 2026-11-17 decisa da Claude in autonomia (da confermare)
 
 Riferimenti: lezione 6, slide 3 (grafo dei tre step: «Riassunto» tra START e router) e 6 (step 3 · Riassunto della cronologia). Specifiche precedenti valide per tutto ciò che qui non cambia: `2026-11-16-revisore-design.md`, `2026-11-16-router-design.md`, `2026-11-16-streaming-design.md`, `2026-11-09-note-fastapi-design.md`.
 
@@ -131,6 +131,20 @@ START → summarizer → router → (model ⇄ tools → reviewer → …) come 
 **Test** (senza LM Studio): richiesta del revisore con i risultati degli strumenti (e senza: identica a 5.7); il grafo passa al revisore i risultati del turno corrente e non quelli dei turni precedenti; istruzioni del riassunto con la frase nuova.
 
 **Prova reale**: locale e Docker con soglia 900, con «come mi chiamo?» dopo il riassunto e «quali note ho?».
+
+### 5.9 Intestazione esplicita del riassunto per l'agente (revisione del 2026-11-17, scelta di Claude in autonomia concessa dall'utente)
+
+**Perché.** Prova reale dopo 5.8: note, «di cosa abbiamo parlato?» e ora di Tokyo approvate al primo giudizio in locale e in Docker; «come mi chiamo?» giusta in locale («Mi hai detto che ti chiami Marco.») ma sbagliata in Docker («Non mi hai detto il tuo nome.») con il riassunto «L'utente si chiama Marco e vive a Roma. …».
+
+**Misure** (grafo vero con strumenti MCP e note, riassunto nello stato; le ripetizioni a temperatura uguale tornano identiche, quindi si variano le temperature 0.2/0.5/0.8):
+- ultimi turni solo di testo: riassunto in fondo al prompt di sistema 3/3 (con risposte identiche), in testa 0/3;
+- ultimi turni con chiamate agli strumenti (come in Docker), intestazione di oggi: **1/6** (due riassunti diversi);
+- stessi casi con l'intestazione «Riassunto della conversazione precedente (fa parte di questa conversazione: usalo per rispondere alle domande sull'utente, come nome e città, e su ciò di cui si è parlato):»: **6/6**;
+- con la nuova intestazione l'agente usa ancora gli strumenti giusti: ora di Tokyo, Rust, note 6/6; «di cosa abbiamo parlato?» risponde senza strumenti 2/2.
+
+**Comportamento.** Solo l'agente usa la nuova intestazione (`AGENT_SUMMARY_HEADER` in `assistant/summarizer.py`), sempre in fondo al primo messaggio di sistema. Router e revisore restano con «Riassunto della conversazione precedente:», l'intestazione con cui sono stati misurati.
+
+**Test**: `with_summary` e il grafo usano la nuova intestazione; la cronologia salvata resta invariata.
 
 ### 5.5 Stato e terminale da un turno all'altro
 
