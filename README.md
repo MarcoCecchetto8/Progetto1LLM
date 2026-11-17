@@ -191,11 +191,11 @@ Oltre a tool e resource, il server MCP espone due **prompt**: modelli di richies
 ```
 
 - **Virgolette**: solo le virgolette doppie raggruppano; `argomento="Model Context Protocol"` è un solo valore. Il valore non cambia maiuscole e minuscole; il nome del comando e `/prompts` sì (`/PROMPTS` funziona), il nome del prompt no (`Spiega` non è `spiega`).
-- **Che cosa succede**: il testo del prompt prende il posto della domanda: il turno è identico a una domanda scritta a mano (router, strumenti, revisore, riassunto, Ctrl+C) e il messaggio resta nella cronologia. Per `spiega`, atteso: il router rifiuta gli argomenti fuori ambito (per esempio «tiramisù»), da verificare nella prova reale.
+- **Che cosa succede**: il testo del prompt prende il posto della domanda: il turno è identico a una domanda scritta a mano (router, strumenti, revisore, riassunto, Ctrl+C) e il messaggio resta nella cronologia. Per `spiega`, il router rifiuta gli argomenti fuori ambito (per esempio «tiramisù», verificato nella prova reale).
 - **Controlli prima del modello**: nome mancante, virgolette non chiuse, prompt sconosciuto, elemento senza `=`, argomento ripetuto, argomento sconosciuto, argomento obbligatorio mancante. In tutti i casi compare un messaggio e non partono né il modello né la richiesta al server. Un valore non ammesso (`livello=esperto`) o un `argomento` vuoto lo rifiuta il server: `Il server ha rifiutato il prompt: <motivo>`, senza chiamare il modello.
 - **Comando sconosciuto**: un testo che inizia con `/` e non è `/prompts` né `/prompt` (per esempio `/promt`) dà `Comando sconosciuto: /promt. Comandi: help, clear, /prompts, /prompt.` e non va al modello.
 - **Server caduto**: `Il server degli strumenti non risponde: esci e riavvia l'assistente.`, come durante un turno.
-- **Log**: prima del turno una riga `INFO` `[prompt] <nome> <argomenti in JSON> → <testo del primo messaggio>`; con più messaggi, uno per ciascuno a `DEBUG`. Atteso con `LOG_LEVEL=DEBUG`: la richiesta `prompts/get` compare nei log MCP, distinta da `tools/call` e `resources/read` (da verificare nella prova reale).
+- **Log**: prima del turno una riga `INFO` `[prompt] <nome> <argomenti in JSON> → <testo del primo messaggio>`; con più messaggi, uno per ciascuno a `DEBUG`. Con `LOG_LEVEL=DEBUG` la richiesta `prompts/get` (`GetPromptRequest`) compare nei log MCP, distinta da `tools/call` e `resources/read` (verificato nella prova reale).
 
 ## Log
 
@@ -443,17 +443,19 @@ Esiti del 2026-11-17 con `google/gemma-4-e2b`, domande inviate da pipe. In local
 
 ### Prova reale dei prompt
 
-Da fare con LM Studio, in locale e con Docker (domande da pipe); gli esiti si scrivono dopo la prova.
+Esiti del 2026-11-17 con `google/gemma-4-e2b`, comandi inviati da pipe in una sola sessione (più una seconda con `LOG_LEVEL=DEBUG`).
 
 | Prova | Atteso | Esito |
 |---|---|---|
-| `/prompts` | i due prompt con gli argomenti | da provare |
-| `/prompt spiega argomento="Model Context Protocol" livello=base`, poi `livello=avanzato` | risposte di livello diverso | da provare |
-| qualche domanda, poi `/prompt riassumi_conversazione` e `stile=dettagliato` | riassume i turni della sessione | da provare |
-| errori: obbligatorio mancante, argomento sconosciuto, prompt inesistente, `livello=esperto`, virgolette non chiuse, `/promt` | un messaggio ciascuno, nessuna chiamata al modello | da provare |
-| `/prompt spiega argomento="tiramisù"` | rifiutato dal router | da provare |
-| riga `[prompt]` nel log; con `LOG_LEVEL=DEBUG` `prompts/get` distinto da `tools/call` | nome, argomenti e testo | da provare |
-| Docker (`docker compose run --rm -T app` con input da pipe): `/prompts` e un `/prompt spiega` | come in locale | da provare |
+| `/prompts` | i due prompt con gli argomenti | ok: `spiega` (argomento obbligatorio, livello facoltativo) e `riassumi_conversazione` (stile facoltativo), con le descrizioni in italiano |
+| `/prompt spiega argomento="Model Context Protocol" livello=base`, poi `livello=avanzato` | risposte di livello diverso | ok per il livello: la base è breve e con parole semplici, l'avanzata parla di dettagli tecnici. Il contenuto però è sbagliato: il modello non conosce MCP e lo confonde con la gestione della finestra di contesto (limite del modello, che risponde a memoria) |
+| qualche domanda, poi `/prompt riassumi_conversazione` e `stile=dettagliato` | riassume i turni della sessione | ok: il sintetico in poche frasi, il dettagliato in un elenco per argomento con domanda e risposta; entrambi approvati dal revisore |
+| errori: obbligatorio mancante, argomento sconosciuto, prompt inesistente, `livello=esperto`, virgolette non chiuse, `/promt` | un messaggio ciascuno, nessuna chiamata al modello | ok: i sei messaggi attesi, nessuna riga del router né del modello |
+| `/prompt spiega argomento="tiramisù"` | rifiutato dal router | ok: `[router] categoria=fuori_ambito motivo=La richiesta riguarda la cucina…` e rifiuto |
+| riga `[prompt]` nel log; con `LOG_LEVEL=DEBUG` `prompts/get` distinto da `tools/call` | nome, argomenti e testo | ok: `[prompt] spiega {"argomento": "l'IA"} → Spiegami «l'IA» a livello base. …` (apostrofo intatto); nel log del server una `ListPromptsRequest` all'avvio e una `GetPromptRequest` per il comando, separate da `ListToolsRequest` e `ReadResourceRequest` |
+| Docker (`docker compose run --rm -T app` con input da pipe): `/prompts` e un `/prompt spiega` | come in locale | ok: `[mcp] prompt: spiega, riassumi_conversazione`, elenco, spiegazione dell'intelligenza artificiale di livello base approvata, `tema=x` bloccato |
+
+Osservato nella stessa sessione, senza legame con i prompt: dopo le due spiegazioni lunghe il router ha rifiutato «chi ha creato Python?», che pure è fra gli esempi di `config/ambito.txt` (limite del router con un contesto lungo).
 
 ## Diagnosi
 
