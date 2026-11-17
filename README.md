@@ -171,6 +171,7 @@ Lingua delle risposte, fuso orario predefinito e stile non sono scritti nel codi
 - **Log**: all'avvio una riga `INFO` `[preferenze] utente://preferenze: lingua=<...>, fuso_orario=<...>, stile=<...>`, distinta dalle chiamate ai tool.
 - **Docker**: `compose.yaml` monta `config/preferenze.json` in sola lettura in `/app/config/preferenze.json`: una modifica vale dalla sessione successiva senza `docker compose build`. Il file deve esistere sull'host: con la sintassi breve del bind mount, se manca Docker crea una cartella vuota `config/preferenze.json`. Con un `PREFERENCES_FILE` diverso in Docker si usa la copia dentro l'immagine, perché si monta solo `config/preferenze.json`.
 - **Limiti**: i testi fissi del programma (rifiuto del router, avvisi, messaggi del terminale, prompt di router, revisore e riassunto) restano in italiano; risponde nella lingua scelta solo il modello. L'avviso sui falsi successi delle note è solo in italiano: con `inglese` o `spagnolo` una nota dichiarata salvata o eliminata senza lo strumento non produce l'avviso.
+- **Limite osservato, la lingua**: con `inglese` le risposte costruite sui risultati del catalogo, che sono in italiano, escono a volte in italiano (2 sessioni su 4 per «chi ha creato Python?»). È un limite del modello.
 
 ## Log
 
@@ -401,20 +402,20 @@ Limiti visti nelle prove e già noti: il revisore legge a volte «12 per 7» com
 
 ### Prova reale delle preferenze
 
-Da eseguire con LM Studio (separata, attivata esplicitamente); gli esiti si compilano dopo la prova.
+Esiti del 2026-11-17 con `google/gemma-4-e2b`, domande inviate da pipe. In locale ogni sessione usa un file di preferenze diverso indicato con `PREFERENCES_FILE`, e un servizio delle note temporaneo con 4 note di prova (`NOTES_SERVICE_URL`), così `config/preferenze.json` e `data/notes.db` restano invariati.
 
 | Prova | Atteso | Esito |
 |---|---|---|
-| `fuso_orario: America/New_York`, «Che ore sono?» | ora di New York, senza chiedere il fuso | da provare |
-| `lingua: inglese`, nuova sessione | risposte in inglese | da provare |
-| `stile: dettagliato`, «chi ha creato Python?» | risposta più lunga con paradigmi e tipizzazione | da provare |
-| Valore non ammesso (per esempio `stile: medio`) | avvio con la riserva e un `WARNING` `[preferenze]` che nomina il campo | da provare |
-| File mancante | avvio con le riserve e un `WARNING` `[preferenze] resource non disponibile (...)` | da provare |
-| `LOG_LEVEL=DEBUG` | `resources/read` una sola volta, prima della prima domanda, distinta dalle `tools/call` | da provare |
-| Revisore con `inglese` e `dettagliato` | nessuna bocciatura inutile; se capita, lingua della risposta rifatta | da provare |
-| Stile sintetico con liste: «quali note ho?» con 4 o più note e «quali linguaggi sono funzionali?» | elenco completo, approvato dal revisore | da provare |
-| Richiesta di una nota con `inglese` | limite dell'avviso delle note, solo italiano | da provare |
-| Docker (`docker compose run --rm -T app` con input da pipe): modifica del file montato e nuova sessione senza `build` | comportamento cambiato | da provare |
+| `fuso_orario: America/New_York`, «Che ore sono?» | ora di New York, senza chiedere il fuso | ok dopo la correzione: `get_current_time {}` e «Attualmente sono le 09:58:58 nel fuso orario America/New_York» (2 sessioni su 2; una terza sessione interrotta da un timeout di LM Studio). Con il fuso anche nel blocco delle preferenze il modello non chiamava lo strumento: nelle sonde 3 casi su 6, contro 6 su 6 senza quella riga e 12 su 12 con il prompt precedente |
+| `lingua: inglese`, nuova sessione | risposte in inglese | in parte: conversioni, ora di Tokyo e nota in inglese; la risposta a «chi ha creato Python?» (dati del catalogo in italiano) è uscita in italiano in 2 sessioni su 4. Limite del modello |
+| `stile: dettagliato`, «chi ha creato Python?» | risposta più lunga con paradigmi e tipizzazione | ok: autore, anno, paradigmi, tipizzazione e sintassi, approvata dal revisore |
+| Valore non ammesso (per esempio `stile: medio`) | avvio con la riserva e un `WARNING` `[preferenze]` che nomina il campo | ok: con lingua `francese`, fuso `Marte/Base` e stile `medio` tre avvisi, uno per campo, e preferenze `italiano`, `Europe/Rome`, `sintetico` |
+| File mancante | avvio con le riserve e un `WARNING` `[preferenze] resource non disponibile (...)` | ok: `[preferenze] resource non disponibile (Error reading resource 'utente://preferenze': file delle preferenze non leggibile: …): uso italiano, sintetico, Europe/Rome`, l'avvio prosegue |
+| `LOG_LEVEL=DEBUG` | `resources/read` una sola volta, prima della prima domanda, distinta dalle `tools/call` | ok: una sola richiesta `ReadResourceRequest` all'avvio, prima della prima domanda |
+| Revisore con `inglese` e `dettagliato` | nessuna bocciatura inutile; se capita, lingua della risposta rifatta | ok: tutte le risposte approvate al primo giudizio, nessuna bocciatura |
+| Stile sintetico con liste: «quali note ho?» con 4 o più note e «quali linguaggi sono funzionali?» | elenco completo, approvato dal revisore | note: ok, tutte e 5 elencate. Linguaggi: «Sono stati trovati 8 linguaggi per "funzionale", mostrati 5», senza ripetere la ricerca con `max_results` più alto; risposta corretta ma parziale |
+| Richiesta di una nota con `inglese` | limite dell'avviso delle note, solo italiano | «Remind me to buy milk»: `add_note` chiamato davvero, risposta in inglese; il caso del falso successo in inglese non si è presentato |
+| Docker (`docker compose run --rm -T app` con input da pipe): modifica del file montato e nuova sessione senza `build` | comportamento cambiato | ok: con il file di oggi ora di Roma in italiano; cambiato il file montato in `inglese` e `America/New_York`, la sessione successiva senza `build` risponde «The current time in America/New_York is 10:10:45 AM…». Il file è stato poi ripristinato |
 
 ## Diagnosi
 
