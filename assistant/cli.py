@@ -5,6 +5,7 @@ import os
 import signal
 import sys
 import threading
+from collections.abc import Callable
 from contextlib import contextmanager
 
 import openai
@@ -14,8 +15,10 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from assistant import GOODBYE
 from assistant.config import Settings
 from assistant.graph import system_prompt
-from assistant.mcp_client import MCPConnectionError
+from assistant.mcp_client import MCPConnectionError, MCPPromptError, PromptInfo
 from assistant.notes import NotesConnectionError, confirmation_pending, reset_confirmation
+from assistant.prompts import (PromptCommandError, format_prompt_list, parse_prompt_command,
+                               prompt_log_line, prompt_messages)
 from assistant.stream_view import INTERRUPTED, THINKING, TurnView, stream_turn
 from lab_server.preferences import Preferences
 
@@ -23,6 +26,8 @@ HELP_TEXT = (
     "Comandi:\n"
     "  help        mostra questo aiuto\n"
     "  clear       svuota la cronologia e pulisce lo schermo\n"
+    "  /prompts    elenca i prompt del server\n"
+    "  /prompt     richiama un prompt: /prompt nome argomento=valore …\n"
     "  quit, exit  esci dall'assistente\n"
     "Puoi uscire anche con Ctrl+C (Ctrl+D su Linux/Docker, Ctrl+Z + Invio su Windows)."
 )
@@ -100,7 +105,8 @@ def write_stdout(text: str) -> None:
 
 def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=clear_screen,
         newline_on_interrupt: bool = os.name != "nt", write_fn=None, color: bool = False,
-        preferences: Preferences | None = None) -> int:
+        preferences: Preferences | None = None, prompt_list: list[PromptInfo] = (),
+        get_prompt: Callable[[str, dict[str, str]], list[tuple[str, str]]] | None = None) -> int:
     write_fn = write_fn or write_stdout
     preferences = preferences or Preferences("italiano", settings.default_timezone, "sintetico")
     initial = [SystemMessage(system_prompt(preferences))]
@@ -109,7 +115,78 @@ def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=cle
 
     def header():
         output_fn(f"Assistente del laboratorio — modello: {settings.model}")
-        output_fn("Scrivi la tua domanda. Comandi: help, clear. Per uscire: quit, exit o Ctrl+C.")
+        output_fn("Scrivi la tua domanda. Comandi: help, clear, /prompts, /prompt. Per uscire: quit, exit o Ctrl+C.")
+
+    def turn(new_messages) -> None:
+        nonlocal history, summary
+        reset_confirmation()
+        if not settings.show_reasoning:
+            output_fn(THINKING)
+        view = TurnView(write_fn, color, settings.show_reasoning)
+        try:
+            with cancel_on_ctrl_c(cancelled):
+                result = stream_turn(graph, {"messages": history + new_messages, "steps": 0,
+                                             "summary": summary}, view, config)
+        except KeyboardInterrupt:
+            if confirmation_pending():
+                raise  # Ctrl+C alla conferma di eliminazione: si esce come prima
+            output_fn(INTERRUPTED)
+            return
+        except openai.APIError as error:
+            output_fn(error_message(error, settings))
+            return
+        except MCPConnectionError as error:
+            # Errore di collegamento, distinto da un errore dello strumento (che torna al modello)
+            logger.warning("[mcp] collegamento con il server perso: %s", error)
+            logger.debug("Dettaglio dell'errore di collegamento", exc_info=True)
+            output_fn(TOOLS_DOWN)
+            return
+        except NotesConnectionError as error:
+            logger.warning("[note] collegamento con il servizio perso: %s", error)
+            logger.debug("Dettaglio dell'errore di collegamento", exc_info=True)
+            output_fn(NOTES_DOWN)
+            return
+        except Exception as error:
+            logger.debug("Errore imprevisto durante il turno", exc_info=True)
+            output_fn(f"Errore imprevisto: {error}. Riprova o usa 'clear'.")
+            return
+        # La risposta è già stata scritta in streaming: qui si controlla solo che non sia vuota
+        answer = result["messages"][-1].content
+        if not answer.strip():
+            # es. chiamata allo strumento con JSON non valido: il turno non entra in cronologia
+            output_fn(EMPTY_ANSWER)
+            return
+        history = result["messages"]
+        summary = result.get("summary", "")
+
+    def prompt_command(rest: str):
+        """Messaggi del prompt richiamato, o None se il comando non è valido (errore già mostrato)."""
+        if get_prompt is None:
+            output_fn(format_prompt_list([]))
+            return None
+        try:
+            name, arguments = parse_prompt_command(rest, list(prompt_list))
+            raw = get_prompt(name, arguments)
+        except PromptCommandError as error:
+            output_fn(str(error))
+            return None
+        except MCPPromptError as error:
+            output_fn(f"Il server ha rifiutato il prompt: {error}")
+            return None
+        except MCPConnectionError as error:
+            logger.warning("[mcp] collegamento con il server perso: %s", error)
+            logger.debug("Dettaglio dell'errore di collegamento", exc_info=True)
+            output_fn(TOOLS_DOWN)
+            return None
+        messages = prompt_messages(raw)
+        if not messages:
+            output_fn(f"Il server non ha restituito messaggi per il prompt {name}.")
+            return None
+        logger.info(prompt_log_line(name, arguments, raw))
+        if len(raw) > 1:
+            for number, (role, text) in enumerate(raw, 1):
+                logger.debug("[prompt] %d/%d %s: %s", number, len(raw), role, " ".join(text.split()))
+        return messages
 
     cancelled = threading.Event()
     config = {"callbacks": [CancelOnInterrupt(cancelled)]}
@@ -132,45 +209,18 @@ def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=cle
                 header()
                 output_fn("Cronologia svuotata.")
                 continue
-            reset_confirmation()
-            if not settings.show_reasoning:
-                output_fn(THINKING)
-            view = TurnView(write_fn, color, settings.show_reasoning)
-            try:
-                with cancel_on_ctrl_c(cancelled):
-                    result = stream_turn(graph, {"messages": history + [HumanMessage(text)], "steps": 0,
-                                                 "summary": summary}, view, config)
-            except KeyboardInterrupt:
-                if confirmation_pending():
-                    raise  # Ctrl+C alla conferma di eliminazione: si esce come prima
-                output_fn(INTERRUPTED)
+            if command.startswith("/"):
+                token = command.split()[0]
+                if token == "/prompts":
+                    output_fn(format_prompt_list(list(prompt_list)))
+                elif token == "/prompt":
+                    messages = prompt_command(text[len("/prompt"):])
+                    if messages is not None:
+                        turn(messages)
+                else:
+                    output_fn(f"Comando sconosciuto: {text.split()[0]}. Comandi: help, clear, /prompts, /prompt.")
                 continue
-            except openai.APIError as error:
-                output_fn(error_message(error, settings))
-                continue
-            except MCPConnectionError as error:
-                # Errore di collegamento, distinto da un errore dello strumento (che torna al modello)
-                logger.warning("[mcp] collegamento con il server perso: %s", error)
-                logger.debug("Dettaglio dell'errore di collegamento", exc_info=True)
-                output_fn(TOOLS_DOWN)
-                continue
-            except NotesConnectionError as error:
-                logger.warning("[note] collegamento con il servizio perso: %s", error)
-                logger.debug("Dettaglio dell'errore di collegamento", exc_info=True)
-                output_fn(NOTES_DOWN)
-                continue
-            except Exception as error:
-                logger.debug("Errore imprevisto durante il turno", exc_info=True)
-                output_fn(f"Errore imprevisto: {error}. Riprova o usa 'clear'.")
-                continue
-            # La risposta è già stata scritta in streaming: qui si controlla solo che non sia vuota
-            answer = result["messages"][-1].content
-            if not answer.strip():
-                # es. chiamata allo strumento con JSON non valido: il turno non entra in cronologia
-                output_fn(EMPTY_ANSWER)
-                continue
-            history = result["messages"]
-            summary = result.get("summary", "")
+            turn([HumanMessage(text)])
     except (EOFError, KeyboardInterrupt):
         # Su Linux (anche in Docker) il terminale scrive "^C" senza andare a capo
         if newline_on_interrupt:

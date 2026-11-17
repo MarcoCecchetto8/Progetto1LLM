@@ -32,6 +32,18 @@ def rotta() -> str:
     raise RuntimeError("resource rotta")
 
 
+@mcp.prompt
+def saluta(nome: str) -> str:
+    """Prompt di prova."""
+    return f"Saluta {nome}."
+
+
+@mcp.prompt
+def rotto() -> str:
+    """Prompt che solleva sempre un errore."""
+    raise ValueError("prompt rotto")
+
+
 @mcp.tool
 def die() -> str:
     """Termina il processo del server, come un crash."""

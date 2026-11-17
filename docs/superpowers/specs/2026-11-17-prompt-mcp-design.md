@@ -69,7 +69,7 @@ Nuovo modulo `assistant/prompts.py` (comandi `/prompts` e `/prompt`: analisi, co
     stile (facoltativo): sintetico o dettagliato
   ```
   Nessun prompt disponibile: «Nessun prompt disponibile sul server.».
-- **`/prompt <nome> [k=v …]`**: il resto della riga si divide con le regole della shell POSIX (`shlex.split`), così `argomento="Model Context Protocol"` diventa un solo valore. Controlli, nell'ordine, **senza chiamare il modello né il server** fino all'ultimo:
+- **`/prompt <nome> [k=v …]`**: il resto della riga si divide sugli spazi; solo le virgolette doppie raggruppano un valore con spazi (si tolgono), così `argomento="Model Context Protocol"` diventa un solo valore. L'apostrofo è un carattere ordinario, quindi `argomento=l'IA` funziona (con `shlex` darebbe «virgolette non chiuse»): scostamento da shlex deciso nel piano e approvato dall'utente. Controlli, nell'ordine, **senza chiamare il modello né il server** fino all'ultimo:
   1. nome mancante → `Uso: /prompt <nome> argomento=valore …  (elenco con /prompts)`;
   2. virgolette non chiuse → `Virgolette non chiuse: controlla il comando.`;
   3. prompt non nell'elenco → `Prompt sconosciuto: <nome>. Disponibili: spiega, riassumi_conversazione.`;
@@ -98,7 +98,7 @@ Nuovo modulo `assistant/prompts.py` (comandi `/prompts` e `/prompt`: analisi, co
 - `lab_server/prompts.py`: testi esatti per ogni livello e stile; predefiniti; valori non ammessi e argomento vuoto → `ValueError` con il messaggio.
 - Server (client FastMCP in memoria): i due prompt elencati con descrizioni e argomenti (`required` giusto); `get_prompt` restituisce il testo; valore non ammesso → errore con il messaggio italiano.
 - Client MCP (server di prova di `tests/mcp_test_server.py` esteso con un prompt): `list_prompts` con descrizioni ripulite; `get_prompt`; errore del server → `MCPPromptError` senza prefisso inglese; la sessione resta utilizzabile; connessione persa → `MCPConnectionError`.
-- `assistant/prompts.py`: ogni controllo di 5.3 con il testo esatto; `shlex` con virgolette; formato di `/prompts`; conversione dei messaggi.
+- `assistant/prompts.py`: ogni controllo di 5.3 con il testo esatto; divisione con sole virgolette doppie (non `shlex`); formato di `/prompts`; conversione dei messaggi.
 - `cli.run`: `/prompts`; `/prompt` valido → il grafo riceve cronologia + messaggi del prompt e la cronologia li conserva; ogni errore → il grafo **non** viene chiamato; comando sconosciuto con `/`; `help`.
 - `check`: righe dei prompt.
 - Restano verdi tutti i test esistenti.
@@ -126,6 +126,7 @@ Branch `feature/prompt` da `developer`; merge `--no-ff` dopo la prova reale e l'
 - Esempio «Riassumi la conversazione fin qui» in `config/ambito.txt`.
 - `lab_server.check` che elenca anche i prompt.
 - Testi dei due prompt e delle indicazioni di livello e stile.
+- Divisione degli argomenti con le sole virgolette doppie, apostrofo ordinario: scostamento da shlex deciso nel piano e approvato dall'utente.
 
 ## 9. Lasciato al piano
 

@@ -5,6 +5,7 @@ import os
 import sys
 import threading
 from collections.abc import Mapping
+from dataclasses import dataclass
 from concurrent.futures import Future
 from pathlib import Path
 
@@ -25,6 +26,24 @@ class MCPConnectionError(Exception):
 
 class MCPResourceError(Exception):
     """Lettura di una resource rifiutata dal server (la sessione resta utilizzabile)."""
+
+
+class MCPPromptError(Exception):
+    """Prompt sconosciuto o rifiutato dal server (la sessione resta utilizzabile)."""
+
+
+@dataclass(frozen=True)
+class PromptArgument:
+    name: str
+    description: str
+    required: bool
+
+
+@dataclass(frozen=True)
+class PromptInfo:
+    name: str
+    description: str
+    arguments: tuple[PromptArgument, ...]
 
 
 # Connessione chiusa dall'SDK (-32000) e timeout della richiesta (408, httpx.codes.REQUEST_TIMEOUT)
@@ -122,23 +141,60 @@ class MCPClient:
 
         return StructuredTool(name=tool.name, description=tool.description, args_schema=tool.args_schema, func=call)
 
-    def read_resource(self, uri: str) -> str:
-        """Legge una resource del server sulla stessa sessione dei tool e ne restituisce il testo."""
+    def _await_session(self, make_coroutine, error_class: type[Exception]):
+        """Attende una chiamata sulla sessione condivisa e traduce gli errori.
+
+        McpError di connessione, timeout e crash diventano MCPConnectionError; ogni altro McpError
+        diventa error_class (rifiuto del server, la sessione resta utilizzabile).
+        """
         if self._closed or self._client_session is None:
             raise MCPConnectionError("La sessione con il server degli strumenti è chiusa.")
-        pending = asyncio.run_coroutine_threadsafe(self._client_session.read_resource(AnyUrl(uri)), self._loop)
+        pending = asyncio.run_coroutine_threadsafe(make_coroutine(self._client_session), self._loop)
         try:
-            result = pending.result(timeout=self.timeout)
+            return pending.result(timeout=self.timeout)
         except McpError as error:
             if error.error.code in CONNECTION_CODES:
                 pending.cancel()
                 raise MCPConnectionError(f"Il server degli strumenti non risponde: {error}") from error
-            raise MCPResourceError(str(error)) from None
+            raise error_class(str(error)) from None
         except Exception as error:
             pending.cancel()
             detail = str(error) or type(error).__name__
             raise MCPConnectionError(f"Il server degli strumenti non risponde: {detail}") from error
+
+    def read_resource(self, uri: str) -> str:
+        """Legge una resource del server sulla stessa sessione dei tool e ne restituisce il testo."""
+        result = self._await_session(lambda session: session.read_resource(AnyUrl(uri)), MCPResourceError)
         return "\n".join(item.text for item in result.contents if hasattr(item, "text"))
+
+    def list_prompts(self) -> list[PromptInfo]:
+        """Elenca i prompt del server; delle descrizioni degli argomenti resta la parte prima di FastMCP."""
+        result = self._await_session(lambda session: session.list_prompts(), MCPPromptError)
+        return [
+            PromptInfo(
+                prompt.name,
+                prompt.description or "",
+                tuple(
+                    PromptArgument(
+                        argument.name,
+                        (argument.description or "").split("\n\n")[0],
+                        bool(argument.required),
+                    )
+                    for argument in prompt.arguments or []
+                ),
+            )
+            for prompt in result.prompts
+        ]
+
+    def get_prompt(self, name: str, arguments: dict[str, str]) -> list[tuple[str, str]]:
+        """Compila un prompt sul server e restituisce (ruolo, testo) per ogni messaggio di testo."""
+        try:
+            result = self._await_session(lambda session: session.get_prompt(name, arguments), MCPPromptError)
+        except MCPPromptError as error:
+            prefix = f"Error rendering prompt '{name}': "
+            message = str(error)
+            raise MCPPromptError(message.removeprefix(prefix)) from None
+        return [(m.role, m.content.text) for m in result.messages if getattr(m.content, "type", None) == "text"]
 
     def close(self) -> None:
         if self._closed:

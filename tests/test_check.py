@@ -22,3 +22,10 @@ def test_check_lists_resource(capfd):
     assert asyncio.run(check([])) == 0
     lines = capfd.readouterr().out.splitlines()
     assert any(line.startswith("resource utente://preferenze: preferenze (application/json)") for line in lines)
+
+
+def test_check_lists_prompts(capfd):
+    assert asyncio.run(check([])) == 0
+    lines = capfd.readouterr().out.splitlines()
+    assert "prompt spiega: Spiega un argomento al livello richiesto." in lines
+    assert "  argomento (obbligatorio): concetto da spiegare" in lines
