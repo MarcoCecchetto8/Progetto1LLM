@@ -102,6 +102,7 @@ def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=cle
     write_fn = write_fn or write_stdout
     initial = [SystemMessage(system_prompt(settings.default_timezone))]
     history = list(initial)
+    summary = ""
 
     def header():
         output_fn(f"Assistente del laboratorio — modello: {settings.model}")
@@ -123,6 +124,7 @@ def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=cle
                 continue
             if command == "clear":
                 history = list(initial)
+                summary = ""
                 clear_fn()
                 header()
                 output_fn("Cronologia svuotata.")
@@ -133,8 +135,8 @@ def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=cle
             view = TurnView(write_fn, color, settings.show_reasoning)
             try:
                 with cancel_on_ctrl_c(cancelled):
-                    result = stream_turn(graph, {"messages": history + [HumanMessage(text)], "steps": 0},
-                                         view, config)
+                    result = stream_turn(graph, {"messages": history + [HumanMessage(text)], "steps": 0,
+                                                 "summary": summary}, view, config)
             except KeyboardInterrupt:
                 if confirmation_pending():
                     raise  # Ctrl+C alla conferma di eliminazione: si esce come prima
@@ -165,6 +167,7 @@ def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=cle
                 output_fn(EMPTY_ANSWER)
                 continue
             history = result["messages"]
+            summary = result.get("summary", "")
     except (EOFError, KeyboardInterrupt):
         # Su Linux (anche in Docker) il terminale scrive "^C" senza andare a capo
         if newline_on_interrupt:

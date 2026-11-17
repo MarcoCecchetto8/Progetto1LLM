@@ -16,6 +16,9 @@ REVIEWER_INSTRUCTIONS = (
     "Se non è coerente, il motivo dice in una frase breve in italiano che cosa manca o che cosa è fuori tema."
 )
 
+# Stesso testo di SUMMARY_HEADER (assistant.summarizer, che importa questo modulo): lo verifica un test
+REVIEW_SUMMARY_HEADER = "Riassunto della conversazione precedente:"
+
 FEEDBACK = (
     "[Revisore] La risposta non è completa o non è in tema: {motivo} "
     "Rispondi di nuovo alla domanda dell'utente, in modo completo, usando gli strumenti se servono."
@@ -34,20 +37,28 @@ class Review(BaseModel):
     motivo: str = Field(description="Frase breve in italiano: che cosa manca o che cosa è fuori tema.")
 
 
-def review_request(question: str, answer: str) -> str:
-    return f"Domanda dell'utente:\n{question}\n\nRisposta proposta:\n{answer}"
+def review_request(question: str, answer: str, summary: str = "", recent: str = "", tools: str = "") -> str:
+    # Riassunto e conversazione recente: senza, il revisore boccia le domande sulla conversazione stessa.
+    # Risultati degli strumenti: senza, boccia i dati che non trova nel contesto (note, ora)
+    context = ""
+    if summary:
+        context += f"{REVIEW_SUMMARY_HEADER}\n{summary}\n\n"
+    if recent:
+        context += f"Conversazione recente:\n{recent}\n\n"
+    if tools:
+        context += f"Risultati degli strumenti in questo turno:\n{tools}\n\n"
+    return f"{context}Domanda dell'utente:\n{question}\n\nRisposta proposta:\n{answer}"
 
 
-def build_reviewer(model: BaseChatModel) -> Callable[[str, str], Review]:
+def build_reviewer(model: BaseChatModel) -> Callable[[str, str, str, str, str], Review]:
     # Senza ragionamento: il giudizio deve essere rapido
     structured = model.model_copy(update={"reasoning_effort": "none"}).with_structured_output(
         Review, method="json_schema"
     )
 
-    def review(question: str, answer: str) -> Review:
-        return structured.invoke(
-            [SystemMessage(REVIEWER_INSTRUCTIONS), HumanMessage(review_request(question, answer))]
-        )
+    def review(question: str, answer: str, summary: str = "", recent: str = "", tools: str = "") -> Review:
+        request = review_request(question, answer, summary, recent, tools)
+        return structured.invoke([SystemMessage(REVIEWER_INSTRUCTIONS), HumanMessage(request)])
 
     return review
 

@@ -1,5 +1,6 @@
+import re
 import pytest
-from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, SystemMessage, ToolMessage
 
 from assistant.graph import LIMIT_MESSAGE, build_graph
 from assistant.llm import REASONING_KEY
@@ -169,7 +170,7 @@ def test_stream_turn_refusal_printed_once():
 
 
 def test_stream_turn_with_real_graph_refusal():
-    router = lambda messages: Route(categoria="fuori_ambito", motivo="cucina")
+    router = lambda messages, summary: Route(categoria="fuori_ambito", motivo="cucina")
     graph = build_graph(fake(AIMessage("non deve comparire")), [fake_clock], 5, router=router)
     view, out = make_view()
     stream_turn(graph, {"messages": [HumanMessage("carbonara?")], "steps": 0}, view)
@@ -182,7 +183,7 @@ def test_stream_turn_review_lines():
     from assistant.reviewer import Review
     verdicts = iter([Review(coerente=False, motivo="manca il calcolo."), Review(coerente=True, motivo="ok")])
     graph = build_graph(fake(AIMessage("bozza"), AIMessage("risposta completa")), [fake_clock], 5,
-                        reviewer=lambda q, a: next(verdicts))
+                        reviewer=lambda q, a, s, r, t: next(verdicts))
     view, out = make_view()
     stream_turn(graph, {"messages": [HumanMessage("q")], "steps": 0}, view)
     text = "".join(out)
@@ -191,3 +192,18 @@ def test_stream_turn_review_lines():
     positions = [text.index(s) for s in order]
     assert positions == sorted(positions) and all(text.count(s) == 1 for s in order)
     assert text.count("\n[revisore] non coerente") == 1
+
+
+def test_stream_turn_summary_lines():
+    history = [SystemMessage("s")]
+    for i in range(1, 4):
+        history += [HumanMessage(f"domanda {i}"), AIMessage(f"risposta {i}")]
+    state = {"messages": history + [HumanMessage("ultima")], "steps": 0}
+    graph = build_graph(fake(AIMessage("Fatto.")), [fake_clock], 5, summarizer=lambda p, c: "Testo del riassunto",
+                        summary_threshold=1, summary_keep_turns=2)
+    view, out = make_view()
+    stream_turn(graph, state, view)
+    text = "".join(out)
+    assert text.count("[riassunto]") == 1 and text.count("Testo del riassunto") == 1
+    assert re.search(r"\[riassunto\] \d+ → \d+ messaggi \(circa \d+ → \d+ token\)\nTesto del riassunto\nFatto\.\n",
+                     text)

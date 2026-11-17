@@ -52,6 +52,7 @@ def _start() -> int:
     from assistant.graph import build_graph
     from assistant.reviewer import build_reviewer
     from assistant.router import build_router
+    from assistant.summarizer import build_summarizer
     from assistant.llm import LMStudioUnavailable, ModelNotFound, build_chat_model, check_model
     from datetime import datetime
 
@@ -107,8 +108,13 @@ def _start() -> int:
             model = build_chat_model(settings)
             graph = build_graph(model, tools, settings.max_steps, answer_check=check_note_claims,
                                 router=build_router(model, scope), reviewer=build_reviewer(model),
-                                max_reviews=settings.max_reviews)
+                                max_reviews=settings.max_reviews, summarizer=build_summarizer(model),
+                                summary_threshold=settings.summary_threshold,
+                                summary_keep_turns=settings.summary_keep_turns)
             logging.getLogger("assistant").info("[revisore] limite: %d revisioni", settings.max_reviews)
+            logging.getLogger("assistant").info(
+                "[riassunto] soglia: %d token stimati, turni conservati: %d",
+                settings.summary_threshold, settings.summary_keep_turns)
             color = sys.stdout.isatty()
             if color and os.name == "nt":
                 # Abilita l'elaborazione VT nella console classica; Windows Terminal e VS Code la hanno già

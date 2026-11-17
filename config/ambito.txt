@@ -14,6 +14,8 @@ Esempi:
 - «Cos'è il machine learning?» → conversazione (AI)
 - «Chi ha creato Python?» → conversazione (catalogo dei linguaggi)
 - «Buongiorno!» → conversazione (saluto)
+- «Come mi chiamo?» → conversazione (domanda sulla conversazione)
+- «Di cosa abbiamo parlato?» → conversazione (domanda sulla conversazione)
 - «Come si fa il tiramisù?» → fuori_ambito (cucina)
 - «Qual è la capitale dell'Australia?» → fuori_ambito (geografia)
 - «Chi ha vinto Sanremo?» → fuori_ambito (attualità)

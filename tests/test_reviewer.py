@@ -1,7 +1,9 @@
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from assistant.reviewer import (FEEDBACK, REVIEWER_INSTRUCTIONS, Review, build_reviewer, feedback_message,
-                                is_review_feedback, last_question_index, review_line, review_request)
+from assistant.reviewer import (FEEDBACK, REVIEW_SUMMARY_HEADER, REVIEWER_INSTRUCTIONS, Review, build_reviewer,
+                                feedback_message, is_review_feedback, last_question_index, review_line,
+                                review_request)
+from assistant.summarizer import SUMMARY_HEADER
 
 
 class FakeStructured:
@@ -26,6 +28,28 @@ class FakeModel:
 
 def test_review_request():
     assert review_request("D?", "R.") == "Domanda dell'utente:\nD?\n\nRisposta proposta:\nR."
+
+
+def test_review_request_with_context():
+    tail = "Domanda dell'utente:\nD?\n\nRisposta proposta:\nR."
+    summary = "Riassunto della conversazione precedente:\nS\n\n"
+    recent = "Conversazione recente:\nUtente: a\nAssistente: b\n\n"
+    assert review_request("D?", "R.", "S") == summary + tail
+    assert review_request("D?", "R.", "", "Utente: a\nAssistente: b") == recent + tail
+    assert review_request("D?", "R.", "S", "Utente: a\nAssistente: b") == summary + recent + tail
+
+
+def test_review_request_with_tool_results():
+    tail = "Domanda dell'utente:\nD?\n\nRisposta proposta:\nR."
+    tools = "Risultati degli strumenti in questo turno:\nlist_notes: 2 note\n\n"
+    assert review_request("D?", "R.", "", "", "list_notes: 2 note") == tools + tail
+    assert review_request("D?", "R.", "S", "Utente: a", "list_notes: 2 note") == (
+        "Riassunto della conversazione precedente:\nS\n\nConversazione recente:\nUtente: a\n\n" + tools + tail)
+
+
+def test_summary_header_matches_agent():
+    # reviewer.py non può importare summarizer (import circolare): le due intestazioni devono coincidere
+    assert REVIEW_SUMMARY_HEADER == SUMMARY_HEADER
 
 
 def test_feedback_message_is_marked():
@@ -54,6 +78,12 @@ def test_build_reviewer():
     assert model.invoked == [SystemMessage(REVIEWER_INSTRUCTIONS),
                              HumanMessage(review_request("domanda", "risposta"))]
     assert result == Review(coerente=False, motivo="manca la seconda parte.")
+
+
+def test_build_reviewer_with_context():
+    model = FakeModel()
+    build_reviewer(model)("domanda", "risposta", "S", "Utente: a", "clock: 10:00")
+    assert model.invoked[1] == HumanMessage(review_request("domanda", "risposta", "S", "Utente: a", "clock: 10:00"))
 
 
 def test_review_lines():

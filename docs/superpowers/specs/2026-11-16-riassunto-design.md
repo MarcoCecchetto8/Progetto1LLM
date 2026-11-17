@@ -1,6 +1,6 @@
 # Riassunto della cronologia (lezione 6, step 3) — specifica
 
-Data: 2026-11-16 · Stato: approvata dall'utente il 2026-11-16
+Data: 2026-11-16 · Stato: approvata dall'utente il 2026-11-16; revisione 5.7 approvata il 2026-11-17; revisione 5.8 approvata il 2026-11-17; revisione 5.9 decisa da Claude in autonomia e confermata dall'utente il 2026-11-17
 
 Riferimenti: lezione 6, slide 3 (grafo dei tre step: «Riassunto» tra START e router) e 6 (step 3 · Riassunto della cronologia). Specifiche precedenti valide per tutto ciò che qui non cambia: `2026-11-16-revisore-design.md`, `2026-11-16-router-design.md`, `2026-11-16-streaming-design.md`, `2026-11-09-note-fastapi-design.md`.
 
@@ -70,7 +70,81 @@ START → summarizer → router → (model ⇄ tools → reviewer → …) come 
 ### 5.4 Come l'agente usa il riassunto
 
 - `model_node`, quando nello stato c'è un riassunto, invia al modello la cronologia con il **primo messaggio di sistema esteso**: `<prompt di sistema>\n\nRiassunto della conversazione precedente:\n<riassunto>`. Il riassunto sta in cima, dove gemma lo considera. Un messaggio di sistema a metà conversazione era stato ignorato nelle misure delle note. L'estensione vale solo per la chiamata e non viene salvata nella cronologia (*scelta di Claude*).
-- Router e revisore restano invariati: il router guarda gli ultimi messaggi di testo, il revisore domanda e risposta.
+- ~~Router e revisore restano invariati.~~ **Revisione del 2026-11-17** (vedi 5.7): anche router e revisore ricevono il riassunto.
+
+### 5.7 Router e revisore con il riassunto (revisione del 2026-11-17)
+
+**Perché.** Nella prova reale con soglia 900 il revisore ha bocciato due volte «di cosa abbiamo parlato?» («non c'è stato un argomento precedente»): riceve solo domanda e risposta, non vede né il riassunto né i turni precedenti. Il router dopo un riassunto non vede più la presentazione dell'utente.
+
+**Misure** (sonde reali, `google/gemma-4-e2b`, 3 ripetizioni per caso):
+- Revisore, 3 casi («di cosa abbiamo parlato?» con risposta corretta; «come mi chiamo e dove vivo?» con risposta corretta; una domanda in due parti con risposta incompleta, da bocciare):
+  - solo domanda e risposta (oggi): **4/9** giudizi giusti;
+  - con il riassunto: **6/9** (boccia «di cosa abbiamo parlato?» perché Rust, dei turni recenti, non è nel riassunto); un'intestazione che spiega che gli ultimi turni non sono riassunti non cambia nulla (6/9);
+  - con il riassunto **e gli ultimi messaggi di testo**: **9/9**, 23–34 s per giudizio.
+- Router, «dove vivo?»: 0/3 senza la presentazione nel contesto, anche con l'esempio «Dove vivo?» in `config/ambito.txt` (esempio poi tolto); 3/3 se «mi chiamo Marco e vivo a Roma» è fra gli ultimi messaggi. Con il riassunto in fondo al prompt di sistema: «dove vivo?» 0/3, «come mi chiamo e dove vivo?» 3/3 (senza riassunto 2/3), fuori ambito 9/9 rifiutati. Nessun beneficio misurato su «dove vivo?»: la modifica si fa per scelta dell'utente (contesto coerente con l'agente), e «dove vivo?» da sola dopo un riassunto resta un limite del modello.
+
+**Comportamento.**
+- **Router**: quando nello stato c'è un riassunto, il prompt di sistema del router diventa `<istruzioni e ambito>\n\nRiassunto della conversazione precedente:\n<riassunto>` (stessa intestazione dell'agente). I messaggi passati restano gli ultimi messaggi di testo come oggi. Senza riassunto il prompt è identico a oggi.
+- **Revisore**: la richiesta al revisore diventa, con le parti presenti solo se non vuote:
+  ```
+  Riassunto della conversazione precedente:
+  <riassunto>
+
+  Conversazione recente:
+  Utente: …
+  Assistente: …
+
+  Domanda dell'utente:
+  <domanda>
+
+  Risposta proposta:
+  <risposta>
+  ```
+  La «conversazione recente» sono i messaggi prima della domanda del turno, filtrati con la stessa regola del router (solo domande e risposte di testo, senza traffico degli strumenti, ultimi 6) e scritti come nella trascrizione del riassunto (`Utente:` / `Assistente:`). Le istruzioni del revisore non cambiano (sono quelle usate nelle sonde). Senza riassunto e senza turni precedenti la richiesta è identica a oggi.
+- I nodi `router` e `reviewer` del grafo passano il riassunto in vigore (`state["summary"]`, vuoto se assente). Il riassunto non entra nella cronologia, come per l'agente.
+
+**Test** (senza LM Studio): prompt del router con e senza riassunto; richiesta del revisore con e senza riassunto e conversazione recente (strumenti esclusi, indicazioni del revisore escluse, limite di 6 messaggi); il grafo passa il riassunto a router e revisore e la conversazione recente al revisore. Restano verdi tutti i test esistenti.
+
+**Prova reale**: ripetere la sessione con soglia 900 e verificare «di cosa abbiamo parlato?» approvata al primo giudizio; registrare i tempi del revisore.
+
+### 5.8 Risultati degli strumenti al revisore e «l'utente» nel riassunto (revisione del 2026-11-17)
+
+**Perché.** Prova reale dopo 5.7 (locale e Docker, soglia 900):
+- «di cosa abbiamo parlato?» approvata al primo giudizio, ma in Docker «quali note ho?» con la risposta corretta di `list_notes` è stata **bocciata 3 volte fino al limite** («le note non sono presenti nella conversazione precedente»): con il contesto il revisore confronta la risposta con la conversazione e non vede i risultati degli strumenti.
+- L'agente, con il riassunto «Marco, residente a Roma, ha chiesto…», ha risposto «Non mi hai detto il tuo nome» e «non ho accesso alle tue informazioni personali» (2 su 2).
+
+**Misure** (sonde reali, 3 ripetizioni per caso):
+- Revisore con riassunto e conversazione recente: note 0/3, ora di Tokyo 0/3 (anche senza contesto Tokyo 0/3: «non ho accesso a informazioni in tempo reale»). Una regola nelle istruzioni («il contesto serve solo a capire la domanda») non cambia nulla: note 0/3, Tokyo 0/3.
+- Revisore con riassunto, conversazione recente **e risultati degli strumenti del turno**: **15/15** (note, Tokyo, «di cosa abbiamo parlato?», nome e città giusti; domanda in due parti incompleta bocciata), 19–31 s per giudizio.
+- Agente (prompt di sistema reale, senza strumenti collegati) con «come mi chiamo?»: riassunto in terza persona («Marco, residente a Roma, …») 0/3; intestazione più esplicita 0/3; riassunto che inizia con «L'utente si chiama Marco e vive a Roma.» **3/3**. «dove vivo?» 3/3 in tutti i casi.
+- Riassunto con la frase nuova nelle istruzioni: **6/6** iniziano con «L'utente si chiama Marco e vive a Roma» e conservano nota 6 e Python (primo riassunto e successivo), 5–9 s.
+
+**Comportamento.**
+- **Revisore**: fra la conversazione recente e la domanda, se nel turno ci sono risultati degli strumenti, la richiesta contiene
+  ```
+  Risultati degli strumenti in questo turno:
+  <nome>: <contenuto>
+  ```
+  una riga per ogni `ToolMessage` dopo la domanda del turno (compresi quelli dei tentativi precedenti del revisore). Istruzioni del revisore invariate.
+- **Riassunto**: nelle istruzioni, prima di «Scrivi solo il riassunto, senza introduzioni.», la frase «Riferisciti all'utente sempre come «l'utente»: se conosci nome o città, inizia con «L'utente si chiama … e vive a …».».
+
+**Test** (senza LM Studio): richiesta del revisore con i risultati degli strumenti (e senza: identica a 5.7); il grafo passa al revisore i risultati del turno corrente e non quelli dei turni precedenti; istruzioni del riassunto con la frase nuova.
+
+**Prova reale**: locale e Docker con soglia 900, con «come mi chiamo?» dopo il riassunto e «quali note ho?».
+
+### 5.9 Intestazione esplicita del riassunto per l'agente (revisione del 2026-11-17, scelta di Claude in autonomia concessa dall'utente)
+
+**Perché.** Prova reale dopo 5.8: note, «di cosa abbiamo parlato?» e ora di Tokyo approvate al primo giudizio in locale e in Docker; «come mi chiamo?» giusta in locale («Mi hai detto che ti chiami Marco.») ma sbagliata in Docker («Non mi hai detto il tuo nome.») con il riassunto «L'utente si chiama Marco e vive a Roma. …».
+
+**Misure** (grafo vero con strumenti MCP e note, riassunto nello stato; le ripetizioni a temperatura uguale tornano identiche, quindi si variano le temperature 0.2/0.5/0.8):
+- ultimi turni solo di testo: riassunto in fondo al prompt di sistema 3/3 (con risposte identiche), in testa 0/3;
+- ultimi turni con chiamate agli strumenti (come in Docker), intestazione di oggi: **1/6** (due riassunti diversi);
+- stessi casi con l'intestazione «Riassunto della conversazione precedente (fa parte di questa conversazione: usalo per rispondere alle domande sull'utente, come nome e città, e su ciò di cui si è parlato):»: **6/6**;
+- con la nuova intestazione l'agente usa ancora gli strumenti giusti: ora di Tokyo, Rust, note 6/6; «di cosa abbiamo parlato?» risponde senza strumenti 2/2.
+
+**Comportamento.** Solo l'agente usa la nuova intestazione (`AGENT_SUMMARY_HEADER` in `assistant/summarizer.py`), sempre in fondo al primo messaggio di sistema. Router e revisore restano con «Riassunto della conversazione precedente:», l'intestazione con cui sono stati misurati.
+
+**Test**: `with_summary` e il grafo usano la nuova intestazione; la cronologia salvata resta invariata.
 
 ### 5.5 Stato e terminale da un turno all'altro
 
@@ -128,6 +202,7 @@ Branch `feature/riassunto` da `developer`; merge `--no-ff` dopo la prova reale e
 - Nodo una volta per turno, prima del router; non durante i tentativi del revisore.
 - Riassunto non riuscito → cronologia invariata con `WARNING` (concordato), solo per gli errori di LM Studio.
 - Riga e testo nel terminale; log dei numeri a `DEBUG`.
+- (5.7) Conversazione recente del revisore con la regola del router (ultimi 6 messaggi di testo) e formato `Utente:` / `Assistente:`; istruzioni del revisore invariate.
 
 ## 9. Lasciato al piano
 

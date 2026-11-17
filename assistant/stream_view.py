@@ -103,6 +103,11 @@ def stream_turn(graph, state: dict, view: TurnView, config: dict | None = None) 
                     if node == "reviewer":
                         view.extra(review_line(update["review_outcome"], update["review_reason"], update["reviews"]))
                         continue
+                    if node == "summarizer":
+                        if update:  # {} se non c'è niente da comprimere
+                            view.extra(update["summary_line"])
+                            view.extra(update["summary"])
+                        continue
                     message = _last_message(update)
                     if message is None:
                         continue

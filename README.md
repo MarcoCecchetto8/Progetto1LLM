@@ -49,6 +49,8 @@ Invoke-RestMethod http://localhost:1234/v1/models | Select-Object -ExpandPropert
 | `LOG_LEVEL` | no | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `SHOW_REASONING` | no | `true` | `true` o `false`: mostra o nasconde il ragionamento del modello durante il turno |
 | `MAX_REVIEWS` | no | `3` | revisioni massime della risposta per domanda (≥ 0); con `0` il revisore giudica ma non rimanda mai indietro |
+| `SUMMARY_THRESHOLD` | no | `4000` | token stimati (caratteri ÷ 4, riassunto compreso) oltre i quali la cronologia viene riassunta (≥ 1) |
+| `SUMMARY_KEEP_TURNS` | no | `2` | ultimi turni lasciati intatti dal riassunto (≥ 1) |
 | `SCOPE_FILE` | no | `config/ambito.txt` | file con l'ambito dell'assistente per il router (percorso relativo alla radice del progetto); se manca o è vuoto l'avvio si ferma con `SCOPE_FILE non valida: '<percorso>' non esiste o è vuoto.` |
 | `NOTES_SERVICE_URL` | no | vuota | vuota in locale: l'assistente avvia da solo il servizio delle note su `http://127.0.0.1:8000`; con Docker Compose viene impostata a `http://notes:8000` |
 
@@ -138,6 +140,23 @@ Dopo la risposta finale dell'agente, un revisore controlla che risponda a **tutt
 - **Log**: all'avvio `[revisore] limite: <n> revisioni`; con `LOG_LEVEL=DEBUG` anche `[revisore] coerente=<sì|no> motivo=<motivo> revisione <n>/<max>` a ogni giudizio (a livello normale il verdetto si vede già nel terminale).
 - **Limite, il tempo**: ogni giudizio è una chiamata in più al modello, circa 23 s su questo computer; ogni bocciatura aggiunge anche una nuova risposta dell'agente.
 - **Limiti osservati nelle sonde**: giudizi corretti 6 su 6; dopo l'indicazione l'agente ha completato la risposta 3 volte su 3, ma calcolando a mente invece di usare `calculate` (il revisore non controlla come è stato ottenuto il dato).
+
+## Riassunto della cronologia
+
+All'inizio di ogni turno, prima del router, un nodo controlla la dimensione della conversazione. Se supera la soglia, un riassunto sostituisce i messaggi più vecchi. Usa lo stesso modello di LM Studio, con il ragionamento spento e un'uscita testuale semplice. Serve a mantenere la conversazione utilizzabile su molti turni con il contesto limitato del modello locale (su questo computer 8192 token), senza il messaggio «Il contesto del modello è pieno».
+
+- **Quando scatta**: quando la stima dei token supera `SUMMARY_THRESHOLD` (predefinito 4000). La stima è la somma dei caratteri dei messaggi, prompt di sistema compreso, più il riassunto in vigore, divisa per 4; gli schemi degli strumenti (circa 1365 token) non sono inclusi e sono coperti dal margine della soglia. Sotto la soglia, o se i turni precedenti sono al massimo `SUMMARY_KEEP_TURNS`, il nodo non chiama il modello.
+- **Che cosa conserva**: il prompt di sistema, gli ultimi `SUMMARY_KEEP_TURNS` turni completi (predefinito 2) e la domanda del turno corrente. Il taglio cade sempre all'inizio di un turno, quindi una chiamata a uno strumento e il suo risultato non vengono mai separati.
+- **Che cosa chiede al modello**: un riassunto in italiano di al massimo 120 parole che conservi nome dell'utente, fuso orario o città, ID e testo delle note, argomenti principali. L'utente va chiamato «l'utente» e, se nome o città sono noti, il riassunto inizia con «L'utente si chiama … e vive a …»: con «Marco, residente a Roma, …» l'agente non collegava il nome a chi gli parlava.
+- **Dove finisce il riassunto**: in un campo dello stato, sostituito a ogni nuovo riassunto e non accumulato. A ogni chiamata l'agente lo riceve in fondo al primo messaggio di sistema, con l'intestazione «Riassunto della conversazione precedente (fa parte di questa conversazione: usalo per rispondere alle domande sull'utente, come nome e città, e su ciò di cui si è parlato):»; non viene salvato nella cronologia. Con l'intestazione breve, dopo turni con strumenti, l'agente rispondeva «Non mi hai detto il tuo nome» (1 risposta giusta su 6 nella sonda; con quella esplicita 6 su 6).
+- **Router e revisore**: anche il router riceve il riassunto, in fondo al suo prompt di sistema, con l'intestazione breve «Riassunto della conversazione precedente:». Il revisore riceve, prima della domanda e della risposta, il riassunto, gli ultimi messaggi di testo della conversazione (la stessa regola del router: niente strumenti, al massimo 6) e i risultati degli strumenti del turno. Senza il contesto bocciava «di cosa abbiamo parlato?» («non c'è stato un argomento precedente»); con il contesto ma senza i risultati degli strumenti bocciava le note elencate da `list_notes` e l'ora di Tokyo. Con tutti e tre: 15 giudizi giusti su 15 nella sonda.
+- **Nel terminale**: prima del router compaiono una riga `[riassunto] <n> → <m> messaggi (circa <t1> → <t2> token)` e il testo del riassunto, mostrati una sola volta.
+- **`clear`**: svuota anche il riassunto.
+- **Errore**: se il riassunto non riesce (errore di LM Studio o testo vuoto) cronologia e riassunto restano come prima, nel log compare un avviso `[riassunto] non riuscito (...): cronologia invariata` e il turno prosegue.
+- **Log**: all'avvio `[riassunto] soglia: <n> token stimati, turni conservati: <k>`; con `LOG_LEVEL=DEBUG` anche la riga dei conteggi.
+- **Limite, il tempo**: il riassunto è una chiamata in più al modello, 7–19 s nelle prove reali. Se dopo il riassunto la conversazione resta sopra la soglia (soglia bassa, riassunto lungo), il riassunto riparte a ogni turno.
+- **Limite, «dove vivo?»**: il router rifiuta «dove vivo?» come fuori ambito («non posso sapere dove vivi») quando la presentazione dell'utente non è più fra gli ultimi messaggi, anche con il riassunto e con un esempio in `config/ambito.txt` (0 su 3 nelle sonde). Funzionano «come mi chiamo?», «come mi chiamo e dove vivo?» e «di cosa abbiamo parlato?». È un limite del modello.
+- **Limite accettato, la memoria dei riassunti successivi**: con `google/gemma-4-e2b` nome, città e ID delle note sopravvivono ai riassunti successivi, ma gli argomenti più vecchi tendono a sparire al secondo riassunto. È un limite del modello.
 
 ## Log
 
@@ -350,10 +369,28 @@ Esiti del 2026-11-16 con `google/gemma-4-e2b`, domande inviate da pipe.
 | Tempi del revisore e revisioni usate | registrati | circa 20–30 s per giudizio. Prima della correzione del prompt, una conversione spiegata come impossibile (miglia non supportate) veniva bocciata 3 volte fino al limite; con la regola «una parte spiegata come impossibile ha una risposta» la sonda dà 8 giudizi corretti su 8. Una domanda in tre parti (Natale, New York, Java) è finita in timeout del modello (120 s) dopo gli strumenti |
 | Docker (`docker compose run --rm -T app` con input da pipe) | stesso comportamento del locale | ok: «Cos'è un compilatore?» approvata, righe del router e del revisore come in locale |
 
+### Prova reale del riassunto
+
+Esiti del 2026-11-16 e 2026-11-17 con `google/gemma-4-e2b`, domande inviate da pipe in una sola sessione, con `SUMMARY_THRESHOLD=900` (variabile d'ambiente) e `LOG_LEVEL=DEBUG` per i tempi. Domande: «ciao, mi chiamo Marco e vivo a Roma», «chi ha creato Python?», «quanto fa 12 * 7?», «quanti metri sono 3 km?», «chi ha creato Rust?», «come mi chiamo?», «quali note ho?», «di cosa abbiamo parlato?», «che ore sono a Tokyo?».
+
+| Prova | Atteso | Esito |
+|---|---|---|
+| «ciao, mi chiamo Marco» al primo turno, poi alcune domande con strumenti e una nota; dopo il riassunto «come mi chiamo?» | riga e testo del riassunto visibili; la risposta contiene il nome | ok in locale: righe `[riassunto]` e testo visibili, il riassunto inizia con «L'utente si chiama Marco e vive a Roma», risposta «Mi hai detto che ti chiami Marco.» quando la presentazione era già stata riassunta. Prima delle correzioni del 2026-11-17 il router rifiutava «come mi chiamo e dove vivo?» e l'agente rispondeva «Non mi hai detto il tuo nome» |
+| Sessione sotto la soglia | nessuna riga `[riassunto]` (il nodo non chiama il modello) | ok: con `SUMMARY_THRESHOLD=1500` la stessa sessione non ha prodotto nessun riassunto |
+| Tempo del riassunto | registrato | 7–19 s per riassunto (5 riassunti nell'ultima sessione: 8, 10, 12, 18, 19 s) |
+| Secondo riassunto nella stessa sessione | registrare che cosa resta | nome, città e argomenti restano in tutti i riassunti dell'ultima sessione (Python, 12 × 7, 3 km, Rust); in sessioni precedenti un terzo riassunto aveva perso gli argomenti più vecchi (limite accettato). Il riassunto ha chiamato «nota ID PY» la scheda del catalogo di Python. Con soglia 900 la conversazione resta sopra la soglia e il riassunto riparte a ogni turno |
+| Domande sulla conversazione | «di cosa abbiamo parlato?» e «quali linguaggi abbiamo visto finora?» in ambito e approvate | ok: router «domanda sulla conversazione», revisore approva al primo giudizio; la risposta elenca Python e Rust |
+| Revisore con strumenti | «quali note ho?» e «che ore sono a Tokyo?» approvate | ok in locale e in Docker dopo la correzione del 2026-11-17 (prima: note bocciate 3 volte fino al limite) |
+| Docker (`docker compose run --rm -T -e SUMMARY_THRESHOLD=900 app` con input da pipe) | stesso comportamento del locale | ok (2026-11-17, dopo l'intestazione esplicita): due riassunti, entrambi iniziano con «L'utente si chiama Marco e vive a Roma»; «come mi chiamo?» → «Ti chiami Marco.»; «quali note ho?» con `list_notes` approvata al primo giudizio. Con l'intestazione breve, nella stessa prova, la risposta era «Non mi hai detto il tuo nome.» |
+
+Limiti visti nelle prove e già noti: il revisore legge a volte «12 per 7» come una divisione; in Docker l'agente ha dichiarato salvata la nota del latte senza chiamare `add_note` e in fondo è comparso l'avviso.
+
 ## Diagnosi
 
 | Sintomo | Causa probabile e rimedio |
 |---|---|
+| il riassunto è lento o scatta troppo spesso | ogni riassunto è una chiamata in più al modello: alzare `SUMMARY_THRESHOLD` |
+| `[riassunto] non riuscito (...): cronologia invariata` | il riassunto non è riuscito (errore di LM Studio o testo vuoto): la cronologia resta invariata e il turno prosegue |
 | il revisore rimanda indietro risposte corrette, o il turno è lento | il revisore è un modello piccolo e ogni giudizio costa circa 23 s: ridurre `MAX_REVIEWS` (anche a `0`) |
 | `... non valida` o `... mancante` all'avvio | variabile del `.env` assente o con valore non valido: il messaggio indica quale |
 | `LM Studio non raggiungibile o risposta non valida su .../models` all'avvio | server di LM Studio spento o su un'altra porta: avviarlo e controllare `LMSTUDIO_BASE_URL` |

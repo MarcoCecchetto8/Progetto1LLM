@@ -355,3 +355,45 @@ def test_ctrl_c_stops_the_model_thread():
     emitted = len(SLOW_PIECES)
     time.sleep(0.3)
     assert len(SLOW_PIECES) == emitted < 30
+
+
+class SummaryGraph:
+    """Grafo finto: registra lo stato ricevuto e restituisce un riassunto a ogni turno riuscito."""
+
+    def __init__(self, *summaries, fail_on=None):
+        self.summaries = list(summaries)
+        self.fail_on = fail_on or {}
+        self.calls = []
+
+    def stream(self, state, config=None, stream_mode=None):
+        n = len(self.calls)
+        self.calls.append(state)
+        if n in self.fail_on:
+            if self.fail_on[n] == "empty":
+                yield ("values", {"messages": state["messages"] + [AIMessage("")], "summary": "SCARTATO"})
+                return
+            raise self.fail_on[n]
+        reply = AIMessage("ok")
+        yield ("updates", {"model": {"messages": [reply]}})
+        yield ("values", {"messages": state["messages"] + [reply], "summary": self.summaries.pop(0)})
+
+
+def test_summary_carried_to_next_turn():
+    graph = SummaryGraph("R", "R2")
+    session(graph, "d1", "d2", "quit")
+    assert graph.calls[0]["summary"] == ""
+    assert graph.calls[1]["summary"] == "R"
+
+
+def test_clear_resets_summary():
+    graph = SummaryGraph("R", "R2")
+    session(graph, "d1", "clear", "d2", "quit")
+    assert graph.calls[1]["summary"] == ""
+
+
+@pytest.mark.parametrize("failure", [openai.APIError("boom", request=REQ, body=None), "empty"])
+def test_failed_turn_keeps_summary(failure):
+    graph = SummaryGraph("R", "R3", fail_on={1: failure})
+    session(graph, "d1", "d2", "d3", "quit")
+    assert graph.calls[1]["summary"] == "R"
+    assert graph.calls[2]["summary"] == "R"

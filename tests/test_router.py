@@ -2,6 +2,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 
 from assistant.router import (REFUSAL, ROUTER_CONTEXT_MESSAGES, ROUTER_INSTRUCTIONS, Route, build_router,
                               refusal_text, router_context, router_prompt)
+from assistant.summarizer import SUMMARY_HEADER
 
 
 class FakeStructured:
@@ -29,6 +30,11 @@ def test_router_prompt():
     assert prompt.startswith(ROUTER_INSTRUCTIONS)
     assert prompt.endswith("X")
     assert prompt == ROUTER_INSTRUCTIONS + "\n\nX"
+
+
+def test_router_prompt_with_summary():
+    assert router_prompt("X", "R") == ROUTER_INSTRUCTIONS + "\n\nX\n\n" + SUMMARY_HEADER + "\nR"
+    assert router_prompt("X", "") == router_prompt("X")
 
 
 def test_router_context_filters_tool_traffic():
@@ -63,6 +69,12 @@ def test_build_router():
     assert model.method == "json_schema"
     assert model.invoked == [SystemMessage(router_prompt("AMBITO")), HumanMessage("Come si fa il tiramisù?")]
     assert result == Route(categoria="fuori_ambito", motivo="cucina")
+
+
+def test_build_router_with_summary():
+    model = FakeModel()
+    build_router(model, "AMBITO")([HumanMessage("dove vivo?")], "Marco vive a Roma.")
+    assert model.invoked == [SystemMessage(router_prompt("AMBITO", "Marco vive a Roma.")), HumanMessage("dove vivo?")]
 
 
 def test_refusal_text():

@@ -26,6 +26,8 @@ class Settings:
     show_reasoning: bool = True
     scope_file: str = "config/ambito.txt"
     max_reviews: int = 3
+    summary_threshold: int = 4000
+    summary_keep_turns: int = 2
 
 
 def _get(env: Mapping[str, str], name: str, default: str | None = None) -> str:
@@ -74,9 +76,11 @@ def load_settings(env: Mapping[str, str]) -> Settings:
 
     scope_file = _get(env, "SCOPE_FILE", "config/ambito.txt")
     max_reviews = _number(env, "MAX_REVIEWS", "3", int, 0, "un intero")
+    summary_threshold = _number(env, "SUMMARY_THRESHOLD", "4000", int, 1, "un intero")
+    summary_keep_turns = _number(env, "SUMMARY_KEEP_TURNS", "2", int, 1, "un intero")
 
     return Settings(base_url, model, timeout, temperature, max_steps, timezone, log_level, notes_url,
-                    show_reasoning == "true", scope_file, max_reviews)
+                    show_reasoning == "true", scope_file, max_reviews, summary_threshold, summary_keep_turns)
 
 
 def load_scope(path: str, root: Path) -> str:

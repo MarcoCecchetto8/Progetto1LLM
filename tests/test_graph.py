@@ -14,6 +14,7 @@ from assistant.llm import REASONING_KEY
 from assistant.mcp_client import MCPClient, MCPConnectionError
 from assistant.reviewer import Review, feedback_message, is_review_feedback
 from assistant.router import REFUSAL, Route
+from assistant.summarizer import AGENT_SUMMARY_HEADER
 from tests.fakes import FakeToolModel, fake, fake_clock as clock, tool_call
 
 
@@ -257,8 +258,8 @@ def test_answer_check_logged(caplog):
 def make_router(category="conversazione", reason="saluto", error=None):
     calls = []
 
-    def router(messages):
-        calls.append(messages)
+    def router(messages, summary):
+        calls.append((messages, summary))
         if error:
             raise error
         return Route(categoria=category, motivo=reason)
@@ -304,24 +305,40 @@ def test_router_api_error_propagates():
         graph.invoke(start("ciao"))
 
 
+def test_router_receives_summary():
+    router = make_router()
+    state = start("dove vivo?")
+    state["summary"] = "Marco vive a Roma."
+    build_graph(fake(AIMessage("A Roma.")), [clock], 5, router=router).invoke(state)
+    assert router.calls[0][1] == "Marco vive a Roma."
+    build_graph(fake(AIMessage("Ciao!")), [clock], 5, router=router).invoke(start("ciao"))
+    assert router.calls[1][1] == ""
+
+
 def test_router_does_not_add_messages():
     out = build_graph(fake(AIMessage("Ciao!")), [clock], 5, router=make_router()).invoke(start("ciao"))
     assert [type(m) for m in out["messages"]] == [SystemMessage, HumanMessage, AIMessage]
 
 
 def make_reviewer(*verdicts):
-    # verdicts: (coerente, motivo) oppure un'eccezione; registra (domanda, risposta)
+    # verdicts: (coerente, motivo) oppure un'eccezione; registra (domanda, risposta), (riassunto, recente) e strumenti
     calls = []
+    contexts = []
+    tools = []
     queue = iter(verdicts)
 
-    def reviewer(question, answer):
+    def reviewer(question, answer, summary, recent, tool_results):
         calls.append((question, answer))
+        contexts.append((summary, recent))
+        tools.append(tool_results)
         verdict = next(queue)
         if isinstance(verdict, Exception):
             raise verdict
         return Review(coerente=verdict[0], motivo=verdict[1])
 
     reviewer.calls = calls
+    reviewer.contexts = contexts
+    reviewer.tools = tools
     return reviewer
 
 
@@ -375,6 +392,35 @@ def test_reviewer_invalid_output_approves(caplog):
     assert out["messages"][-1].content == "Ciao!" and out["review_outcome"] == "invalid"
     assert any(r.levelno == logging.WARNING and "[revisore] risposta non valida" in r.getMessage()
                for r in caplog.records)
+
+
+def test_reviewer_without_context():
+    reviewer = make_reviewer((True, "ok"))
+    build_graph(fake(AIMessage("Ciao!")), [clock], 5, reviewer=reviewer).invoke(start("ciao"))
+    assert reviewer.contexts == [("", "")]
+
+
+def test_reviewer_receives_summary_and_recent_text():
+    history = [SystemMessage("s"), HumanMessage("chi ha creato Rust?"), tool_call({}, "c1"),
+               ToolMessage("Graydon Hoare", tool_call_id="c1", name="get_item"), AIMessage("Graydon Hoare.")]
+    state = start("di cosa abbiamo parlato?", history=history)
+    state["summary"] = "Marco vive a Roma."
+    reviewer = make_reviewer((False, "manca qualcosa."), (True, "ok"))
+    build_graph(fake(AIMessage("bozza"), AIMessage("Di Rust.")), [clock], 5, reviewer=reviewer).invoke(state)
+    expected = ("Marco vive a Roma.", "Utente: chi ha creato Rust?\nAssistente: Graydon Hoare.")
+    # Al secondo giudizio la recente non contiene né la bozza né l'indicazione del revisore
+    assert reviewer.contexts == [expected, expected]
+    assert reviewer.calls[1] == ("di cosa abbiamo parlato?", "Di Rust.")
+    # I risultati degli strumenti del turno precedente non sono del turno corrente
+    assert reviewer.tools == ["", ""]
+
+
+def test_reviewer_receives_tool_results_of_turn():
+    reviewer = make_reviewer((False, "manca qualcosa."), (True, "ok"))
+    model = fake(tool_call({"timezone": "Asia/Tokyo"}, "c1"), AIMessage("bozza"), AIMessage("Sono le 22:32."))
+    build_graph(model, [clock], 5, reviewer=reviewer).invoke(start("che ore sono a Tokyo?"))
+    # Anche al secondo giudizio: il risultato del primo tentativo resta nel turno
+    assert reviewer.tools == ["get_current_time: Asia/Tokyo: 2026-10-26T22:32:05+09:00"] * 2
 
 
 def test_reviewer_skipped():
@@ -434,3 +480,110 @@ def test_reviewer_logs_only_at_debug(caplog):
     with caplog.at_level(logging.INFO, logger="assistant.graph"):
         build_graph(fake(AIMessage("bozza")), [clock], 5, reviewer=reviewer, max_reviews=0).invoke(start("q"))
     assert "[revisore]" not in caplog.text
+
+
+# --- Riassunto della cronologia ---
+
+def past_history(turns):
+    history = [SystemMessage("s")]
+    for i in range(1, turns + 1):
+        history += [HumanMessage(f"domanda {i}"), AIMessage(f"risposta {i}")]
+    return history
+
+
+def recording_summarizer(text="RIASSUNTO"):
+    calls = []
+
+    def summarize(previous, conversation):
+        calls.append((previous, conversation))
+        return text
+
+    summarize.calls = calls
+    return summarize
+
+
+def test_summarizer_below_threshold_not_called():
+    summarize = recording_summarizer()
+    state = start("ultima", history=past_history(3))
+    out = build_graph(fake(AIMessage("ok")), [clock], 5, summarizer=summarize, summary_threshold=10_000,
+                      summary_keep_turns=2).invoke(state)
+    assert summarize.calls == []
+    assert len(out["messages"]) == 9
+    assert "summary" not in out
+
+
+def test_summarizer_compresses_old_turns():
+    summarize = recording_summarizer()
+    out = build_graph(fake(AIMessage("ok")), [clock], 5, summarizer=summarize, summary_threshold=1,
+                      summary_keep_turns=2).invoke(start("ultima", history=past_history(3)))
+    assert summarize.calls == [("", "Utente: domanda 1\nAssistente: risposta 1")]
+    assert [m.content for m in out["messages"]] == ["s", "domanda 2", "risposta 2", "domanda 3", "risposta 3",
+                                                    "ultima", "ok"]
+    assert out["summary"] == "RIASSUNTO"
+    assert out["summary_line"].startswith("[riassunto] 8 → 6 messaggi (circa ")
+
+
+def test_summarizer_replaces_previous_summary():
+    summarize = recording_summarizer("NUOVO")
+    state = start("ultima", history=past_history(3))
+    state["summary"] = "VECCHIO"
+    out = build_graph(fake(AIMessage("ok")), [clock], 5, summarizer=summarize, summary_threshold=1,
+                      summary_keep_turns=2).invoke(state)
+    assert summarize.calls[0][0] == "VECCHIO"
+    assert out["summary"] == "NUOVO"
+
+
+def test_summarizer_failure_keeps_history(caplog):
+    def failing(previous, conversation):
+        raise openai.APIConnectionError(request=httpx.Request("POST", "http://x"))
+
+    for summarize, reason in ((failing, "Connection error"), (lambda p, c: "  ", "testo vuoto")):
+        caplog.clear()
+        state = start("ultima", history=past_history(3))
+        with caplog.at_level(logging.WARNING, logger="assistant.graph"):
+            out = build_graph(fake(AIMessage("ok")), [clock], 5, summarizer=summarize, summary_threshold=1,
+                              summary_keep_turns=2).invoke(state)
+        assert [m.content for m in out["messages"]][:-1] == [m.content for m in state["messages"]]
+        assert out["messages"][-1].content == "ok"
+        assert "summary" not in out
+        assert any("cronologia invariata" in r.message and reason in r.message for r in caplog.records)
+
+
+def test_model_receives_summary_in_system_prompt():
+    seen = []
+
+    class Recording(FakeToolModel):
+        def _generate(self, messages, *args, **kwargs):
+            seen.append(list(messages))
+            return super()._generate(messages, *args, **kwargs)
+
+    state = start("ciao")
+    state["summary"] = "R"
+    out = build_graph(Recording(messages=iter([AIMessage("ok")])), [clock], 5).invoke(state)
+    assert seen[0][0].content == f"s\n\n{AGENT_SUMMARY_HEADER}\nR"
+    assert out["messages"][0].content == "s"
+
+
+def test_summarizer_runs_once_with_reviewer_retry():
+    summarize = recording_summarizer()
+    verdicts = iter([Review(coerente=False, motivo="no"), Review(coerente=True, motivo="ok")])
+    build_graph(fake(AIMessage("a"), AIMessage("b")), [clock], 5, summarizer=summarize, summary_threshold=1,
+                summary_keep_turns=2, reviewer=lambda q, a, s, r, t: next(verdicts)).invoke(
+        start("ultima", history=past_history(3)))
+    assert len(summarize.calls) == 1
+
+
+def test_summarizer_runs_before_router():
+    order = []
+
+    def summarize(previous, conversation):
+        order.append("riassunto")
+        return "R"
+
+    def route(messages, summary):
+        order.append(f"router con {summary}")
+        return Route(categoria="conversazione", motivo="")
+
+    build_graph(fake(AIMessage("ok")), [clock], 5, summarizer=summarize, summary_threshold=1,
+                summary_keep_turns=2, router=route).invoke(start("ultima", history=past_history(3)))
+    assert order == ["riassunto", "router con R"]
