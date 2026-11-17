@@ -1,6 +1,6 @@
 # Riassunto della cronologia (lezione 6, step 3) — specifica
 
-Data: 2026-11-16 · Stato: approvata dall'utente il 2026-11-16; revisione 5.7 approvata il 2026-11-17
+Data: 2026-11-16 · Stato: approvata dall'utente il 2026-11-16; revisione 5.7 approvata il 2026-11-17; revisione 5.8 approvata il 2026-11-17
 
 Riferimenti: lezione 6, slide 3 (grafo dei tre step: «Riassunto» tra START e router) e 6 (step 3 · Riassunto della cronologia). Specifiche precedenti valide per tutto ciò che qui non cambia: `2026-11-16-revisore-design.md`, `2026-11-16-router-design.md`, `2026-11-16-streaming-design.md`, `2026-11-09-note-fastapi-design.md`.
 
@@ -106,6 +106,31 @@ START → summarizer → router → (model ⇄ tools → reviewer → …) come 
 **Test** (senza LM Studio): prompt del router con e senza riassunto; richiesta del revisore con e senza riassunto e conversazione recente (strumenti esclusi, indicazioni del revisore escluse, limite di 6 messaggi); il grafo passa il riassunto a router e revisore e la conversazione recente al revisore. Restano verdi tutti i test esistenti.
 
 **Prova reale**: ripetere la sessione con soglia 900 e verificare «di cosa abbiamo parlato?» approvata al primo giudizio; registrare i tempi del revisore.
+
+### 5.8 Risultati degli strumenti al revisore e «l'utente» nel riassunto (revisione del 2026-11-17)
+
+**Perché.** Prova reale dopo 5.7 (locale e Docker, soglia 900):
+- «di cosa abbiamo parlato?» approvata al primo giudizio, ma in Docker «quali note ho?» con la risposta corretta di `list_notes` è stata **bocciata 3 volte fino al limite** («le note non sono presenti nella conversazione precedente»): con il contesto il revisore confronta la risposta con la conversazione e non vede i risultati degli strumenti.
+- L'agente, con il riassunto «Marco, residente a Roma, ha chiesto…», ha risposto «Non mi hai detto il tuo nome» e «non ho accesso alle tue informazioni personali» (2 su 2).
+
+**Misure** (sonde reali, 3 ripetizioni per caso):
+- Revisore con riassunto e conversazione recente: note 0/3, ora di Tokyo 0/3 (anche senza contesto Tokyo 0/3: «non ho accesso a informazioni in tempo reale»). Una regola nelle istruzioni («il contesto serve solo a capire la domanda») non cambia nulla: note 0/3, Tokyo 0/3.
+- Revisore con riassunto, conversazione recente **e risultati degli strumenti del turno**: **15/15** (note, Tokyo, «di cosa abbiamo parlato?», nome e città giusti; domanda in due parti incompleta bocciata), 19–31 s per giudizio.
+- Agente (prompt di sistema reale, senza strumenti collegati) con «come mi chiamo?»: riassunto in terza persona («Marco, residente a Roma, …») 0/3; intestazione più esplicita 0/3; riassunto che inizia con «L'utente si chiama Marco e vive a Roma.» **3/3**. «dove vivo?» 3/3 in tutti i casi.
+- Riassunto con la frase nuova nelle istruzioni: **6/6** iniziano con «L'utente si chiama Marco e vive a Roma» e conservano nota 6 e Python (primo riassunto e successivo), 5–9 s.
+
+**Comportamento.**
+- **Revisore**: fra la conversazione recente e la domanda, se nel turno ci sono risultati degli strumenti, la richiesta contiene
+  ```
+  Risultati degli strumenti in questo turno:
+  <nome>: <contenuto>
+  ```
+  una riga per ogni `ToolMessage` dopo la domanda del turno (compresi quelli dei tentativi precedenti del revisore). Istruzioni del revisore invariate.
+- **Riassunto**: nelle istruzioni, prima di «Scrivi solo il riassunto, senza introduzioni.», la frase «Riferisciti all'utente sempre come «l'utente»: se conosci nome o città, inizia con «L'utente si chiama … e vive a …».».
+
+**Test** (senza LM Studio): richiesta del revisore con i risultati degli strumenti (e senza: identica a 5.7); il grafo passa al revisore i risultati del turno corrente e non quelli dei turni precedenti; istruzioni del riassunto con la frase nuova.
+
+**Prova reale**: locale e Docker con soglia 900, con «come mi chiamo?» dopo il riassunto e «quali note ho?».
 
 ### 5.5 Stato e terminale da un turno all'altro
 

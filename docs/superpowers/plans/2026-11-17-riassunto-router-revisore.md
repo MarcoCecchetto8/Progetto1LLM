@@ -1,6 +1,6 @@
 # Router e revisore con il riassunto — piano
 
-Specifica: `docs/superpowers/specs/2026-11-16-riassunto-design.md`, sezione 5.7 (revisione del 2026-11-17). Branch: `feature/riassunto` (lo stesso dello step 3). Esecuzione: in linea, a pezzi piccoli, TDD; suite verde e commit dopo ogni task.
+Specifica: `docs/superpowers/specs/2026-11-16-riassunto-design.md`, sezioni 5.7 e 5.8 (revisioni del 2026-11-17; Task 2b e 2c aggiunti dopo la prova reale). Branch: `feature/riassunto` (lo stesso dello step 3). Esecuzione: in linea, a pezzi piccoli, TDD; suite verde e commit dopo ogni task.
 
 ## Global Constraints
 
@@ -39,6 +39,28 @@ Specifica: `docs/superpowers/specs/2026-11-16-riassunto-design.md`, sezione 5.7 
 - [ ] **Step 3: Implementare**; aggiornare i revisori finti alla nuova firma.
 - [ ] **Step 4: Suite verde.**
 - [ ] **Step 5: Commit** — `feat(revisore): il revisore riceve riassunto e conversazione recente`.
+
+### Task 2b: Risultati degli strumenti al revisore (specifica 5.8)
+
+**Files:** Modify `assistant/reviewer.py`, `assistant/graph.py`; Test `tests/test_reviewer.py`, `tests/test_graph.py`, `tests/test_stream_view.py`.
+
+**Interfaces:** `review_request(question, answer, summary="", recent="", tools="")`: se `tools` non è vuoto, dopo la conversazione recente aggiunge `Risultati degli strumenti in questo turno:\n{tools}\n\n`. La funzione di `build_reviewer` e il tipo in `build_graph` prendono il quinto argomento. Nel grafo `tools = "\n".join(f"{m.name}: {m.content}" for m in messages[index + 1:] if isinstance(m, ToolMessage))`.
+
+- [ ] **Step 1: Test che falliscono**: `review_request` con i risultati (ordine riassunto → recente → strumenti → domanda → risposta; senza: identica a prima); il grafo passa al revisore i risultati del turno corrente e non quelli di un turno precedente nella cronologia.
+- [ ] **Step 2: Verificare che falliscano.**
+- [ ] **Step 3: Implementare**; aggiornare i revisori finti alla nuova firma.
+- [ ] **Step 4: Suite verde.**
+- [ ] **Step 5: Commit** — `fix(revisore): il revisore vede i risultati degli strumenti del turno`.
+
+### Task 2c: «L'utente» nel riassunto (specifica 5.8)
+
+**Files:** Modify `assistant/summarizer.py`; Test `tests/test_summarizer.py`.
+
+- [ ] **Step 1: Test che fallisce**: `SUMMARIZER_INSTRUCTIONS` contiene «Riferisciti all'utente sempre come «l'utente»» prima di «Scrivi solo il riassunto».
+- [ ] **Step 2: Verificare che fallisca.**
+- [ ] **Step 3: Implementare.**
+- [ ] **Step 4: Suite verde.**
+- [ ] **Step 5: Commit** — `fix(riassunto): il riassunto chiama l'utente «l'utente» con nome e città`.
 
 ### Task 3: Documentazione e prova reale
 
