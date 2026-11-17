@@ -59,7 +59,7 @@ def _start() -> int:
     import httpx
 
     from assistant.preferences import load_preferences
-    from assistant.mcp_client import MCPClient, MCPConnectionError, server_command, server_env
+    from assistant.mcp_client import (MCPClient, MCPConnectionError, MCPPromptError, server_command, server_env)
     from assistant.notes import (LocalNotesService, NotesConnectionError, TIMEOUT, ask_in_terminal,
                                  build_note_tools, check_note_claims, wait_until_ready)
     from lab_server.timezones import get_timezone
@@ -91,7 +91,11 @@ def _start() -> int:
             logging.getLogger("assistant").info("[mcp] catalogo: %s", ", ".join(tool.name for tool in tools))
             # Letta una volta, prima della prima domanda; un collegamento caduto è l'errore di sempre
             preferences = load_preferences(client.read_resource, settings.default_timezone)
-            prompt_list = client.list_prompts()
+            try:
+                prompt_list = client.list_prompts()
+            except MCPPromptError as error:
+                logging.getLogger("assistant").warning("[mcp] prompt non disponibili (%s): nessun prompt", error)
+                prompt_list = []
             logging.getLogger("assistant").info(
                 "[mcp] prompt: %s", ", ".join(p.name for p in prompt_list) or "nessuno")
         except MCPConnectionError as error:

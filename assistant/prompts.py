@@ -55,6 +55,8 @@ def parse_prompt_command(
     if not rest.strip():
         raise PromptCommandError(USO)
     tokens = _split(rest)
+    if not tokens or not tokens[0]:
+        raise PromptCommandError(USO)
     name, items = tokens[0], tokens[1:]
     info = next((p for p in prompts if p.name == name), None)
     if info is None:

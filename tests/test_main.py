@@ -152,3 +152,55 @@ def test_library_serializer_warnings_silenced():
         warnings.warn("Pydantic serializer warnings:\n  PydanticSerializationUnexpectedValue(...)", UserWarning)
         warnings.warn("altro avviso", UserWarning)
     assert [str(w.message) for w in caught] == ["altro avviso"]
+
+
+def test_prompt_list_error_is_warning_and_startup_continues(monkeypatch, capsys, restore_sigint, restore_logging):
+    import types
+
+    import assistant.llm
+    import assistant.mcp_client
+    import assistant.notes
+    from assistant.__main__ import _start
+
+    class Stop(Exception):
+        pass
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            return [types.SimpleNamespace(name="get_current_time")]
+
+        def read_resource(self, uri):
+            return "{}"
+
+        def list_prompts(self):
+            raise assistant.mcp_client.MCPPromptError("il server non ha prompt")
+
+        def close(self):
+            pass
+
+    class StopService:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            raise Stop()
+
+        def close(self):
+            pass
+
+    monkeypatch.setenv("LMSTUDIO_BASE_URL", "http://127.0.0.1:9/v1")
+    monkeypatch.setenv("LMSTUDIO_MODEL", "x")
+    monkeypatch.delenv("NOTES_SERVICE_URL", raising=False)
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setattr(assistant.llm, "check_model", lambda settings: None)
+    monkeypatch.setattr(assistant.mcp_client, "MCPClient", FakeClient)
+    monkeypatch.setattr("assistant.preferences.load_preferences",
+                        lambda read, tz: types.SimpleNamespace(fuso_orario=tz))
+    monkeypatch.setattr(assistant.notes, "LocalNotesService", StopService)
+    with pytest.raises(Stop):
+        _start()
+    # configure_logging(force=True) sostituisce gli handler: l'avviso si legge su stderr
+    assert "[mcp] prompt non disponibili (il server non ha prompt): nessun prompt" in capsys.readouterr().err

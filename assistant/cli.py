@@ -115,7 +115,7 @@ def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=cle
 
     def header():
         output_fn(f"Assistente del laboratorio — modello: {settings.model}")
-        output_fn("Scrivi la tua domanda. Comandi: help, clear. Per uscire: quit, exit o Ctrl+C.")
+        output_fn("Scrivi la tua domanda. Comandi: help, clear, /prompts, /prompt. Per uscire: quit, exit o Ctrl+C.")
 
     def turn(new_messages) -> None:
         nonlocal history, summary
@@ -183,8 +183,9 @@ def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=cle
             output_fn(f"Il server non ha restituito messaggi per il prompt {name}.")
             return None
         logger.info(prompt_log_line(name, arguments, raw))
-        for role, text in (raw if len(raw) > 1 else []):
-            logger.debug("[prompt] %s: %s", role, " ".join(text.split()))
+        if len(raw) > 1:
+            for number, (role, text) in enumerate(raw, 1):
+                logger.debug("[prompt] %d/%d %s: %s", number, len(raw), role, " ".join(text.split()))
         return messages
 
     cancelled = threading.Event()

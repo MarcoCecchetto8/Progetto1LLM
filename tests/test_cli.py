@@ -449,6 +449,7 @@ def fake_get_prompt(calls=None, messages=None):
 def test_prompts_lists_and_help_mentions_commands():
     out = prompt_session(Stub(), "/prompts", "help", "quit", get_prompt=fake_get_prompt())
     text = "\n".join(out)
+    assert "Comandi: help, clear, /prompts, /prompt." in text
     assert "spiega — Spiega un concetto" in text
     assert "  /prompts    elenca i prompt del server" in text
     assert "  /prompt     richiama un prompt: /prompt nome argomento=valore …" in text
@@ -535,3 +536,19 @@ def test_prompt_command_case():
     assert any(line.startswith("spiega — ") for line in out)
     assert calls == [("spiega", {"argomento": "x"})]
     assert any(line.startswith("Prompt sconosciuto: Spiega.") for line in out)
+
+
+def test_prompt_with_several_messages_logs_each_at_debug(caplog):
+    messages = [("user", "Primo   testo."), ("assistant", "Secondo testo.")]
+    with caplog.at_level(logging.DEBUG, logger="assistant.cli"):
+        prompt_session(Stub(), "/prompt riassumi_conversazione", "quit",
+                       get_prompt=fake_get_prompt(messages=messages))
+    assert "[prompt] 1/2 user: Primo testo." in caplog.text
+    assert "[prompt] 2/2 assistant: Secondo testo." in caplog.text
+
+
+def test_prompt_empty_name_gives_usage():
+    graph, calls = Stub(), []
+    out = prompt_session(graph, '/prompt ""', "quit", get_prompt=fake_get_prompt(calls))
+    assert "Uso: /prompt <nome> argomento=valore …  (elenco con /prompts)" in out
+    assert calls == []
