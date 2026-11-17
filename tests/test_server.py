@@ -168,3 +168,81 @@ def test_search_catalog_no_match_is_not_error():
         'Nessun linguaggio corrisponde a "cobra". Se hai usato parole al plurale riprova al singolare '
         "(es. funzionale); altrimenti il catalogo non lo contiene."
     )
+
+
+# --- Preferenze come resource ---
+
+import json
+import logging
+from pathlib import Path
+
+import pytest
+
+from lab_server.__main__ import server_timezone
+from lab_server.preferences import PREFERENCES_URI
+
+
+def prefs_server(path):
+    return create_server("Europe/Rome", FIXED, path)
+
+
+def test_preferences_resource_listed(tmp_path):
+    file = tmp_path / "p.json"
+    file.write_text("{}", encoding="utf-8")
+    srv = prefs_server(file)
+    resources = call(srv, lambda c: c.list_resources())
+    assert len(resources) == 1
+    assert str(resources[0].uri) == PREFERENCES_URI
+    assert resources[0].name == "preferenze"
+    assert resources[0].mimeType == "application/json"
+    assert "preferenze" not in [t.name for t in call(srv, lambda c: c.list_tools())]
+
+
+def test_preferences_resource_reads_file(tmp_path):
+    file = tmp_path / "p.json"
+    file.write_text('{"lingua": "inglese"}', encoding="utf-8")
+    srv = prefs_server(file)
+    assert call(srv, lambda c: c.read_resource(PREFERENCES_URI))[0].text == '{"lingua": "inglese"}'
+    file.write_text('{"lingua": "spagnolo"}', encoding="utf-8")
+    assert call(srv, lambda c: c.read_resource(PREFERENCES_URI))[0].text == '{"lingua": "spagnolo"}'
+
+
+def test_preferences_resource_bom(tmp_path):
+    file = tmp_path / "p.json"
+    file.write_text('{"lingua": "inglese"}', encoding="utf-8-sig")
+    text = call(prefs_server(file), lambda c: c.read_resource(PREFERENCES_URI))[0].text
+    assert not text.startswith("﻿")
+    assert json.loads(text) == {"lingua": "inglese"}
+
+
+def test_preferences_resource_missing_file(tmp_path):
+    srv = prefs_server(tmp_path / "manca.json")
+    with pytest.raises(Exception):
+        call(srv, lambda c: c.read_resource(PREFERENCES_URI))
+
+
+def test_no_resource_without_file():
+    assert call(create_server("Europe/Rome", FIXED), lambda c: c.list_resources()) == []
+
+
+def test_server_timezone_from_preferences(tmp_path):
+    file = tmp_path / "p.json"
+    file.write_text('{"lingua": "italiano", "fuso_orario": "America/New_York", "stile": "sintetico"}', encoding="utf-8")
+    assert server_timezone({"PREFERENCES_FILE": str(file)}, tmp_path) == ("America/New_York", file)
+
+
+def test_server_timezone_fallback_logs_debug(tmp_path, caplog):
+    file = tmp_path / "p.json"
+    file.write_text('{"lingua": "italiano", "fuso_orario": "Marte/Base", "stile": "sintetico"}', encoding="utf-8")
+    with caplog.at_level(logging.DEBUG, logger="lab_server"):
+        result = server_timezone({"PREFERENCES_FILE": str(file), "DEFAULT_TIMEZONE": "Asia/Tokyo"}, tmp_path)
+    assert result[0] == "Asia/Tokyo"
+    assert any(r.levelno == logging.DEBUG for r in caplog.records)
+    assert not any(r.levelno >= logging.WARNING for r in caplog.records)
+
+
+def test_server_timezone_relative_path(tmp_path):
+    (tmp_path / "sub").mkdir()
+    file = tmp_path / "sub" / "p.json"
+    file.write_text('{"fuso_orario": "Asia/Tokyo"}', encoding="utf-8")
+    assert server_timezone({"PREFERENCES_FILE": "sub/p.json"}, tmp_path) == ("Asia/Tokyo", tmp_path / "sub" / "p.json")

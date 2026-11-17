@@ -3,8 +3,29 @@
 import logging
 import os
 import sys
+from collections.abc import Mapping
+from pathlib import Path
 
+from lab_server.preferences import parse_preferences
 from lab_server.server import create_server
+
+logger = logging.getLogger("lab_server")
+
+
+def server_timezone(env: Mapping[str, str], root: Path) -> tuple[str, Path]:
+    """Fuso predefinito del server (dalle preferenze, altrimenti DEFAULT_TIMEZONE) e percorso del file."""
+    path = Path(env.get("PREFERENCES_FILE", "").strip() or "config/preferenze.json")
+    if not path.is_absolute():
+        path = root / path
+    fallback = env.get("DEFAULT_TIMEZONE", "").strip() or "Europe/Rome"
+    try:
+        text, reason = path.read_text(encoding="utf-8-sig"), ""
+    except OSError as error:
+        text, reason = None, str(error)
+    preferences, warnings = parse_preferences(text, fallback, reason)
+    for warning in warnings:
+        logger.debug("preferenze: %s", warning)
+    return preferences.fuso_orario, path
 
 
 def main() -> None:
@@ -12,8 +33,8 @@ def main() -> None:
     # Con stdio lo stdout è riservato al protocollo: i log vanno su stderr
     logging.basicConfig(level=logging.DEBUG if debug else logging.WARNING, stream=sys.stderr,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    default_timezone = os.environ.get("DEFAULT_TIMEZONE", "").strip() or "Europe/Rome"
-    create_server(default_timezone).run(show_banner=False)
+    timezone, path = server_timezone(os.environ, Path(__file__).resolve().parent.parent)
+    create_server(timezone, preferences_file=path).run(show_banner=False)
 
 
 if __name__ == "__main__":
