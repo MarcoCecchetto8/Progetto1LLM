@@ -132,6 +132,8 @@ def test_connection_lost_reading_preferences_stops_startup(monkeypatch, capsys, 
 
     monkeypatch.setenv("LMSTUDIO_BASE_URL", "http://127.0.0.1:9/v1")
     monkeypatch.setenv("LMSTUDIO_MODEL", "x")
+    # _start importa load_dotenv al suo interno: senza questo copierebbe il vero .env in os.environ
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: False)
     monkeypatch.setattr(assistant.llm, "check_model", lambda settings: None)
     monkeypatch.setattr(assistant.mcp_client, "MCPClient", FakeClient)
     assert _start() == 1

@@ -21,6 +21,13 @@ def test_unavailable():
     )
 
 
+def test_deeply_nested_json_is_invalid():
+    assert parse_preferences("[" * 100000, RIS) == (
+        DEFAULT,
+        ["contenuto non valido (JSON non leggibile): uso italiano, sintetico, Europe/Rome"],
+    )
+
+
 def test_invalid_json():
     assert parse_preferences("{", RIS) == (
         DEFAULT,

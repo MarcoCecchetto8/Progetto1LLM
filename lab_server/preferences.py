@@ -40,7 +40,7 @@ def parse_preferences(
         return defaults, [f"resource non disponibile ({reason}): {fallback_text}"]
     try:
         data = json.loads(text)
-    except ValueError:
+    except (ValueError, RecursionError):
         return defaults, [f"contenuto non valido (JSON non leggibile): {fallback_text}"]
     if not isinstance(data, dict):
         return defaults, [f"contenuto non valido (non è un oggetto JSON): {fallback_text}"]

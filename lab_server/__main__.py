@@ -18,6 +18,8 @@ def server_timezone(env: Mapping[str, str], root: Path) -> tuple[str, Path]:
     if not path.is_absolute():
         path = root / path
     fallback = env.get("DEFAULT_TIMEZONE", "").strip() or "Europe/Rome"
+    # Il server legge il file all'avvio e l'host lo rilegge dalla resource poco dopo:
+    # i due valori coincidono, salvo modifiche al file durante l'avvio.
     try:
         text, reason = path.read_text(encoding="utf-8-sig"), ""
     except (OSError, UnicodeDecodeError) as error:
