@@ -170,7 +170,7 @@ def test_stream_turn_refusal_printed_once():
 
 
 def test_stream_turn_with_real_graph_refusal():
-    router = lambda messages: Route(categoria="fuori_ambito", motivo="cucina")
+    router = lambda messages, summary: Route(categoria="fuori_ambito", motivo="cucina")
     graph = build_graph(fake(AIMessage("non deve comparire")), [fake_clock], 5, router=router)
     view, out = make_view()
     stream_turn(graph, {"messages": [HumanMessage("carbonara?")], "steps": 0}, view)

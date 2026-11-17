@@ -7,6 +7,8 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
+from assistant.summarizer import SUMMARY_HEADER
+
 ROUTER_CONTEXT_MESSAGES = 6
 
 ROUTER_INSTRUCTIONS = (
@@ -30,8 +32,10 @@ class Route(BaseModel):
     motivo: str = Field(description="Frase breve in italiano che spiega la scelta.")
 
 
-def router_prompt(scope: str) -> str:
-    return f"{ROUTER_INSTRUCTIONS}\n\n{scope}"
+def router_prompt(scope: str, summary: str = "") -> str:
+    prompt = f"{ROUTER_INSTRUCTIONS}\n\n{scope}"
+    # Dopo un riassunto i primi turni non sono più fra gli ultimi messaggi: il riassunto li sostituisce
+    return f"{prompt}\n\n{SUMMARY_HEADER}\n{summary}" if summary else prompt
 
 
 def router_context(messages: list[AnyMessage]) -> list[AnyMessage]:
@@ -49,14 +53,14 @@ def router_context(messages: list[AnyMessage]) -> list[AnyMessage]:
     return kept
 
 
-def build_router(model: BaseChatModel, scope: str) -> Callable[[list[AnyMessage]], Route]:
+def build_router(model: BaseChatModel, scope: str) -> Callable[[list[AnyMessage], str], Route]:
     # Senza ragionamento: la classificazione deve essere rapida
     structured = model.model_copy(update={"reasoning_effort": "none"}).with_structured_output(
         Route, method="json_schema"
     )
 
-    def route(messages: list[AnyMessage]) -> Route:
-        return structured.invoke([SystemMessage(router_prompt(scope)), *router_context(messages)])
+    def route(messages: list[AnyMessage], summary: str = "") -> Route:
+        return structured.invoke([SystemMessage(router_prompt(scope, summary)), *router_context(messages)])
 
     return route
 

@@ -257,8 +257,8 @@ def test_answer_check_logged(caplog):
 def make_router(category="conversazione", reason="saluto", error=None):
     calls = []
 
-    def router(messages):
-        calls.append(messages)
+    def router(messages, summary):
+        calls.append((messages, summary))
         if error:
             raise error
         return Route(categoria=category, motivo=reason)
@@ -302,6 +302,16 @@ def test_router_api_error_propagates():
     graph = build_graph(fake(AIMessage("Ciao!")), [clock], 5, router=make_router(error=error))
     with pytest.raises(openai.APIConnectionError):
         graph.invoke(start("ciao"))
+
+
+def test_router_receives_summary():
+    router = make_router()
+    state = start("dove vivo?")
+    state["summary"] = "Marco vive a Roma."
+    build_graph(fake(AIMessage("A Roma.")), [clock], 5, router=router).invoke(state)
+    assert router.calls[0][1] == "Marco vive a Roma."
+    build_graph(fake(AIMessage("Ciao!")), [clock], 5, router=router).invoke(start("ciao"))
+    assert router.calls[1][1] == ""
 
 
 def test_router_does_not_add_messages():
@@ -534,10 +544,10 @@ def test_summarizer_runs_before_router():
         order.append("riassunto")
         return "R"
 
-    def route(messages):
-        order.append("router")
+    def route(messages, summary):
+        order.append(f"router con {summary}")
         return Route(categoria="conversazione", motivo="")
 
     build_graph(fake(AIMessage("ok")), [clock], 5, summarizer=summarize, summary_threshold=1,
                 summary_keep_turns=2, router=route).invoke(start("ultima", history=past_history(3)))
-    assert order == ["riassunto", "router"]
+    assert order == ["riassunto", "router con R"]

@@ -102,7 +102,7 @@ def cleanup_review(messages: list[AnyMessage]) -> list[RemoveMessage]:
 
 def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
                 answer_check: Callable[[list[AnyMessage]], list[str]] | None = None,
-                router: Callable[[list[AnyMessage]], Route] | None = None,
+                router: Callable[[list[AnyMessage], str], Route] | None = None,
                 reviewer: Callable[[str, str], Review] | None = None, max_reviews: int = 3,
                 summarizer: Callable[[str, str], str] | None = None, summary_threshold: int = 4000,
                 summary_keep_turns: int = 2):
@@ -196,7 +196,7 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
 
     def router_node(state: State) -> dict:
         try:
-            result = router(state["messages"])
+            result = router(state["messages"], state.get("summary", ""))
         except (OutputParserException, ValueError) as error:
             # Risposta non valida del classificatore: nel dubbio decide l'agente
             logger.warning("[router] risposta non valida (%s): la domanda passa all'agente", error)
