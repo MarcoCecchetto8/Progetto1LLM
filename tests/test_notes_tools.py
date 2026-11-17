@@ -139,6 +139,15 @@ def test_confirmation_check_skips_missing_decided_and_repeated(client):
     assert [c["id_nota"] for c in check(calls, {1: False})] == [2]
 
 
+def test_confirmation_check_digit_string_id(client):
+    # I modelli locali passano spesso l'ID come stringa: senza conferma il ToolNode lo convertirebbe e annullerebbe
+    make_tools(client)["add_note"].invoke({"text": "report"})
+    check = build_confirmation_check(client, lambda: TODAY)
+    assert [c["id_nota"] for c in check([delete_call("1", "a"), delete_call(1, "b")], {})] == [1]
+    assert check([delete_call("1")], {1: True}) == []
+    assert check([delete_call(True), delete_call("x"), delete_call(" 1"), delete_call("-1")], {}) == []
+
+
 def test_confirmation_check_connection_error():
     dead = httpx.Client(base_url="http://127.0.0.1:9", timeout=0.5)
     with pytest.raises(NotesConnectionError):

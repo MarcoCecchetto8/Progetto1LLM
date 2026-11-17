@@ -113,7 +113,11 @@ def build_confirmation_check(client: httpx.Client,
         ids = []
         for call in calls:
             note_id = call["args"].get("note_id") if call["name"] == "delete_note" else None
-            if isinstance(note_id, int) and note_id not in decisions and note_id not in ids:
+            # I modelli locali passano spesso l'ID come stringa ("1"): il ToolNode lo converte, quindi va chiesto
+            if isinstance(note_id, str) and note_id.isascii() and note_id.isdigit():
+                note_id = int(note_id)
+            if (isinstance(note_id, int) and not isinstance(note_id, bool)
+                    and note_id not in decisions and note_id not in ids):
                 ids.append(note_id)
         needed = []
         for note_id in ids:
