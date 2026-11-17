@@ -52,6 +52,7 @@ Invoke-RestMethod http://localhost:1234/v1/models | Select-Object -ExpandPropert
 | `SUMMARY_THRESHOLD` | no | `4000` | token stimati (caratteri ÷ 4, riassunto compreso) oltre i quali la cronologia viene riassunta (≥ 1) |
 | `SUMMARY_KEEP_TURNS` | no | `2` | ultimi turni lasciati intatti dal riassunto (≥ 1) |
 | `SCOPE_FILE` | no | `config/ambito.txt` | file con l'ambito dell'assistente per il router (percorso relativo alla radice del progetto); se manca o è vuoto l'avvio si ferma con `SCOPE_FILE non valida: '<percorso>' non esiste o è vuoto.` |
+| `PREFERENCES_FILE` | no | `config/preferenze.json` | file delle preferenze dell'utente, esposto dal server come resource `utente://preferenze` (percorso relativo alla radice del progetto); se manca o non è valido l'avvio prosegue con le riserve e un avviso `[preferenze]` |
 | `NOTES_SERVICE_URL` | no | vuota | vuota in locale: l'assistente avvia da solo il servizio delle note su `http://127.0.0.1:8000`; con Docker Compose viene impostata a `http://notes:8000` |
 
 ## Avvio locale (PowerShell)
@@ -157,6 +158,19 @@ All'inizio di ogni turno, prima del router, un nodo controlla la dimensione dell
 - **Limite, il tempo**: il riassunto è una chiamata in più al modello, 7–19 s nelle prove reali. Se dopo il riassunto la conversazione resta sopra la soglia (soglia bassa, riassunto lungo), il riassunto riparte a ogni turno.
 - **Limite, «dove vivo?»**: il router rifiuta «dove vivo?» come fuori ambito («non posso sapere dove vivi») quando la presentazione dell'utente non è più fra gli ultimi messaggi, anche con il riassunto e con un esempio in `config/ambito.txt` (0 su 3 nelle sonde). Funzionano «come mi chiamo?», «come mi chiamo e dove vivo?» e «di cosa abbiamo parlato?». È un limite del modello.
 - **Limite accettato, la memoria dei riassunti successivi**: con `google/gemma-4-e2b` nome, città e ID delle note sopravvivono ai riassunti successivi, ma gli argomenti più vecchi tendono a sparire al secondo riassunto. È un limite del modello.
+
+## Preferenze dell'utente
+
+Lingua delle risposte, fuso orario predefinito e stile non sono scritti nel codice: stanno in un file, che il server MCP espone come **resource** `utente://preferenze`. A leggerla è l'host (`assistant/`), non il modello: una volta sola all'avvio della sessione, prima della prima domanda; poi il blocco delle preferenze va in cima al prompt di sistema. Un tool lo decide il modello durante la conversazione, una resource la decide l'host prima di chiamare il modello.
+
+- **Il file**: `config/preferenze.json`, versionato; un altro file si indica con `PREFERENCES_FILE`. Contenuto di partenza: `{"lingua": "italiano", "fuso_orario": "Europe/Rome", "stile": "sintetico"}`. La modifica vale dalla sessione successiva, senza toccare il codice (`clear` non rilegge il file).
+- **Campi e valori**: `lingua` (`italiano`, `inglese`, `spagnolo`); `fuso_orario` (nome IANA esatto, maiuscole comprese, come `DEFAULT_TIMEZONE`); `stile` (`sintetico`: una o due frasi, solo ciò che è chiesto; `dettagliato`: la risposta più il contesto utile preso dai risultati degli strumenti). I valori si confrontano esattamente come scritti; i campi in più sono ignorati.
+- **Riserve e avvisi**: un campo assente o con valore non ammesso usa la riserva di quel campo (`italiano`, `sintetico`, `DEFAULT_TIMEZONE`) e un avviso `WARNING` `[preferenze] ...` lo nomina; gli altri campi validi restano. Resource non disponibile o contenuto non valido: tutte le riserve e un avviso. L'avvio non si ferma mai per le preferenze.
+- **Fuso orario**: il fuso delle preferenze, se valido, è anche quello predefinito del server (`get_current_time` senza `timezone`, «oggi» degli strumenti delle date) e delle note, così host e server non sono in disaccordo.
+- **La resource non è tra i tool**: i tool passati al modello restano quelli del catalogo più le note. `python -m lab_server.check` elenca la resource dopo i tool.
+- **Log**: all'avvio una riga `INFO` `[preferenze] utente://preferenze: lingua=<...>, fuso_orario=<...>, stile=<...>`, distinta dalle chiamate ai tool.
+- **Docker**: `compose.yaml` monta `config/preferenze.json` in sola lettura in `/app/config/preferenze.json`: una modifica vale dalla sessione successiva senza `docker compose build`.
+- **Limiti**: i testi fissi del programma (rifiuto del router, avvisi, messaggi del terminale, prompt di router, revisore e riassunto) restano in italiano; risponde nella lingua scelta solo il modello. L'avviso sui falsi successi delle note è solo in italiano: con `inglese` o `spagnolo` una nota dichiarata salvata o eliminata senza lo strumento non produce l'avviso.
 
 ## Log
 
@@ -385,10 +399,29 @@ Esiti del 2026-11-16 e 2026-11-17 con `google/gemma-4-e2b`, domande inviate da p
 
 Limiti visti nelle prove e già noti: il revisore legge a volte «12 per 7» come una divisione; in Docker l'agente ha dichiarato salvata la nota del latte senza chiamare `add_note` e in fondo è comparso l'avviso.
 
+### Prova reale delle preferenze
+
+Da eseguire con LM Studio (separata, attivata esplicitamente); gli esiti si compilano dopo la prova.
+
+| Prova | Atteso | Esito |
+|---|---|---|
+| `fuso_orario: America/New_York`, «Che ore sono?» | ora di New York, senza chiedere il fuso | da provare |
+| `lingua: inglese`, nuova sessione | risposte in inglese | da provare |
+| `stile: dettagliato`, «chi ha creato Python?» | risposta più lunga con paradigmi e tipizzazione | da provare |
+| Valore non ammesso (per esempio `stile: medio`) | avvio con la riserva e un `WARNING` `[preferenze]` che nomina il campo | da provare |
+| File mancante | avvio con le riserve e un `WARNING` `[preferenze] resource non disponibile (...)` | da provare |
+| `LOG_LEVEL=DEBUG` | `resources/read` una sola volta, prima della prima domanda, distinta dalle `tools/call` | da provare |
+| Revisore con `inglese` e `dettagliato` | nessuna bocciatura inutile; se capita, lingua della risposta rifatta | da provare |
+| Richiesta di una nota con `inglese` | limite dell'avviso delle note, solo italiano | da provare |
+| Docker (`docker compose run --rm -T app` con input da pipe): modifica del file montato e nuova sessione senza `build` | comportamento cambiato | da provare |
+
 ## Diagnosi
 
 | Sintomo | Causa probabile e rimedio |
 |---|---|
+| `[preferenze] resource non disponibile (...): uso italiano, sintetico, <fuso>` | il file delle preferenze manca o non si legge: controllare `PREFERENCES_FILE` e `config/preferenze.json`; l'avvio prosegue con le riserve |
+| `[preferenze] <campo> '<valore>' non ammesso: uso '<riserva>'` o `<campo> mancante: uso '<riserva>'` | campo assente, valore fuori elenco (lingua, stile) o fuso inesistente: correggere il file e riavviare; gli altri campi valgono |
+| `[preferenze] contenuto non valido (...): uso italiano, sintetico, <fuso>` | il file non è un oggetto JSON valido: correggerlo e riavviare |
 | il riassunto è lento o scatta troppo spesso | ogni riassunto è una chiamata in più al modello: alzare `SUMMARY_THRESHOLD` |
 | `[riassunto] non riuscito (...): cronologia invariata` | il riassunto non è riuscito (errore di LM Studio o testo vuoto): la cronologia resta invariata e il turno prosegue |
 | il revisore rimanda indietro risposte corrette, o il turno è lento | il revisore è un modello piccolo e ogni giudizio costa circa 23 s: ridurre `MAX_REVIEWS` (anche a `0`) |
