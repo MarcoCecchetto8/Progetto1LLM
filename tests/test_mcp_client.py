@@ -1,11 +1,12 @@
 import os
 import sys
+from pathlib import Path
 
 import pytest
 from langchain_core.tools import ToolException
 
 from assistant.config import load_settings
-from assistant.mcp_client import MCPClient, MCPConnectionError, server_env
+from assistant.mcp_client import MCPClient, MCPConnectionError, MCPResourceError, server_env
 
 TEST_SERVER = [sys.executable, "-m", "tests.mcp_test_server"]
 
@@ -83,3 +84,45 @@ def test_tool_error_is_silent_on_stderr_without_debug(tmp_path):
             {t.name: t for t in tools}["fail"].invoke({})
     errlog.seek(0)
     assert errlog.read() == ""
+
+
+def test_server_env_absolute_preferences_path(tmp_path):
+    root = Path(__file__).resolve().parent.parent
+    env = {"LMSTUDIO_BASE_URL": "http://x/v1", "LMSTUDIO_MODEL": "m"}
+    relative = server_env(load_settings({**env, "PREFERENCES_FILE": "config/p.json"}))["PREFERENCES_FILE"]
+    assert Path(relative).is_absolute() and Path(relative) == root / "config" / "p.json"
+    absolute = str(tmp_path / "p.json")
+    assert server_env(load_settings({**env, "PREFERENCES_FILE": absolute}))["PREFERENCES_FILE"] == absolute
+
+
+@pytest.fixture(scope="module")
+def started():
+    client = MCPClient(TEST_SERVER, os.environ)
+    tools = {t.name: t for t in client.start()}
+    yield client, tools
+    client.close()
+
+
+def test_read_resource(started):
+    client, _ = started
+    assert client.read_resource("prova://testo") == "ciao"
+
+
+def test_read_resource_error_keeps_session(started):
+    client, tools = started
+    with pytest.raises(MCPResourceError):
+        client.read_resource("prova://rotta")
+    assert tools["echo"].invoke({"text": "ancora"}) == "ancora"
+
+
+def test_resource_not_in_tools(started):
+    _, tools = started
+    assert not any(name.startswith("prova") or name in ("testo", "rotta") for name in tools)
+
+
+def test_read_resource_closed_session():
+    client = MCPClient(TEST_SERVER, os.environ)
+    client.start()
+    client.close()
+    with pytest.raises(MCPConnectionError):
+        client.read_resource("prova://testo")
