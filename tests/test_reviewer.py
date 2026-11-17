@@ -39,6 +39,14 @@ def test_review_request_with_context():
     assert review_request("D?", "R.", "S", "Utente: a\nAssistente: b") == summary + recent + tail
 
 
+def test_review_request_with_tool_results():
+    tail = "Domanda dell'utente:\nD?\n\nRisposta proposta:\nR."
+    tools = "Risultati degli strumenti in questo turno:\nlist_notes: 2 note\n\n"
+    assert review_request("D?", "R.", "", "", "list_notes: 2 note") == tools + tail
+    assert review_request("D?", "R.", "S", "Utente: a", "list_notes: 2 note") == (
+        "Riassunto della conversazione precedente:\nS\n\nConversazione recente:\nUtente: a\n\n" + tools + tail)
+
+
 def test_summary_header_matches_agent():
     # reviewer.py non può importare summarizer (import circolare): le due intestazioni devono coincidere
     assert REVIEW_SUMMARY_HEADER == SUMMARY_HEADER
@@ -74,8 +82,8 @@ def test_build_reviewer():
 
 def test_build_reviewer_with_context():
     model = FakeModel()
-    build_reviewer(model)("domanda", "risposta", "S", "Utente: a")
-    assert model.invoked[1] == HumanMessage(review_request("domanda", "risposta", "S", "Utente: a"))
+    build_reviewer(model)("domanda", "risposta", "S", "Utente: a", "clock: 10:00")
+    assert model.invoked[1] == HumanMessage(review_request("domanda", "risposta", "S", "Utente: a", "clock: 10:00"))
 
 
 def test_review_lines():

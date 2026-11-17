@@ -8,7 +8,7 @@ from typing import Annotated, NotRequired, TypedDict
 import openai
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, AnyMessage, RemoveMessage, SystemMessage
+from langchain_core.messages import AIMessage, AnyMessage, RemoveMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool, ToolException
 from langgraph.graph import END, START, StateGraph
@@ -103,7 +103,7 @@ def cleanup_review(messages: list[AnyMessage]) -> list[RemoveMessage]:
 def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
                 answer_check: Callable[[list[AnyMessage]], list[str]] | None = None,
                 router: Callable[[list[AnyMessage], str], Route] | None = None,
-                reviewer: Callable[[str, str, str, str], Review] | None = None, max_reviews: int = 3,
+                reviewer: Callable[[str, str, str, str, str], Review] | None = None, max_reviews: int = 3,
                 summarizer: Callable[[str, str], str] | None = None, summary_threshold: int = 4000,
                 summary_keep_turns: int = 2):
     model_with_tools = model.bind_tools(tools)
@@ -168,8 +168,11 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
         index = last_question_index(messages)
         # Turni precedenti con la regola del router: solo testo, ultimi messaggi
         recent = transcript(router_context(messages[:index]))
+        # Risultati degli strumenti del turno, anche dei tentativi precedenti
+        tool_results = "\n".join(f"{m.name}: {m.content}" for m in messages[index + 1:] if isinstance(m, ToolMessage))
         try:
-            result = reviewer(messages[index].content, messages[-1].content, state.get("summary", ""), recent)
+            result = reviewer(messages[index].content, messages[-1].content, state.get("summary", ""), recent,
+                              tool_results)
         except (OutputParserException, ValueError) as error:
             # Giudizio non valido: nel dubbio la risposta passa
             logger.warning("[revisore] risposta non valida (%s): risposta approvata", error)

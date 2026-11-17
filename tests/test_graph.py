@@ -320,14 +320,16 @@ def test_router_does_not_add_messages():
 
 
 def make_reviewer(*verdicts):
-    # verdicts: (coerente, motivo) oppure un'eccezione; registra (domanda, risposta) e (riassunto, recente)
+    # verdicts: (coerente, motivo) oppure un'eccezione; registra (domanda, risposta), (riassunto, recente) e strumenti
     calls = []
     contexts = []
+    tools = []
     queue = iter(verdicts)
 
-    def reviewer(question, answer, summary, recent):
+    def reviewer(question, answer, summary, recent, tool_results):
         calls.append((question, answer))
         contexts.append((summary, recent))
+        tools.append(tool_results)
         verdict = next(queue)
         if isinstance(verdict, Exception):
             raise verdict
@@ -335,6 +337,7 @@ def make_reviewer(*verdicts):
 
     reviewer.calls = calls
     reviewer.contexts = contexts
+    reviewer.tools = tools
     return reviewer
 
 
@@ -407,6 +410,16 @@ def test_reviewer_receives_summary_and_recent_text():
     # Al secondo giudizio la recente non contiene né la bozza né l'indicazione del revisore
     assert reviewer.contexts == [expected, expected]
     assert reviewer.calls[1] == ("di cosa abbiamo parlato?", "Di Rust.")
+    # I risultati degli strumenti del turno precedente non sono del turno corrente
+    assert reviewer.tools == ["", ""]
+
+
+def test_reviewer_receives_tool_results_of_turn():
+    reviewer = make_reviewer((False, "manca qualcosa."), (True, "ok"))
+    model = fake(tool_call({"timezone": "Asia/Tokyo"}, "c1"), AIMessage("bozza"), AIMessage("Sono le 22:32."))
+    build_graph(model, [clock], 5, reviewer=reviewer).invoke(start("che ore sono a Tokyo?"))
+    # Anche al secondo giudizio: il risultato del primo tentativo resta nel turno
+    assert reviewer.tools == ["get_current_time: Asia/Tokyo: 2026-10-26T22:32:05+09:00"] * 2
 
 
 def test_reviewer_skipped():
@@ -554,7 +567,7 @@ def test_summarizer_runs_once_with_reviewer_retry():
     summarize = recording_summarizer()
     verdicts = iter([Review(coerente=False, motivo="no"), Review(coerente=True, motivo="ok")])
     build_graph(fake(AIMessage("a"), AIMessage("b")), [clock], 5, summarizer=summarize, summary_threshold=1,
-                summary_keep_turns=2, reviewer=lambda q, a, s, r: next(verdicts)).invoke(
+                summary_keep_turns=2, reviewer=lambda q, a, s, r, t: next(verdicts)).invoke(
         start("ultima", history=past_history(3)))
     assert len(summarize.calls) == 1
 
