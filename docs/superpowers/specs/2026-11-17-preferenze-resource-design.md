@@ -1,6 +1,6 @@
 # Preferenze dell'utente come resource MCP (lezione 6, step 4) — specifica
 
-Data: 2026-11-17 · Stato: approvata dall'utente il 2026-11-17
+Data: 2026-11-17 · Stato: approvata dall'utente il 2026-11-17; revisione 5.4 (fuso fuori dal blocco) del 2026-11-17 da confermare
 
 Riferimenti: lezione 6, slide 7 (resource: contesto scelto dall'host), 8 (step 4 · preferenze dell'utente), 9 (tool, resource e prompt: chi li attiva e quando; evidenza minima «preferenze applicate; modifica del file senza modifica del codice»). Specifiche precedenti valide per tutto ciò che qui non cambia, in particolare `2026-11-16-riassunto-design.md` (riassunto in fondo al primo messaggio di sistema) e le specifiche di router, revisore, streaming e note.
 
@@ -73,6 +73,7 @@ Riserve: `lingua=italiano`, `stile=sintetico` (il comportamento di oggi), `fuso_
   - Fuso orario predefinito: <fuso>; usalo quando l'utente non indica un fuso orario, senza chiederglielo.
   ```
   Le istruzioni di oggi perdono «Rispondi sempre in italiano» e «in modo chiaro e conciso» (sostituiti dalle preferenze) e la frase del fuso usa lo stesso fuso. Il riassunto resta in fondo al primo messaggio di sistema, come oggi.
+- Revisione del 2026-11-17 dopo la prova reale (scelta di Claude in autonomia concessa dall'utente): la riga «Fuso orario predefinito» esce dal blocco, che resta di due righe (lingua e stile). Misurato con il grafo reale su 6 temperature, «Che ore sono?»: con la riga del fuso il modello chiamava `get_current_time` 3/6 volte, senza 6/6 (con America/New_York: strumento chiamato e ora di New York 6/6). Il fuso resta nel prompt tramite la frase delle istruzioni «Se l'utente non indica un fuso orario usa `<fuso>`; …» ed è il predefinito del server.
 - Il fuso delle preferenze sostituisce `settings.default_timezone` anche per l'«oggi» degli strumenti delle note (oggi `datetime.now(zone)` in `__main__`).
 - La resource **non** finisce fra i tool: i tool passati a `build_graph`/`bind_tools` restano quelli di `load_mcp_tools` più le note.
 
