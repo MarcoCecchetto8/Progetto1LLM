@@ -191,11 +191,11 @@ Oltre a tool e resource, il server MCP espone due **prompt**: modelli di richies
 ```
 
 - **Virgolette**: solo le virgolette doppie raggruppano; `argomento="Model Context Protocol"` è un solo valore. Il valore non cambia maiuscole e minuscole; il nome del comando e `/prompts` sì (`/PROMPTS` funziona), il nome del prompt no (`Spiega` non è `spiega`).
-- **Che cosa succede**: il testo del prompt prende il posto della domanda: il turno è identico a una domanda scritta a mano (router, strumenti, revisore, riassunto, Ctrl+C) e il messaggio resta nella cronologia. Per `spiega`, il router rifiuta gli argomenti fuori ambito (per esempio «tiramisù»).
+- **Che cosa succede**: il testo del prompt prende il posto della domanda: il turno è identico a una domanda scritta a mano (router, strumenti, revisore, riassunto, Ctrl+C) e il messaggio resta nella cronologia. Per `spiega`, atteso: il router rifiuta gli argomenti fuori ambito (per esempio «tiramisù»), da verificare nella prova reale.
 - **Controlli prima del modello**: nome mancante, virgolette non chiuse, prompt sconosciuto, elemento senza `=`, argomento ripetuto, argomento sconosciuto, argomento obbligatorio mancante. In tutti i casi compare un messaggio e non partono né il modello né la richiesta al server. Un valore non ammesso (`livello=esperto`) o un `argomento` vuoto lo rifiuta il server: `Il server ha rifiutato il prompt: <motivo>`, senza chiamare il modello.
 - **Comando sconosciuto**: un testo che inizia con `/` e non è `/prompts` né `/prompt` (per esempio `/promt`) dà `Comando sconosciuto: /promt. Comandi: help, clear, /prompts, /prompt.` e non va al modello.
 - **Server caduto**: `Il server degli strumenti non risponde: esci e riavvia l'assistente.`, come durante un turno.
-- **Log**: prima del turno una riga `INFO` `[prompt] <nome> <argomenti in JSON> → <testo del primo messaggio>`; con più messaggi, uno per ciascuno a `DEBUG`. Con `LOG_LEVEL=DEBUG` la richiesta `prompts/get` compare nei log MCP, distinta da `tools/call` e `resources/read`.
+- **Log**: prima del turno una riga `INFO` `[prompt] <nome> <argomenti in JSON> → <testo del primo messaggio>`; con più messaggi, uno per ciascuno a `DEBUG`. Atteso con `LOG_LEVEL=DEBUG`: la richiesta `prompts/get` compare nei log MCP, distinta da `tools/call` e `resources/read` (da verificare nella prova reale).
 
 ## Log
 
