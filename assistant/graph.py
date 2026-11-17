@@ -17,7 +17,7 @@ from langgraph.prebuilt import ToolNode
 
 from assistant.llm import REASONING_KEY
 from assistant.reviewer import Review, feedback_message, is_review_feedback, last_question_index
-from assistant.router import Route, refusal_text
+from assistant.router import Route, refusal_text, router_context
 from assistant.summarizer import estimate_tokens, summary_cut, summary_line, transcript, with_summary
 
 logger = logging.getLogger("assistant.graph")
@@ -103,7 +103,7 @@ def cleanup_review(messages: list[AnyMessage]) -> list[RemoveMessage]:
 def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
                 answer_check: Callable[[list[AnyMessage]], list[str]] | None = None,
                 router: Callable[[list[AnyMessage], str], Route] | None = None,
-                reviewer: Callable[[str, str], Review] | None = None, max_reviews: int = 3,
+                reviewer: Callable[[str, str, str, str], Review] | None = None, max_reviews: int = 3,
                 summarizer: Callable[[str, str], str] | None = None, summary_threshold: int = 4000,
                 summary_keep_turns: int = 2):
     model_with_tools = model.bind_tools(tools)
@@ -165,9 +165,11 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
     def reviewer_node(state: State) -> dict:
         messages = state["messages"]
         reviews = state.get("reviews", 0)
-        question = messages[last_question_index(messages)].content
+        index = last_question_index(messages)
+        # Turni precedenti con la regola del router: solo testo, ultimi messaggi
+        recent = transcript(router_context(messages[:index]))
         try:
-            result = reviewer(question, messages[-1].content)
+            result = reviewer(messages[index].content, messages[-1].content, state.get("summary", ""), recent)
         except (OutputParserException, ValueError) as error:
             # Giudizio non valido: nel dubbio la risposta passa
             logger.warning("[revisore] risposta non valida (%s): risposta approvata", error)

@@ -183,7 +183,7 @@ def test_stream_turn_review_lines():
     from assistant.reviewer import Review
     verdicts = iter([Review(coerente=False, motivo="manca il calcolo."), Review(coerente=True, motivo="ok")])
     graph = build_graph(fake(AIMessage("bozza"), AIMessage("risposta completa")), [fake_clock], 5,
-                        reviewer=lambda q, a: next(verdicts))
+                        reviewer=lambda q, a, s, r: next(verdicts))
     view, out = make_view()
     stream_turn(graph, {"messages": [HumanMessage("q")], "steps": 0}, view)
     text = "".join(out)

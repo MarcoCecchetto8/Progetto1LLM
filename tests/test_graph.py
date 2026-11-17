@@ -320,18 +320,21 @@ def test_router_does_not_add_messages():
 
 
 def make_reviewer(*verdicts):
-    # verdicts: (coerente, motivo) oppure un'eccezione; registra (domanda, risposta)
+    # verdicts: (coerente, motivo) oppure un'eccezione; registra (domanda, risposta) e (riassunto, recente)
     calls = []
+    contexts = []
     queue = iter(verdicts)
 
-    def reviewer(question, answer):
+    def reviewer(question, answer, summary, recent):
         calls.append((question, answer))
+        contexts.append((summary, recent))
         verdict = next(queue)
         if isinstance(verdict, Exception):
             raise verdict
         return Review(coerente=verdict[0], motivo=verdict[1])
 
     reviewer.calls = calls
+    reviewer.contexts = contexts
     return reviewer
 
 
@@ -385,6 +388,25 @@ def test_reviewer_invalid_output_approves(caplog):
     assert out["messages"][-1].content == "Ciao!" and out["review_outcome"] == "invalid"
     assert any(r.levelno == logging.WARNING and "[revisore] risposta non valida" in r.getMessage()
                for r in caplog.records)
+
+
+def test_reviewer_without_context():
+    reviewer = make_reviewer((True, "ok"))
+    build_graph(fake(AIMessage("Ciao!")), [clock], 5, reviewer=reviewer).invoke(start("ciao"))
+    assert reviewer.contexts == [("", "")]
+
+
+def test_reviewer_receives_summary_and_recent_text():
+    history = [SystemMessage("s"), HumanMessage("chi ha creato Rust?"), tool_call({}, "c1"),
+               ToolMessage("Graydon Hoare", tool_call_id="c1", name="get_item"), AIMessage("Graydon Hoare.")]
+    state = start("di cosa abbiamo parlato?", history=history)
+    state["summary"] = "Marco vive a Roma."
+    reviewer = make_reviewer((False, "manca qualcosa."), (True, "ok"))
+    build_graph(fake(AIMessage("bozza"), AIMessage("Di Rust.")), [clock], 5, reviewer=reviewer).invoke(state)
+    expected = ("Marco vive a Roma.", "Utente: chi ha creato Rust?\nAssistente: Graydon Hoare.")
+    # Al secondo giudizio la recente non contiene né la bozza né l'indicazione del revisore
+    assert reviewer.contexts == [expected, expected]
+    assert reviewer.calls[1] == ("di cosa abbiamo parlato?", "Di Rust.")
 
 
 def test_reviewer_skipped():
@@ -532,7 +554,7 @@ def test_summarizer_runs_once_with_reviewer_retry():
     summarize = recording_summarizer()
     verdicts = iter([Review(coerente=False, motivo="no"), Review(coerente=True, motivo="ok")])
     build_graph(fake(AIMessage("a"), AIMessage("b")), [clock], 5, summarizer=summarize, summary_threshold=1,
-                summary_keep_turns=2, reviewer=lambda q, a: next(verdicts)).invoke(
+                summary_keep_turns=2, reviewer=lambda q, a, s, r: next(verdicts)).invoke(
         start("ultima", history=past_history(3)))
     assert len(summarize.calls) == 1
 
