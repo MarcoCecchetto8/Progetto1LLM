@@ -126,3 +126,41 @@ def test_read_resource_closed_session():
     client.close()
     with pytest.raises(MCPConnectionError):
         client.read_resource("prova://testo")
+
+
+def test_read_resource_after_server_crash():
+    client = MCPClient(TEST_SERVER, os.environ)
+    tools = {t.name: t for t in client.start()}
+    try:
+        with pytest.raises(MCPConnectionError):
+            tools["die"].invoke({})
+        with pytest.raises(MCPConnectionError):
+            client.read_resource("prova://testo")
+    finally:
+        client.close()
+
+
+def test_read_resource_error_codes_mapping():
+    from mcp.shared.exceptions import McpError
+    from mcp.types import CONNECTION_CLOSED, ErrorData
+    from mcp.types import INTERNAL_ERROR
+
+    class FakeSession:
+        def __init__(self, code):
+            self.code = code
+
+        async def read_resource(self, uri):
+            raise McpError(ErrorData(code=self.code, message="x"))
+
+    client = MCPClient(TEST_SERVER, os.environ)
+    client.start()
+    try:
+        real = client._client_session
+        for code, expected in ((CONNECTION_CLOSED, MCPConnectionError), (408, MCPConnectionError),
+                               (INTERNAL_ERROR, MCPResourceError)):
+            client._client_session = FakeSession(code)
+            with pytest.raises(expected):
+                client.read_resource("prova://testo")
+        client._client_session = real
+    finally:
+        client.close()

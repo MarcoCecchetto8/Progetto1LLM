@@ -12,6 +12,7 @@ from langchain_core.tools import BaseTool, StructuredTool, ToolException
 from langchain_mcp_adapters.tools import load_mcp_tools
 from mcp import ClientSession, StdioServerParameters
 from mcp.shared.exceptions import McpError
+from mcp.types import CONNECTION_CLOSED
 from mcp.client.stdio import stdio_client
 from pydantic import AnyUrl
 
@@ -26,6 +27,8 @@ class MCPResourceError(Exception):
     """Lettura di una resource rifiutata dal server (la sessione resta utilizzabile)."""
 
 
+# Connessione chiusa dall'SDK (-32000) e timeout della richiesta (408, httpx.codes.REQUEST_TIMEOUT)
+CONNECTION_CODES = (CONNECTION_CLOSED, 408)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -127,6 +130,9 @@ class MCPClient:
         try:
             result = pending.result(timeout=self.timeout)
         except McpError as error:
+            if error.error.code in CONNECTION_CODES:
+                pending.cancel()
+                raise MCPConnectionError(f"Il server degli strumenti non risponde: {error}") from error
             raise MCPResourceError(str(error)) from None
         except Exception as error:
             pending.cancel()
