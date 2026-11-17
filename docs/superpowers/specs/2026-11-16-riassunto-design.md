@@ -1,6 +1,6 @@
 # Riassunto della cronologia (lezione 6, step 3) — specifica
 
-Data: 2026-11-16 · Stato: approvata dall'utente il 2026-11-16; revisione 5.7 approvata il 2026-11-17; revisione 5.8 approvata il 2026-11-17; revisione 5.9 del 2026-11-17 decisa da Claude in autonomia (da confermare)
+Data: 2026-11-16 · Stato: approvata dall'utente il 2026-11-16; revisione 5.7 approvata il 2026-11-17; revisione 5.8 approvata il 2026-11-17; revisione 5.9 decisa da Claude in autonomia e confermata dall'utente il 2026-11-17
 
 Riferimenti: lezione 6, slide 3 (grafo dei tre step: «Riassunto» tra START e router) e 6 (step 3 · Riassunto della cronologia). Specifiche precedenti valide per tutto ciò che qui non cambia: `2026-11-16-revisore-design.md`, `2026-11-16-router-design.md`, `2026-11-16-streaming-design.md`, `2026-11-09-note-fastapi-design.md`.
 
