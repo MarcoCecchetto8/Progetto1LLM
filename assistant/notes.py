@@ -14,6 +14,7 @@ from pathlib import Path
 
 import httpx
 from langchain_core.messages import AnyMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool, ToolException, tool
 
 from assistant.reviewer import last_question_index
@@ -101,12 +102,35 @@ def _call(client: httpx.Client, method: str, url: str, **kw) -> httpx.Response:
     return resp
 
 
-def build_note_tools(client: httpx.Client, today: Callable[[], date],
-                     confirm: Callable[[str], bool]) -> list[BaseTool]:
-    # ToolNode esegue in parallelo le chiamate di uno stesso messaggio: senza lock due
-    # conferme comparirebbero insieme e la risposta dell'utente potrebbe valere per la nota sbagliata.
-    delete_lock = threading.Lock()
+def _confirmation_question(note: dict, today: date) -> str:
+    return f"Elimino la nota {note['id']} «{note['text']}» · {due_phrase(note['due_date'], today)}? [s/N] "
 
+
+def build_confirmation_check(client: httpx.Client,
+                             today: Callable[[], date]) -> Callable[[list[dict], dict[int, bool]], list[dict]]:
+    def check(calls: list[dict], decisions: dict[int, bool]) -> list[dict]:
+        """Domande di conferma per le eliminazioni non ancora decise; le note inesistenti non chiedono nulla."""
+        ids = []
+        for call in calls:
+            note_id = call["args"].get("note_id") if call["name"] == "delete_note" else None
+            if isinstance(note_id, int) and note_id not in decisions and note_id not in ids:
+                ids.append(note_id)
+        needed = []
+        for note_id in ids:
+            try:
+                note = _call(client, "GET", f"/notes/{note_id}").json()
+            except ToolException as e:
+                # La nota inesistente arriva al tool, che restituisce l'errore al modello
+                if "Nessuna nota con ID" in str(e):
+                    continue
+                raise
+            needed.append({"id_nota": note_id, "domanda": _confirmation_question(note, today())})
+        return needed
+
+    return check
+
+
+def build_note_tools(client: httpx.Client, today: Callable[[], date]) -> list[BaseTool]:
     @tool
     def add_note(text: str, due_date: str | None = None) -> str:
         """Salva una nota (promemoria) con testo e, se richiesta, una scadenza.
@@ -132,22 +156,25 @@ def build_note_tools(client: httpx.Client, today: Callable[[], date],
         return "\n".join([header, *rows])
 
     @tool
-    def delete_note(note_id: int) -> str:
+    def delete_note(note_id: int, config: RunnableConfig) -> str:
         """Elimina una nota dato il suo ID (visibile con list_notes). Prima chiede conferma all'utente."""
-        with delete_lock:
-            try:
-                note = _call(client, "GET", f"/notes/{note_id}").json()
-            except ToolException as e:
-                if "Nessuna nota con ID" in str(e):
-                    raise ToolException(f"Nessuna nota con ID {note_id}: nulla è stato eliminato.") from e
-                raise
-            phrase = due_phrase(note["due_date"], today())
-            if not confirm(f"Elimino la nota {note_id} «{note['text']}» · {phrase}? [s/N] "):
-                logger.info("[note] eliminazione della nota %s annullata dall'utente", note_id)
-                return f"Eliminazione della nota {note_id} annullata dall'utente."
-            logger.info("[note] eliminazione della nota %s confermata dall'utente", note_id)
-            _call(client, "DELETE", f"/notes/{note_id}")
-            return f"Nota {note_id} eliminata: «{note['text']}»."
+        try:
+            note = _call(client, "GET", f"/notes/{note_id}").json()
+        except ToolException as e:
+            if "Nessuna nota con ID" in str(e):
+                raise ToolException(f"Nessuna nota con ID {note_id}: nulla è stato eliminato.") from e
+            raise
+        # La decisione arriva dal grafo, che ha sospeso il turno per chiederla all'utente
+        decision = config.get("configurable", {}).get("note_decisions", {}).get(note_id)
+        if decision is None:
+            logger.warning("[note] eliminazione della nota %s senza conferma: annullata", note_id)
+            return f"Eliminazione della nota {note_id} annullata dall'utente."
+        if not decision:
+            logger.info("[note] eliminazione della nota %s annullata dall'utente", note_id)
+            return f"Eliminazione della nota {note_id} annullata dall'utente."
+        logger.info("[note] eliminazione della nota %s confermata dall'utente", note_id)
+        _call(client, "DELETE", f"/notes/{note_id}")
+        return f"Nota {note_id} eliminata: «{note['text']}»."
 
     return [add_note, list_notes, delete_note]
 

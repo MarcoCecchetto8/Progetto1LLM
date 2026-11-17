@@ -60,7 +60,7 @@ def _start() -> int:
 
     from assistant.preferences import load_preferences
     from assistant.mcp_client import (MCPClient, MCPConnectionError, MCPPromptError, server_command, server_env)
-    from assistant.notes import (LocalNotesService, NotesConnectionError, TIMEOUT, ask_in_terminal,
+    from assistant.notes import (LocalNotesService, NotesConnectionError, TIMEOUT,
                                  build_note_tools, check_note_claims, wait_until_ready)
     from lab_server.timezones import get_timezone
 
@@ -114,7 +114,7 @@ def _start() -> int:
             http = httpx.Client(base_url=url, timeout=TIMEOUT)
             logging.getLogger("assistant").info("[note] servizio: %s", url)
             zone = get_timezone(preferences.fuso_orario)
-            tools = tools + build_note_tools(http, lambda: datetime.now(zone).date(), ask_in_terminal)
+            tools = tools + build_note_tools(http, lambda: datetime.now(zone).date())
             model = build_chat_model(settings)
             graph = build_graph(model, tools, settings.max_steps, answer_check=check_note_claims,
                                 router=build_router(model, scope), reviewer=build_reviewer(model),

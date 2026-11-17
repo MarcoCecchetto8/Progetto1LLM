@@ -36,6 +36,8 @@ class State(TypedDict):
     review_reason: NotRequired[str]
     summary: NotRequired[str]  # riassunto in vigore: si aggiunge al prompt solo per la chiamata al modello
     summary_line: NotRequired[str]  # riga per il terminale, scritta quando il riassunto cambia
+    decisions: NotRequired[dict[int, bool]]  # risposte dell'utente alle conferme, per ID della nota
+    confirmations: NotRequired[list[dict]]  # conferme richieste: se non vuoto il turno è sospeso
 
 
 STYLE_TEXTS = {
@@ -124,7 +126,8 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
                 router: Callable[[list[AnyMessage], str], Route] | None = None,
                 reviewer: Callable[[str, str, str, str, str], Review] | None = None, max_reviews: int = 3,
                 summarizer: Callable[[str, str], str] | None = None, summary_threshold: int = 4000,
-                summary_keep_turns: int = 2):
+                summary_keep_turns: int = 2,
+                confirmation_check: Callable[[list[dict], dict[int, bool]], list[dict]] | None = None):
     model_with_tools = model.bind_tools(tools)
     # Gli errori dello strumento tornano al modello come ToolMessage con stato "error".
     # Niente wrap_tool_call: con un wrapper il ToolNode convertirebbe in messaggio anche gli errori di collegamento
@@ -148,16 +151,26 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
             else:
                 target = "answer_check" if answer_check else END
         elif state["steps"] < max_steps:
-            target = "tools"
+            target = "confirm" if confirmation_check else "tools"
         else:
             target = "step_limit"
         logger.debug("[grafo] instradamento dopo model: %s (steps=%d/%d)", target, state["steps"], max_steps)
         return target
 
     def tools_node(state: State, config: RunnableConfig) -> dict:
-        result = tool_node.invoke(state, config)
+        configurable = {**config.get("configurable", {}), "note_decisions": state.get("decisions", {})}
+        result = tool_node.invoke(state, {**config, "configurable": configurable})
         log_tool_calls(state["messages"][-1].tool_calls, result["messages"])
         return result
+
+    def confirm_node(state: State) -> dict:
+        needed = confirmation_check(state["messages"][-1].tool_calls, state.get("decisions", {}))
+        if needed:
+            logger.info("[grafo] turno sospeso: %d conferme richieste", len(needed))
+        return {"confirmations": needed}
+
+    def route_after_confirm(state: State) -> str:
+        return END if state["confirmations"] else "tools"
 
     def step_limit_node(state: State) -> dict:
         logger.info("[grafo] limite di passaggi raggiunto (%d/%d)", state["steps"], max_steps)
@@ -265,18 +278,28 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
     graph.add_node("tools", tools_node)
     graph.add_node("step_limit", step_limit_node)
     entry = "router" if router else "model"
+    first = "summarizer" if summarizer else entry
+    if confirmation_check:
+        graph.add_node("confirm", confirm_node)
+        graph.add_conditional_edges("confirm", route_after_confirm, ["tools", END])
+
+        # Ripresa di un turno sospeso: si torna alla conferma, senza riassunto né router
+        def route_from_start(state: State) -> str:
+            last = state["messages"][-1]
+            return "confirm" if isinstance(last, AIMessage) and last.tool_calls else first
+
+        graph.add_conditional_edges(START, route_from_start, ["confirm", first])
+    else:
+        graph.add_edge(START, first)
     if summarizer:
         graph.add_node("summarizer", summarizer_node)
-        graph.add_edge(START, "summarizer")
         graph.add_edge("summarizer", entry)
-    else:
-        graph.add_edge(START, entry)
     if router:
         graph.add_node("router", router_node)
         graph.add_node("refusal", refusal_node)
         graph.add_conditional_edges("router", route_after_router, ["model", "refusal"])
         graph.add_edge("refusal", END)
-    destinations = ["tools", "step_limit", END]
+    destinations = ["confirm" if confirmation_check else "tools", "step_limit", END]
     if reviewer:
         graph.add_node("reviewer", reviewer_node)
         graph.add_conditional_edges("reviewer", route_after_reviewer,

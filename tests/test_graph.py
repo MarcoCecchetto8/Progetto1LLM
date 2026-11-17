@@ -7,6 +7,7 @@ import openai
 import pytest
 from langchain_core.exceptions import OutputParserException
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 
 from assistant.graph import LIMIT_MESSAGE, build_graph, system_prompt
@@ -612,3 +613,46 @@ def test_summarizer_runs_before_router():
     build_graph(fake(AIMessage("ok")), [clock], 5, summarizer=summarize, summary_threshold=1,
                 summary_keep_turns=2, router=route).invoke(start("ultima", history=past_history(3)))
     assert order == ["riassunto", "router con R"]
+
+
+# --- Conferma come sospensione del grafo ---
+
+def ask_until_decided(calls, decisions):
+    return [] if 7 in decisions else [{"id_nota": 7, "domanda": "?"}]
+
+
+@pytest.mark.parametrize("with_extras", [False, True])
+def test_confirmation_suspends_and_resumes_from_confirm(with_extras):
+    summarize, router = recording_summarizer(), make_router()
+    extras = {"summarizer": summarize, "summary_threshold": 1, "router": router} if with_extras else {}
+    graph = build_graph(fake(tool_call({}, "a"), AIMessage("Sono le 14:32")), [clock], 5,
+                        confirmation_check=ask_until_decided, **extras)
+    out = graph.invoke(start("che ora è?", history=past_history(3)))
+    assert out["confirmations"] == [{"id_nota": 7, "domanda": "?"}]
+    assert not any(isinstance(m, ToolMessage) for m in out["messages"])
+    before = (len(summarize.calls), len(router.calls))
+
+    out = graph.invoke({"messages": out["messages"], "steps": out["steps"], "decisions": {7: True}})
+    assert out["confirmations"] == []
+    assert out["messages"][-1].content == "Sono le 14:32"
+    assert (len(summarize.calls), len(router.calls)) == before
+
+
+def test_tools_receive_decisions_in_configurable():
+    seen = []
+
+    @tool
+    def spy(config: RunnableConfig) -> str:
+        """Strumento spia."""
+        seen.append(config["configurable"])
+        return "ok"
+
+    graph = build_graph(fake(tool_call({}, "a", name="spy"), AIMessage("fine")), [spy], 5,
+                        confirmation_check=lambda calls, decisions: [])
+    graph.invoke({**start("q"), "decisions": {3: False}}, config={"configurable": {"altro": 1}})
+    assert seen[0]["note_decisions"] == {3: False} and seen[0]["altro"] == 1
+
+
+def test_without_confirmation_check_no_confirmations_key():
+    out = build_graph(fake(tool_call({}, "a"), AIMessage("ok")), [clock], 5).invoke(start("ora?"))
+    assert "confirmations" not in out
