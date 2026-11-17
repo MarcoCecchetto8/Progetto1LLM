@@ -1,6 +1,6 @@
 # Riassunto della cronologia (lezione 6, step 3) — specifica
 
-Data: 2026-11-16 · Stato: approvata dall'utente il 2026-11-16
+Data: 2026-11-16 · Stato: approvata dall'utente il 2026-11-16; revisione 5.7 approvata il 2026-11-17
 
 Riferimenti: lezione 6, slide 3 (grafo dei tre step: «Riassunto» tra START e router) e 6 (step 3 · Riassunto della cronologia). Specifiche precedenti valide per tutto ciò che qui non cambia: `2026-11-16-revisore-design.md`, `2026-11-16-router-design.md`, `2026-11-16-streaming-design.md`, `2026-11-09-note-fastapi-design.md`.
 
@@ -70,7 +70,42 @@ START → summarizer → router → (model ⇄ tools → reviewer → …) come 
 ### 5.4 Come l'agente usa il riassunto
 
 - `model_node`, quando nello stato c'è un riassunto, invia al modello la cronologia con il **primo messaggio di sistema esteso**: `<prompt di sistema>\n\nRiassunto della conversazione precedente:\n<riassunto>`. Il riassunto sta in cima, dove gemma lo considera. Un messaggio di sistema a metà conversazione era stato ignorato nelle misure delle note. L'estensione vale solo per la chiamata e non viene salvata nella cronologia (*scelta di Claude*).
-- Router e revisore restano invariati: il router guarda gli ultimi messaggi di testo, il revisore domanda e risposta.
+- ~~Router e revisore restano invariati.~~ **Revisione del 2026-11-17** (vedi 5.7): anche router e revisore ricevono il riassunto.
+
+### 5.7 Router e revisore con il riassunto (revisione del 2026-11-17)
+
+**Perché.** Nella prova reale con soglia 900 il revisore ha bocciato due volte «di cosa abbiamo parlato?» («non c'è stato un argomento precedente»): riceve solo domanda e risposta, non vede né il riassunto né i turni precedenti. Il router dopo un riassunto non vede più la presentazione dell'utente.
+
+**Misure** (sonde reali, `google/gemma-4-e2b`, 3 ripetizioni per caso):
+- Revisore, 3 casi («di cosa abbiamo parlato?» con risposta corretta; «come mi chiamo e dove vivo?» con risposta corretta; una domanda in due parti con risposta incompleta, da bocciare):
+  - solo domanda e risposta (oggi): **4/9** giudizi giusti;
+  - con il riassunto: **6/9** (boccia «di cosa abbiamo parlato?» perché Rust, dei turni recenti, non è nel riassunto); un'intestazione che spiega che gli ultimi turni non sono riassunti non cambia nulla (6/9);
+  - con il riassunto **e gli ultimi messaggi di testo**: **9/9**, 23–34 s per giudizio.
+- Router, «dove vivo?»: 0/3 senza la presentazione nel contesto, anche con l'esempio «Dove vivo?» in `config/ambito.txt` (esempio poi tolto); 3/3 se «mi chiamo Marco e vivo a Roma» è fra gli ultimi messaggi. Con il riassunto in fondo al prompt di sistema: «dove vivo?» 0/3, «come mi chiamo e dove vivo?» 3/3 (senza riassunto 2/3), fuori ambito 9/9 rifiutati. Nessun beneficio misurato su «dove vivo?»: la modifica si fa per scelta dell'utente (contesto coerente con l'agente), e «dove vivo?» da sola dopo un riassunto resta un limite del modello.
+
+**Comportamento.**
+- **Router**: quando nello stato c'è un riassunto, il prompt di sistema del router diventa `<istruzioni e ambito>\n\nRiassunto della conversazione precedente:\n<riassunto>` (stessa intestazione dell'agente). I messaggi passati restano gli ultimi messaggi di testo come oggi. Senza riassunto il prompt è identico a oggi.
+- **Revisore**: la richiesta al revisore diventa, con le parti presenti solo se non vuote:
+  ```
+  Riassunto della conversazione precedente:
+  <riassunto>
+
+  Conversazione recente:
+  Utente: …
+  Assistente: …
+
+  Domanda dell'utente:
+  <domanda>
+
+  Risposta proposta:
+  <risposta>
+  ```
+  La «conversazione recente» sono i messaggi prima della domanda del turno, filtrati con la stessa regola del router (solo domande e risposte di testo, senza traffico degli strumenti, ultimi 6) e scritti come nella trascrizione del riassunto (`Utente:` / `Assistente:`). Le istruzioni del revisore non cambiano (sono quelle usate nelle sonde). Senza riassunto e senza turni precedenti la richiesta è identica a oggi.
+- I nodi `router` e `reviewer` del grafo passano il riassunto in vigore (`state["summary"]`, vuoto se assente). Il riassunto non entra nella cronologia, come per l'agente.
+
+**Test** (senza LM Studio): prompt del router con e senza riassunto; richiesta del revisore con e senza riassunto e conversazione recente (strumenti esclusi, indicazioni del revisore escluse, limite di 6 messaggi); il grafo passa il riassunto a router e revisore e la conversazione recente al revisore. Restano verdi tutti i test esistenti.
+
+**Prova reale**: ripetere la sessione con soglia 900 e verificare «di cosa abbiamo parlato?» approvata al primo giudizio; registrare i tempi del revisore.
 
 ### 5.5 Stato e terminale da un turno all'altro
 
@@ -128,6 +163,7 @@ Branch `feature/riassunto` da `developer`; merge `--no-ff` dopo la prova reale e
 - Nodo una volta per turno, prima del router; non durante i tentativi del revisore.
 - Riassunto non riuscito → cronologia invariata con `WARNING` (concordato), solo per gli errori di LM Studio.
 - Riga e testo nel terminale; log dei numeri a `DEBUG`.
+- (5.7) Conversazione recente del revisore con la regola del router (ultimi 6 messaggi di testo) e formato `Utente:` / `Assistente:`; istruzioni del revisore invariate.
 
 ## 9. Lasciato al piano
 
