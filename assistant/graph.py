@@ -19,6 +19,7 @@ from assistant.llm import REASONING_KEY
 from assistant.reviewer import Review, feedback_message, is_review_feedback, last_question_index
 from assistant.router import Route, refusal_text, router_context
 from assistant.summarizer import estimate_tokens, summary_cut, summary_line, transcript, with_summary
+from lab_server.preferences import Preferences
 
 logger = logging.getLogger("assistant.graph")
 
@@ -37,9 +38,26 @@ class State(TypedDict):
     summary_line: NotRequired[str]  # riga per il terminale, scritta quando il riassunto cambia
 
 
-def system_prompt(default_timezone: str) -> str:
+STYLE_TEXTS = {
+    "sintetico": "sintetico: rispondi in una o due frasi, solo con ciò che è chiesto",
+    "dettagliato": ("dettagliato: aggiungi alla risposta il contesto utile preso dai risultati degli strumenti, "
+                    "in qualche frase o in un breve elenco"),
+}
+
+
+def preferences_block(preferences: Preferences) -> str:
     return (
-        "Sei l'assistente del laboratorio. Rispondi sempre in italiano, in modo chiaro e conciso. "
+        "Preferenze dell'utente (dalla resource utente://preferenze):\n"
+        f"- Rispondi sempre in {preferences.lingua}.\n"
+        f"- Stile: {STYLE_TEXTS[preferences.stile]}.\n"
+        f"- Fuso orario predefinito: {preferences.fuso_orario}; usalo quando l'utente non indica un fuso orario, "
+        "senza chiederglielo."
+    )
+
+
+def system_prompt(preferences: Preferences) -> str:
+    return preferences_block(preferences) + "\n\n" + (
+        "Sei l'assistente del laboratorio. "
         "Quando l'utente ti saluta, presentati brevemente. "
         "Per ora, date, conversioni e calcoli usa sempre gli strumenti: non inventare i risultati. "
         "Quando l'utente chiede l'ora o la data, usa lo strumento `get_current_time`. "
@@ -68,7 +86,7 @@ def system_prompt(default_timezone: str) -> str:
         "prima di eliminare il programma chiederà conferma all'utente. Non dire mai che una nota è stata "
         "eliminata se lo strumento non lo conferma. "
         "Se uno strumento restituisce un errore, correggi gli argomenti oppure spiega l'errore all'utente. "
-        f"Se l'utente non indica un fuso orario usa `{default_timezone}`; "
+        f"Se l'utente non indica un fuso orario usa `{preferences.fuso_orario}`; "
         "dopo aver risposto chiedi se gli serve l'ora di un altro fuso orario. "
         "Se indica una città o un paese, passa allo strumento il nome IANA corrispondente "
         "(per esempio Tokyo → Asia/Tokyo)."

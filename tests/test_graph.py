@@ -15,7 +15,12 @@ from assistant.mcp_client import MCPClient, MCPConnectionError
 from assistant.reviewer import Review, feedback_message, is_review_feedback
 from assistant.router import REFUSAL, Route
 from assistant.summarizer import AGENT_SUMMARY_HEADER
+from lab_server.preferences import Preferences
 from tests.fakes import FakeToolModel, fake, fake_clock as clock, tool_call
+
+
+def prefs(lingua="italiano", fuso="Europe/Rome", stile="sintetico"):
+    return Preferences(lingua, fuso, stile)
 
 
 def start(text, history=None):
@@ -71,8 +76,26 @@ def test_two_calls_in_one_message():
 
 
 def test_system_prompt_mentions_timezone_and_tool():
-    p = system_prompt("Asia/Tokyo")
+    p = system_prompt(prefs(fuso="Asia/Tokyo"))
     assert "Asia/Tokyo" in p and "get_current_time" in p and "italiano" in p
+
+
+BLOCK_START = "Preferenze dell'utente (dalla resource utente://preferenze):\n- Rispondi sempre in inglese.\n"
+
+
+def test_system_prompt_starts_with_preferences_block():
+    p = system_prompt(prefs("inglese", "America/New_York"))
+    assert p.startswith(BLOCK_START)
+    assert p.count("America/New_York") >= 2
+    assert "Fuso orario predefinito: America/New_York; usalo quando l'utente non indica un fuso orario, senza chiederglielo." in p
+    assert "Rispondi sempre in italiano, in modo chiaro e conciso" not in p
+    assert "\n\nSei l'assistente del laboratorio. Quando l'utente ti saluta, presentati brevemente." in p
+
+
+def test_system_prompt_style_texts():
+    assert "- Stile: sintetico: rispondi in una o due frasi, solo con ciò che è chiesto." in system_prompt(prefs(stile="sintetico"))
+    assert ("- Stile: dettagliato: aggiungi alla risposta il contesto utile preso dai risultati degli "
+            "strumenti, in qualche frase o in un breve elenco.") in system_prompt(prefs(stile="dettagliato"))
 
 
 def test_limit_logged(caplog):
@@ -155,32 +178,32 @@ def test_graph_with_mcp_tool():
 
 
 def test_system_prompt_mentions_tools_and_errors():
-    p = system_prompt("Europe/Rome")
+    p = system_prompt(prefs())
     assert "convert_units" in p and "non inventare" in p and "errore" in p
 
 
 def test_system_prompt_mentions_calculator_and_equations():
-    p = system_prompt("Europe/Rome")
+    p = system_prompt(prefs())
     assert "calculate" in p and "2x = 28" in p and "28 / 2" in p
 
 
 def test_system_prompt_mentions_date_tools():
-    p = system_prompt("Europe/Rome")
+    p = system_prompt(prefs())
     assert all(name in p for name in ("date_info", "find_holiday", "add_days", "days_between", "AAAA-MM-GG"))
 
 
 def test_system_prompt_forbids_counting_days():
-    p = system_prompt("Europe/Rome")
+    p = system_prompt(prefs())
     assert "non contare tu i giorni" in p and "days_between" in p
 
 
 def test_system_prompt_mentions_catalog():
-    p = system_prompt("Europe/Rome")
+    p = system_prompt(prefs())
     assert "search_catalog" in p and "get_item" in p and "max_results" in p
 
 
 def test_system_prompt_requires_catalog_lookup():
-    p = system_prompt("Europe/Rome")
+    p = system_prompt(prefs())
     assert "chiama sempre gli strumenti del catalogo prima di rispondere" in p
     assert "non dire mai che un dato non c'è senza averlo cercato" in p
     assert "chiama subito `get_item` con quel codice" in p
@@ -199,13 +222,13 @@ def test_graph_catalog_search_then_detail():
 
 
 def test_system_prompt_mentions_notes_tools():
-    prompt = system_prompt("Europe/Rome")
+    prompt = system_prompt(prefs())
     for word in ("add_note", "list_notes", "delete_note", "ID esatto", "chiederà conferma"):
         assert word in prompt
 
 
 def test_system_prompt_notes_weekday_rule():
-    prompt = system_prompt("Europe/Rome")
+    prompt = system_prompt(prefs())
     for word in ("add_days", "«venerdì»", "non chiedergli la data", "«Nota N salvata»"):
         assert word in prompt
     assert "non chiedere tu conferma" not in prompt

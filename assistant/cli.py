@@ -17,6 +17,7 @@ from assistant.graph import system_prompt
 from assistant.mcp_client import MCPConnectionError
 from assistant.notes import NotesConnectionError, confirmation_pending, reset_confirmation
 from assistant.stream_view import INTERRUPTED, THINKING, TurnView, stream_turn
+from lab_server.preferences import Preferences
 
 HELP_TEXT = (
     "Comandi:\n"
@@ -98,9 +99,11 @@ def write_stdout(text: str) -> None:
 
 
 def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=clear_screen,
-        newline_on_interrupt: bool = os.name != "nt", write_fn=None, color: bool = False) -> int:
+        newline_on_interrupt: bool = os.name != "nt", write_fn=None, color: bool = False,
+        preferences: Preferences | None = None) -> int:
     write_fn = write_fn or write_stdout
-    initial = [SystemMessage(system_prompt(settings.default_timezone))]
+    preferences = preferences or Preferences("italiano", settings.default_timezone, "sintetico")
+    initial = [SystemMessage(system_prompt(preferences))]
     history = list(initial)
     summary = ""
 
