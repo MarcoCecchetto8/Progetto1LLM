@@ -93,6 +93,8 @@ Non usare insieme l'assistente locale e quello Docker: entrambi vogliono la port
 |---|---|
 | `help` | elenca comandi e modi di uscita |
 | `clear` | svuota la cronologia, pulisce lo schermo (solo se l'output è un terminale), ristampa l'intestazione e conferma con `Cronologia svuotata.` |
+| `/prompts` | elenca i prompt del server MCP, con gli argomenti (vedi «Prompt MCP») |
+| `/prompt <nome> argomento=valore …` | richiama un prompt del server e lo manda al modello come domanda (vedi «Prompt MCP») |
 | `quit`, `exit` | uscita con `Arrivederci!` |
 | Ctrl+C al prompt, Ctrl+D (Linux/Docker), Ctrl+Z + Invio (Windows) | uscita con `Arrivederci!` |
 | Ctrl+C mentre il modello lavora | ferma solo il turno: compare `Risposta interrotta.` e si torna al prompt |
@@ -172,6 +174,28 @@ Lingua delle risposte, fuso orario predefinito e stile non sono scritti nel codi
 - **Docker**: `compose.yaml` monta `config/preferenze.json` in sola lettura in `/app/config/preferenze.json`: una modifica vale dalla sessione successiva senza `docker compose build`. Il file deve esistere sull'host: con la sintassi breve del bind mount, se manca Docker crea una cartella vuota `config/preferenze.json`. Con un `PREFERENCES_FILE` diverso in Docker si usa la copia dentro l'immagine, perché si monta solo `config/preferenze.json`.
 - **Limiti**: i testi fissi del programma (rifiuto del router, avvisi, messaggi del terminale, prompt di router, revisore e riassunto) restano in italiano; risponde nella lingua scelta solo il modello. L'avviso sui falsi successi delle note è solo in italiano: con `inglese` o `spagnolo` una nota dichiarata salvata o eliminata senza lo strumento non produce l'avviso.
 - **Limite osservato, la lingua**: con `inglese` le risposte costruite sui risultati del catalogo, che sono in italiano, escono a volte in italiano (2 sessioni su 4 per «chi ha creato Python?»). È un limite del modello.
+
+## Prompt MCP
+
+Oltre a tool e resource, il server MCP espone due **prompt**: modelli di richiesta con argomenti. Li sceglie l'utente (non il modello) con i comandi `/prompts` e `/prompt`. L'elenco si legge una volta all'avvio, dopo il catalogo e le preferenze, con la riga `INFO` `[mcp] prompt: spiega, riassumi_conversazione`.
+
+| Prompt | Argomenti | Valori |
+|---|---|---|
+| `spiega` | `argomento` (obbligatorio): il concetto da spiegare; `livello` (facoltativo) | `livello`: `base` (predefinito), `intermedio`, `avanzato`; `argomento` non vuoto |
+| `riassumi_conversazione` | `stile` (facoltativo) | `sintetico` (predefinito), `dettagliato` |
+
+```
+> /prompts
+> /prompt spiega argomento="Model Context Protocol" livello=base
+> /prompt riassumi_conversazione stile=dettagliato
+```
+
+- **Virgolette**: solo le virgolette doppie raggruppano; `argomento="Model Context Protocol"` è un solo valore. Il valore non cambia maiuscole e minuscole; il nome del comando e `/prompts` sì (`/PROMPTS` funziona), il nome del prompt no (`Spiega` non è `spiega`).
+- **Che cosa succede**: il testo del prompt prende il posto della domanda: il turno è identico a una domanda scritta a mano (router, strumenti, revisore, riassunto, Ctrl+C) e il messaggio resta nella cronologia. Per `spiega`, il router rifiuta gli argomenti fuori ambito (per esempio «tiramisù»).
+- **Controlli prima del modello**: nome mancante, virgolette non chiuse, prompt sconosciuto, elemento senza `=`, argomento ripetuto, argomento sconosciuto, argomento obbligatorio mancante. In tutti i casi compare un messaggio e non partono né il modello né la richiesta al server. Un valore non ammesso (`livello=esperto`) o un `argomento` vuoto lo rifiuta il server: `Il server ha rifiutato il prompt: <motivo>`, senza chiamare il modello.
+- **Comando sconosciuto**: un testo che inizia con `/` e non è `/prompts` né `/prompt` (per esempio `/promt`) dà `Comando sconosciuto: /promt. Comandi: help, clear, /prompts, /prompt.` e non va al modello.
+- **Server caduto**: `Il server degli strumenti non risponde: esci e riavvia l'assistente.`, come durante un turno.
+- **Log**: prima del turno una riga `INFO` `[prompt] <nome> <argomenti in JSON> → <testo del primo messaggio>`; con più messaggi, uno per ciascuno a `DEBUG`. Con `LOG_LEVEL=DEBUG` la richiesta `prompts/get` compare nei log MCP, distinta da `tools/call` e `resources/read`.
 
 ## Log
 
@@ -417,6 +441,20 @@ Esiti del 2026-11-17 con `google/gemma-4-e2b`, domande inviate da pipe. In local
 | Richiesta di una nota con `inglese` | limite dell'avviso delle note, solo italiano | «Remind me to buy milk»: `add_note` chiamato davvero, risposta in inglese; il caso del falso successo in inglese non si è presentato |
 | Docker (`docker compose run --rm -T app` con input da pipe): modifica del file montato e nuova sessione senza `build` | comportamento cambiato | ok: con il file di oggi ora di Roma in italiano; cambiato il file montato in `inglese` e `America/New_York`, la sessione successiva senza `build` risponde «The current time in America/New_York is 10:10:45 AM…». Il file è stato poi ripristinato |
 
+### Prova reale dei prompt
+
+Da fare con LM Studio, in locale e con Docker (domande da pipe); gli esiti si scrivono dopo la prova.
+
+| Prova | Atteso | Esito |
+|---|---|---|
+| `/prompts` | i due prompt con gli argomenti | da provare |
+| `/prompt spiega argomento="Model Context Protocol" livello=base`, poi `livello=avanzato` | risposte di livello diverso | da provare |
+| qualche domanda, poi `/prompt riassumi_conversazione` e `stile=dettagliato` | riassume i turni della sessione | da provare |
+| errori: obbligatorio mancante, argomento sconosciuto, prompt inesistente, `livello=esperto`, virgolette non chiuse, `/promt` | un messaggio ciascuno, nessuna chiamata al modello | da provare |
+| `/prompt spiega argomento="tiramisù"` | rifiutato dal router | da provare |
+| riga `[prompt]` nel log; con `LOG_LEVEL=DEBUG` `prompts/get` distinto da `tools/call` | nome, argomenti e testo | da provare |
+| Docker (`docker compose run --rm -T app` con input da pipe): `/prompts` e un `/prompt spiega` | come in locale | da provare |
+
 ## Diagnosi
 
 | Sintomo | Causa probabile e rimedio |
@@ -439,6 +477,8 @@ Esiti del 2026-11-17 con `google/gemma-4-e2b`, domande inviate da pipe. In local
 | `Il server degli strumenti non risponde: esci e riavvia l'assistente.` | il server MCP si è fermato durante la sessione: uscire e riavviare l'assistente (con `LOG_LEVEL=DEBUG` si vede il dettaglio) |
 | `La porta 8000 è già in uso ...` all'avvio | un altro servizio delle note è già acceso (di solito quello di Docker): `docker compose down` e riavviare |
 | `Il servizio delle note non risponde: esci e riavvia l'assistente.` | il servizio delle note si è fermato durante la sessione: uscire e riavviare l'assistente |
+| `Il server ha rifiutato il prompt: ...` | il server ha respinto i valori (per esempio `livello 'esperto' non ammesso` o `argomento vuoto`): correggere il valore, gli ammessi sono in `/prompts` e in «Prompt MCP» |
+| `Prompt sconosciuto: <nome>. Disponibili: ...` | nome sbagliato (maiuscole comprese): scegliere uno dei nomi di `/prompts` |
 | Domande in ambito rifiutate dal router | il modello classifica male: aggiungere esempi di quel tipo in `config/ambito.txt` e riavviare |
 | Il ragionamento non compare | il modello non invia `reasoning_content` oppure `SHOW_REASONING=false` nel `.env` |
 | Il modello risponde senza riga `[strumento]` nel log | il modello non ha chiamato lo strumento: la risposta non è verificata; riformulare la domanda |
