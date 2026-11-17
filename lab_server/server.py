@@ -132,11 +132,11 @@ def create_server(default_timezone: str, now: Callable[[], datetime] = utc_now,
 
     if preferences_file is not None:
         @mcp.resource(PREFERENCES_URI, name="preferenze", mime_type="application/json",
-                      description="Preferenze dell'utente: lingua, fuso orario, stile delle risposte.")
+                      description="Preferenze dell'utente per le risposte: lingua, fuso orario predefinito, stile.")
         def preferences() -> str:
             try:
                 return preferences_file.read_text(encoding="utf-8-sig")
-            except OSError:
+            except (OSError, UnicodeDecodeError):
                 raise ValueError(f"file delle preferenze non leggibile: {preferences_file}") from None
 
     return mcp

@@ -20,7 +20,7 @@ def server_timezone(env: Mapping[str, str], root: Path) -> tuple[str, Path]:
     fallback = env.get("DEFAULT_TIMEZONE", "").strip() or "Europe/Rome"
     try:
         text, reason = path.read_text(encoding="utf-8-sig"), ""
-    except OSError as error:
+    except (OSError, UnicodeDecodeError) as error:
         text, reason = None, str(error)
     preferences, warnings = parse_preferences(text, fallback, reason)
     for warning in warnings:

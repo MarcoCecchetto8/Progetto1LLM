@@ -195,6 +195,7 @@ def test_preferences_resource_listed(tmp_path):
     assert str(resources[0].uri) == PREFERENCES_URI
     assert resources[0].name == "preferenze"
     assert resources[0].mimeType == "application/json"
+    assert resources[0].description == "Preferenze dell'utente per le risposte: lingua, fuso orario predefinito, stile."
     assert "preferenze" not in [t.name for t in call(srv, lambda c: c.list_tools())]
 
 
@@ -246,3 +247,16 @@ def test_server_timezone_relative_path(tmp_path):
     file = tmp_path / "sub" / "p.json"
     file.write_text('{"fuso_orario": "Asia/Tokyo"}', encoding="utf-8")
     assert server_timezone({"PREFERENCES_FILE": "sub/p.json"}, tmp_path) == ("Asia/Tokyo", tmp_path / "sub" / "p.json")
+
+
+def test_preferences_resource_not_utf8(tmp_path):
+    file = tmp_path / "p.json"
+    file.write_text('{"lingua": "italiano"}', encoding="utf-16")
+    with pytest.raises(Exception, match="file delle preferenze non leggibile"):
+        call(prefs_server(file), lambda c: c.read_resource(PREFERENCES_URI))
+
+
+def test_server_timezone_not_utf8_falls_back(tmp_path):
+    file = tmp_path / "p.json"
+    file.write_text('{"fuso_orario": "Asia/Tokyo"}', encoding="utf-16")
+    assert server_timezone({"PREFERENCES_FILE": str(file), "DEFAULT_TIMEZONE": "Asia/Tokyo"}, tmp_path) == ("Asia/Tokyo", file)
