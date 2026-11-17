@@ -15,6 +15,7 @@ from lab_server import catalog, dates
 from lab_server.catalog import DEFAULT_RESULTS, MAX_RESULTS
 from lab_server.clock import current_time, utc_now
 from lab_server.preferences import PREFERENCES_URI
+from lab_server.prompts import explain_text, summary_text
 from lab_server.timezones import get_timezone
 from lab_server.units import Unit, convert
 from lab_server.validation import ItalianValidationErrors
@@ -138,5 +139,16 @@ def create_server(default_timezone: str, now: Callable[[], datetime] = utc_now,
                 return preferences_file.read_text(encoding="utf-8-sig")
             except (OSError, UnicodeDecodeError):
                 raise ValueError(f"file delle preferenze non leggibile: {preferences_file}") from None
+
+    @mcp.prompt(name="spiega")
+    def explain(argomento: Annotated[str, Field(description="concetto da spiegare")],
+                livello: Annotated[str, Field(description="base, intermedio o avanzato")] = "base") -> str:
+        """Spiega un argomento al livello richiesto."""
+        return explain_text(argomento, livello)
+
+    @mcp.prompt(name="riassumi_conversazione")
+    def summarize(stile: Annotated[str, Field(description="sintetico o dettagliato")] = "sintetico") -> str:
+        """Riassume i turni della sessione corrente."""
+        return summary_text(stile)
 
     return mcp

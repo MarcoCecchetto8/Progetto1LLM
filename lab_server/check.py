@@ -38,6 +38,11 @@ async def check(argv: list[str]) -> int:
                 print(json.dumps(tool.inputSchema, ensure_ascii=False, indent=2))
             for resource in await client.list_resources():
                 print(f"resource {resource.uri}: {resource.name} ({resource.mimeType})")
+            for prompt in await client.list_prompts():
+                print(f"prompt {prompt.name}: {prompt.description}")
+                for arg in prompt.arguments or []:
+                    kind = "obbligatorio" if arg.required else "facoltativo"
+                    print(f"  {arg.name} ({kind}): {(arg.description or '').split(chr(10) * 2)[0]}")
             return 0
         result = await client.call_tool(argv[0], parse_args(argv[1:]), raise_on_error=False)
         text = "\n".join(block.text for block in result.content if block.type == "text")
