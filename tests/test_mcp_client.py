@@ -6,7 +6,8 @@ import pytest
 from langchain_core.tools import ToolException
 
 from assistant.config import load_settings
-from assistant.mcp_client import MCPClient, MCPConnectionError, MCPResourceError, server_env
+from assistant.mcp_client import (MCPClient, MCPConnectionError, MCPPromptError, MCPResourceError, PromptArgument,
+                                  PromptInfo, server_env)
 
 TEST_SERVER = [sys.executable, "-m", "tests.mcp_test_server"]
 
@@ -162,5 +163,61 @@ def test_read_resource_error_codes_mapping():
             with pytest.raises(expected):
                 client.read_resource("prova://testo")
         client._client_session = real
+    finally:
+        client.close()
+
+
+def test_list_prompts(started):
+    client, _ = started
+    prompts = {p.name: p for p in client.list_prompts()}
+    saluta = prompts["saluta"]
+    assert saluta.description == "Prompt di prova."
+    assert len(saluta.arguments) == 1
+    argument = saluta.arguments[0]
+    assert (argument.name, argument.required) == ("nome", True)
+    assert "Provide as a JSON string" not in argument.description
+    assert saluta == PromptInfo("saluta", "Prompt di prova.", (PromptArgument("nome", argument.description, True),))
+
+
+def test_get_prompt(started):
+    client, _ = started
+    assert client.get_prompt("saluta", {"nome": "Marco"}) == [("user", "Saluta Marco.")]
+
+
+def test_get_prompt_server_error_keeps_session(started):
+    client, tools = started
+    with pytest.raises(MCPPromptError) as info:
+        client.get_prompt("rotto", {})
+    assert "prompt rotto" in str(info.value)
+    assert "Error rendering prompt" not in str(info.value)
+    assert tools["echo"].invoke({"text": "ancora"}) == "ancora"
+
+
+def test_get_prompt_unknown(started):
+    client, _ = started
+    with pytest.raises(MCPPromptError):
+        client.get_prompt("inesistente", {})
+
+
+def test_prompts_closed_session():
+    client = MCPClient(TEST_SERVER, os.environ)
+    client.start()
+    client.close()
+    with pytest.raises(MCPConnectionError):
+        client.list_prompts()
+    with pytest.raises(MCPConnectionError):
+        client.get_prompt("saluta", {"nome": "x"})
+
+
+def test_get_prompt_after_server_crash():
+    client = MCPClient(TEST_SERVER, os.environ)
+    tools = {t.name: t for t in client.start()}
+    try:
+        with pytest.raises(MCPConnectionError):
+            tools["die"].invoke({})
+        with pytest.raises(MCPConnectionError):
+            client.get_prompt("saluta", {"nome": "x"})
+        with pytest.raises(MCPConnectionError):
+            client.list_prompts()
     finally:
         client.close()
