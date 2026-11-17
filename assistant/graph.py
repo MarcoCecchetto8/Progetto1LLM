@@ -45,13 +45,14 @@ STYLE_TEXTS = {
 }
 
 
+# Il fuso orario non sta nel blocco: insieme alla riga dello stile il modello
+# saltava get_current_time (3/6 contro 6/6 nella prova). Il fuso è nella frase
+# delle istruzioni ed è il predefinito del server.
 def preferences_block(preferences: Preferences) -> str:
     return (
         "Preferenze dell'utente (dalla resource utente://preferenze):\n"
         f"- Rispondi sempre in {preferences.lingua}.\n"
-        f"- Stile: {STYLE_TEXTS[preferences.stile]}.\n"
-        f"- Fuso orario predefinito: {preferences.fuso_orario}; usalo quando l'utente non indica un fuso orario, "
-        "senza chiederglielo."
+        f"- Stile: {STYLE_TEXTS[preferences.stile]}."
     )
 
 

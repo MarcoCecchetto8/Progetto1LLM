@@ -86,8 +86,10 @@ BLOCK_START = "Preferenze dell'utente (dalla resource utente://preferenze):\n- R
 def test_system_prompt_starts_with_preferences_block():
     p = system_prompt(prefs("inglese", "America/New_York"))
     assert p.startswith(BLOCK_START)
-    assert p.count("America/New_York") >= 2
-    assert "Fuso orario predefinito: America/New_York; usalo quando l'utente non indica un fuso orario, senza chiederglielo." in p
+    assert p.split("\n\n")[0].count("\n") == 2
+    assert "America/New_York" in p
+    assert "Fuso orario predefinito" not in p.split("\n\n")[0]
+    assert "Se l'utente non indica un fuso orario usa `America/New_York`" in p
     assert "Rispondi sempre in italiano, in modo chiaro e conciso" not in p
     assert "\n\nSei l'assistente del laboratorio. Quando l'utente ti saluta, presentati brevemente." in p
 
