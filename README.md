@@ -169,7 +169,7 @@ Lingua delle risposte, fuso orario predefinito e stile non sono scritti nel codi
 - **Fuso orario**: il fuso delle preferenze, se valido, è anche quello predefinito del server (`get_current_time` senza `timezone`, «oggi» degli strumenti delle date) e delle note, così host e server non sono in disaccordo.
 - **La resource non è tra i tool**: i tool passati al modello restano quelli del catalogo più le note. `python -m lab_server.check` elenca la resource dopo i tool.
 - **Log**: all'avvio una riga `INFO` `[preferenze] utente://preferenze: lingua=<...>, fuso_orario=<...>, stile=<...>`, distinta dalle chiamate ai tool.
-- **Docker**: `compose.yaml` monta `config/preferenze.json` in sola lettura in `/app/config/preferenze.json`: una modifica vale dalla sessione successiva senza `docker compose build`.
+- **Docker**: `compose.yaml` monta `config/preferenze.json` in sola lettura in `/app/config/preferenze.json`: una modifica vale dalla sessione successiva senza `docker compose build`. Il file deve esistere sull'host: con la sintassi breve del bind mount, se manca Docker crea una cartella vuota `config/preferenze.json`. Con un `PREFERENCES_FILE` diverso in Docker si usa la copia dentro l'immagine, perché si monta solo `config/preferenze.json`.
 - **Limiti**: i testi fissi del programma (rifiuto del router, avvisi, messaggi del terminale, prompt di router, revisore e riassunto) restano in italiano; risponde nella lingua scelta solo il modello. L'avviso sui falsi successi delle note è solo in italiano: con `inglese` o `spagnolo` una nota dichiarata salvata o eliminata senza lo strumento non produce l'avviso.
 
 ## Log
@@ -412,6 +412,7 @@ Da eseguire con LM Studio (separata, attivata esplicitamente); gli esiti si comp
 | File mancante | avvio con le riserve e un `WARNING` `[preferenze] resource non disponibile (...)` | da provare |
 | `LOG_LEVEL=DEBUG` | `resources/read` una sola volta, prima della prima domanda, distinta dalle `tools/call` | da provare |
 | Revisore con `inglese` e `dettagliato` | nessuna bocciatura inutile; se capita, lingua della risposta rifatta | da provare |
+| Stile sintetico con liste: «quali note ho?» con 4 o più note e «quali linguaggi sono funzionali?» | elenco completo, approvato dal revisore | da provare |
 | Richiesta di una nota con `inglese` | limite dell'avviso delle note, solo italiano | da provare |
 | Docker (`docker compose run --rm -T app` con input da pipe): modifica del file montato e nuova sessione senza `build` | comportamento cambiato | da provare |
 
