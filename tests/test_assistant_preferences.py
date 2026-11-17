@@ -43,7 +43,7 @@ def test_stile_non_ammesso(caplog):
     result = load_preferences(lambda uri: text, "Europe/Rome")
     assert result.stile == "sintetico"
     warnings = records(caplog, logging.WARNING)
-    assert len(warnings) == 1 and "stile" in warnings[0] and warnings[0].startswith("[preferenze] ")
+    assert warnings == ["[preferenze] stile 'medio' non ammesso: uso 'sintetico'"]
     assert records(caplog, logging.INFO) == [INFO % ("inglese", "America/New_York", "sintetico")]
 
 

@@ -108,6 +108,39 @@ def test_missing_scope_file_stops_startup_with_clear_message(tmp_path):
     assert "[mcp]" not in result.stderr
 
 
+def test_connection_lost_reading_preferences_stops_startup(monkeypatch, capsys, restore_sigint, restore_logging):
+    import types
+
+    import assistant.llm
+    import assistant.mcp_client
+    from assistant.__main__ import _start
+
+    class FakeClient:
+        closed = False
+
+        def __init__(self, *args, **kwargs):
+            FakeClient.instance = self
+
+        def start(self):
+            return [types.SimpleNamespace(name="get_current_time")]
+
+        def read_resource(self, uri):
+            raise assistant.mcp_client.MCPConnectionError("connessione persa")
+
+        def close(self):
+            self.closed = True
+
+    monkeypatch.setenv("LMSTUDIO_BASE_URL", "http://127.0.0.1:9/v1")
+    monkeypatch.setenv("LMSTUDIO_MODEL", "x")
+    monkeypatch.setattr(assistant.llm, "check_model", lambda settings: None)
+    monkeypatch.setattr(assistant.mcp_client, "MCPClient", FakeClient)
+    assert _start() == 1
+    err = capsys.readouterr().err
+    assert "connessione persa" in err
+    assert "Traceback" not in err
+    assert FakeClient.instance.closed
+
+
 def test_library_serializer_warnings_silenced():
     import warnings
     from assistant.__main__ import quiet_library_warnings

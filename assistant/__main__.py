@@ -87,12 +87,13 @@ def _start() -> int:
             tools = client.start()
             if not tools:
                 raise MCPConnectionError("Il server degli strumenti non espone nessuno strumento.")
+            # Il catalogo arriva dal server (discovery), non è scritto nell'assistente
+            logging.getLogger("assistant").info("[mcp] catalogo: %s", ", ".join(tool.name for tool in tools))
+            # Letta una volta, prima della prima domanda; un collegamento caduto è l'errore di sempre
+            preferences = load_preferences(client.read_resource, settings.default_timezone)
         except MCPConnectionError as error:
             print(error, file=sys.stderr)
             return 1
-        # Il catalogo arriva dal server (discovery), non è scritto nell'assistente
-        logging.getLogger("assistant").info("[mcp] catalogo: %s", ", ".join(tool.name for tool in tools))
-        preferences = load_preferences(client.read_resource, settings.default_timezone)
         service = None if settings.notes_service_url else LocalNotesService(quiet=settings.log_level != "DEBUG")
         http = None
         try:
