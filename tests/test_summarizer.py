@@ -114,3 +114,10 @@ def test_build_summarizer_returns_string_for_list_content():
 
 def test_summary_line():
     assert summary_line(24, 5, 5200, 1400) == "[riassunto] 24 → 5 messaggi (circa 5200 → 1400 token)"
+
+
+def test_instructions_name_the_user():
+    # Con «Marco, residente a Roma, …» l'agente non collegava il nome all'utente (sonda: 0/3 → 3/3)
+    rule = "Riferisciti all'utente sempre come «l'utente»: se conosci nome o città, inizia con «L'utente si chiama"
+    assert rule in SUMMARIZER_INSTRUCTIONS
+    assert SUMMARIZER_INSTRUCTIONS.index(rule) < SUMMARIZER_INSTRUCTIONS.index("Scrivi solo il riassunto")

@@ -14,6 +14,8 @@ SUMMARIZER_INSTRUCTIONS = (
     "loro testo, gli argomenti principali di cui si è parlato. "
     "Se la conversazione inizia con un riassunto delle parti precedenti, riporta TUTTE le sue informazioni "
     "(nomi, note, argomenti) e aggiungi quelle nuove. "
+    "Riferisciti all'utente sempre come «l'utente»: se conosci nome o città, inizia con "
+    "«L'utente si chiama … e vive a …». "
     "Scrivi solo il riassunto, senza introduzioni."
 )
 
