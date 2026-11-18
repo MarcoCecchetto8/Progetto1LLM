@@ -5,7 +5,6 @@ import os
 import re
 import subprocess
 import sys
-import threading
 import time
 import unicodedata
 from collections.abc import Callable
@@ -22,7 +21,6 @@ from assistant.reviewer import last_question_index
 logger = logging.getLogger("assistant.notes")
 
 TIMEOUT = 5.0
-YES = {"s", "si", "sì"}
 
 SAVE_WARNING = "⚠ Attenzione: nessuna nota è stata salvata (lo strumento non l'ha confermato)."
 DELETE_WARNING = "⚠ Attenzione: nessuna nota è stata eliminata (lo strumento non l'ha confermato)."
@@ -43,33 +41,6 @@ _DELETE_CLAIM = re.compile(
 
 class NotesConnectionError(Exception):
     """Servizio non raggiungibile. Non è una ToolException: deve uscire dal grafo."""
-
-
-# La conferma gira in un thread del ToolNode: lo stato è a livello di modulo e thread-safe.
-# Serve al ciclo da terminale per distinguere un Ctrl+C alla conferma da uno durante il modello.
-_pending = threading.Event()
-
-
-def confirmation_pending() -> bool:
-    return _pending.is_set()
-
-
-def reset_confirmation() -> None:
-    _pending.clear()
-
-
-def ask_in_terminal(question: str, input_fn=input) -> bool:
-    _pending.set()
-    try:
-        answer = input_fn(question)
-    except EOFError:
-        _pending.clear()
-        return False
-    except KeyboardInterrupt:
-        # Resta segnata: chi sta in ascolto sa che l'utente ha interrotto proprio la conferma
-        return False
-    _pending.clear()
-    return answer.strip().casefold() in YES
 
 
 def _days(n: int) -> str:

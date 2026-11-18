@@ -2,25 +2,15 @@
 
 import logging
 import os
-import signal
 import sys
-import threading
-from collections.abc import Callable
-from contextlib import contextmanager
-
-import openai
-from langchain_core.callbacks import BaseCallbackHandler
-from langchain_core.messages import HumanMessage, SystemMessage
 
 from assistant import GOODBYE
+from assistant.agent_client import AgentRequestError, AgentUnavailable
 from assistant.config import Settings
-from assistant.graph import system_prompt
 from assistant.mcp_client import MCPConnectionError, MCPPromptError, PromptInfo
-from assistant.notes import NotesConnectionError, confirmation_pending, reset_confirmation
 from assistant.prompts import (PromptCommandError, format_prompt_list, parse_prompt_command,
                                prompt_log_line, prompt_messages)
-from assistant.stream_view import INTERRUPTED, THINKING, TurnView, stream_turn
-from lab_server.preferences import Preferences
+from assistant.stream_view import INTERRUPTED, THINKING, TurnView
 
 HELP_TEXT = (
     "Comandi:\n"
@@ -31,22 +21,9 @@ HELP_TEXT = (
     "  quit, exit  esci dall'assistente\n"
     "Puoi uscire anche con Ctrl+C (Ctrl+D su Linux/Docker, Ctrl+Z + Invio su Windows)."
 )
-EMPTY_ANSWER = "Il modello non ha dato una risposta: riprova."
-TOOLS_DOWN = "Il server degli strumenti non risponde: esci e riavvia l'assistente."
-NOTES_DOWN = "Il servizio delle note non risponde: esci e riavvia l'assistente."
+YES = {"s", "si", "sì"}
 
 logger = logging.getLogger("assistant.cli")
-
-
-def error_message(error: openai.APIError, settings: Settings) -> str:
-    # APITimeoutError è figlia di APIConnectionError: va controllata prima
-    if isinstance(error, openai.APITimeoutError):
-        return f"Il modello non ha risposto entro {settings.timeout:g} secondi. Riprova."
-    if isinstance(error, openai.APIConnectionError):
-        return f"LM Studio non è raggiungibile all'indirizzo {settings.base_url}. Controlla che sia attivo e riprova."
-    if "context" in str(error).lower():
-        return "Il contesto del modello è pieno: usa 'clear' per svuotare la cronologia."
-    return f"Errore dell'API del modello: {error}"
 
 
 def clear_screen(stream=None, windows: bool = os.name == "nt", system=os.system) -> None:
@@ -62,111 +39,93 @@ def clear_screen(stream=None, windows: bool = os.name == "nt", system=os.system)
         stream.flush()
 
 
-class TurnCancelled(Exception):
-    """Ctrl+C durante il turno: ferma il thread del modello."""
-
-
-class CancelOnInterrupt(BaseCallbackHandler):
-    # Senza raise_error LangChain registrerebbe l'eccezione e lascerebbe proseguire il modello
-    raise_error = True
-
-    def __init__(self, cancelled: threading.Event):
-        self._cancelled = cancelled
-
-    def on_llm_new_token(self, token, **kwargs) -> None:
-        if self._cancelled.is_set():
-            raise TurnCancelled
-
-
-@contextmanager
-def cancel_on_ctrl_c(cancelled: threading.Event):
-    # LangGraph esegue il modello in un thread e all'interruzione ne aspetta la fine:
-    # l'Event lo fa fermare al pezzo successivo. Il KeyboardInterrupt resta quello di sempre.
-    def handler(signum, frame):
-        cancelled.set()
-        signal.default_int_handler(signum, frame)
-
-    cancelled.clear()
-    try:
-        previous = signal.signal(signal.SIGINT, handler)
-    except ValueError:  # fuori dal thread principale non si può installare un gestore
-        yield
-        return
-    try:
-        yield
-    finally:
-        signal.signal(signal.SIGINT, previous)
-
-
 def write_stdout(text: str) -> None:
     sys.stdout.write(text)
     sys.stdout.flush()
 
 
-def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=clear_screen,
+def run(agent, settings: Settings, input_fn=input, output_fn=print, clear_fn=clear_screen,
         newline_on_interrupt: bool = os.name != "nt", write_fn=None, color: bool = False,
-        preferences: Preferences | None = None, prompt_list: list[PromptInfo] = (),
-        get_prompt: Callable[[str, dict[str, str]], list[tuple[str, str]]] | None = None) -> int:
+        model: str = "", prompt_list: list[PromptInfo] = ()) -> int:
     write_fn = write_fn or write_stdout
-    preferences = preferences or Preferences("italiano", settings.default_timezone, "sintetico")
-    initial = [SystemMessage(system_prompt(preferences))]
-    history = list(initial)
+    history: list[dict] = []
     summary = ""
 
     def header():
-        output_fn(f"Assistente del laboratorio — modello: {settings.model}")
+        output_fn(f"Assistente del laboratorio — modello: {model}")
         output_fn("Scrivi la tua domanda. Comandi: help, clear, /prompts, /prompt. Per uscire: quit, exit o Ctrl+C.")
 
-    def turn(new_messages) -> None:
+    def stream(payload: dict, view: TurnView) -> dict | None:
+        """Mostra gli eventi del turno; restituisce il corpo di `fine`, None se il turno è finito in errore."""
+        events = agent.stream_turn(payload)
+        try:
+            for name, data in events:
+                if name == "ragionamento":
+                    view.reasoning(data["testo"])
+                elif name == "risposta":
+                    view.answer(data["testo"])
+                elif name == "strumento":
+                    view.tool_call(data["nome"], data["argomenti"])
+                elif name == "esito_strumento":
+                    view.tool_result(data["nome"], data["contenuto"], data["errore"])
+                elif name == "riga":
+                    view.extra(data["testo"])
+                elif name == "errore":
+                    view.finish()
+                    output_fn(data["messaggio"])
+                    return None
+                elif name == "fine":
+                    return data
+        finally:
+            events.close()
+            view.finish()
+        return None
+
+    def ask(confirmations: list[dict]) -> dict[str, bool]:
+        decisions = {}
+        for item in confirmations:
+            try:
+                answer = input_fn(item["domanda"])
+            except EOFError:
+                decisions[str(item["id_nota"])] = False
+                continue
+            decisions[str(item["id_nota"])] = answer.strip().casefold() in YES
+        return decisions
+
+    def turn(new_messages: list[dict]) -> None:
         nonlocal history, summary
-        reset_confirmation()
         if not settings.show_reasoning:
             output_fn(THINKING)
         view = TurnView(write_fn, color, settings.show_reasoning)
-        try:
-            with cancel_on_ctrl_c(cancelled):
-                result = stream_turn(graph, {"messages": history + new_messages, "steps": 0,
-                                             "summary": summary}, view, config)
-        except KeyboardInterrupt:
-            if confirmation_pending():
-                raise  # Ctrl+C alla conferma di eliminazione: si esce come prima
-            output_fn(INTERRUPTED)
-            return
-        except openai.APIError as error:
-            output_fn(error_message(error, settings))
-            return
-        except MCPConnectionError as error:
-            # Errore di collegamento, distinto da un errore dello strumento (che torna al modello)
-            logger.warning("[mcp] collegamento con il server perso: %s", error)
-            logger.debug("Dettaglio dell'errore di collegamento", exc_info=True)
-            output_fn(TOOLS_DOWN)
-            return
-        except NotesConnectionError as error:
-            logger.warning("[note] collegamento con il servizio perso: %s", error)
-            logger.debug("Dettaglio dell'errore di collegamento", exc_info=True)
-            output_fn(NOTES_DOWN)
-            return
-        except Exception as error:
-            logger.debug("Errore imprevisto durante il turno", exc_info=True)
-            output_fn(f"Errore imprevisto: {error}. Riprova o usa 'clear'.")
-            return
-        # La risposta è già stata scritta in streaming: qui si controlla solo che non sia vuota
-        answer = result["messages"][-1].content
-        if not answer.strip():
-            # es. chiamata allo strumento con JSON non valido: il turno non entra in cronologia
-            output_fn(EMPTY_ANSWER)
-            return
-        history = result["messages"]
-        summary = result.get("summary", "")
+        payload = {"messaggi": new_messages, "cronologia": history, "riassunto": summary}
+        while True:
+            try:
+                result = stream(payload, view)
+            except KeyboardInterrupt:
+                output_fn(INTERRUPTED)
+                return
+            except AgentRequestError as error:
+                output_fn(error.message)
+                return
+            except AgentUnavailable as error:
+                output_fn(str(error))
+                return
+            if result is None:
+                return
+            if result["esito"] == "completato":
+                history, summary = result["cronologia"], result["riassunto"]
+                return
+            # Turno sospeso: le domande si pongono qui (Ctrl+C a una domanda esce dalla sessione)
+            payload = {"ripresa": {"sospeso": result["sospeso"], "decisioni": ask(result["conferme"])}}
 
     def prompt_command(rest: str):
         """Messaggi del prompt richiamato, o None se il comando non è valido (errore già mostrato)."""
-        if get_prompt is None:
+        if not prompt_list:
             output_fn(format_prompt_list([]))
             return None
         try:
             name, arguments = parse_prompt_command(rest, list(prompt_list))
-            raw = get_prompt(name, arguments)
+            raw = agent.get_prompt(name, arguments)
         except PromptCommandError as error:
             output_fn(str(error))
             return None
@@ -176,7 +135,13 @@ def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=cle
         except MCPConnectionError as error:
             logger.warning("[mcp] collegamento con il server perso: %s", error)
             logger.debug("Dettaglio dell'errore di collegamento", exc_info=True)
-            output_fn(TOOLS_DOWN)
+            output_fn(str(error))
+            return None
+        except AgentUnavailable as error:
+            output_fn(str(error))
+            return None
+        except AgentRequestError as error:
+            output_fn(error.message)
             return None
         messages = prompt_messages(raw)
         if not messages:
@@ -188,8 +153,6 @@ def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=cle
                 logger.debug("[prompt] %d/%d %s: %s", number, len(raw), role, " ".join(text.split()))
         return messages
 
-    cancelled = threading.Event()
-    config = {"callbacks": [CancelOnInterrupt(cancelled)]}
     header()
     try:
         while True:
@@ -203,7 +166,7 @@ def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=cle
                 output_fn(HELP_TEXT)
                 continue
             if command == "clear":
-                history = list(initial)
+                history = []
                 summary = ""
                 clear_fn()
                 header()
@@ -220,7 +183,7 @@ def run(graph, settings: Settings, input_fn=input, output_fn=print, clear_fn=cle
                 else:
                     output_fn(f"Comando sconosciuto: {text.split()[0]}. Comandi: help, clear, /prompts, /prompt.")
                 continue
-            turn([HumanMessage(text)])
+            turn([{"ruolo": "utente", "contenuto": text}])
     except (EOFError, KeyboardInterrupt):
         # Su Linux (anche in Docker) il terminale scrive "^C" senza andare a capo
         if newline_on_interrupt:

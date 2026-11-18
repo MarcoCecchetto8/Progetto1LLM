@@ -29,6 +29,7 @@ class Settings:
     summary_threshold: int = 4000
     summary_keep_turns: int = 2
     preferences_file: str = "config/preferenze.json"
+    agent_service_url: str = ""
 
 
 def _get(env: Mapping[str, str], name: str, default: str | None = None) -> str:
@@ -80,10 +81,11 @@ def load_settings(env: Mapping[str, str]) -> Settings:
     summary_threshold = _number(env, "SUMMARY_THRESHOLD", "4000", int, 1, "un intero")
     summary_keep_turns = _number(env, "SUMMARY_KEEP_TURNS", "2", int, 1, "un intero")
     preferences_file = _get(env, "PREFERENCES_FILE", "config/preferenze.json")
+    agent_url = env.get("AGENT_SERVICE_URL", "").strip().rstrip("/")
 
     return Settings(base_url, model, timeout, temperature, max_steps, timezone, log_level, notes_url,
                     show_reasoning == "true", scope_file, max_reviews, summary_threshold, summary_keep_turns,
-                    preferences_file)
+                    preferences_file, agent_url)
 
 
 def load_scope(path: str, root: Path) -> str:

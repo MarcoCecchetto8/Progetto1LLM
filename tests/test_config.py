@@ -50,6 +50,12 @@ def test_notes_service_url_default_and_normalized():
     assert load_settings({**base, "NOTES_SERVICE_URL": " http://notes:8000/ "}).notes_service_url == "http://notes:8000"
 
 
+def test_agent_service_url_default_and_normalized():
+    base = {"LMSTUDIO_BASE_URL": "http://localhost:1234/v1", "LMSTUDIO_MODEL": "m"}
+    assert load_settings(base).agent_service_url == ""
+    assert load_settings({**base, "AGENT_SERVICE_URL": " http://agent:8001/ "}).agent_service_url == "http://agent:8001"
+
+
 @pytest.mark.parametrize("value,expected", [(None, True), ("true", True), ("TRUE", True), (" True ", True),
                                             ("false", False), ("False", False)])
 def test_show_reasoning(value, expected):

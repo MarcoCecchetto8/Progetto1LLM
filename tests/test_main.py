@@ -108,39 +108,167 @@ def test_missing_scope_file_stops_startup_with_clear_message(tmp_path):
     assert "[mcp]" not in result.stderr
 
 
-def test_connection_lost_reading_preferences_stops_startup(monkeypatch, capsys, restore_sigint, restore_logging):
-    import types
+class FakeService:
+    """Servizio locale finto: registra start e close."""
 
-    import assistant.llm
+    def __init__(self, *args, start=None, **kwargs):
+        self.start_effect = start
+        self.closed = 0
+        FakeService.instance = self
+
+    def start(self):
+        if isinstance(self.start_effect, BaseException):
+            raise self.start_effect
+        return "http://127.0.0.1:8001"
+
+    def close(self):
+        self.closed += 1
+
+
+GOOD_STATUS = {"agente": "ok",
+               "modello": {"raggiungibile": True, "messaggio": "Modello m disponibile.", "modello": "m"},
+               "strumenti": {"raggiungibile": True, "messaggio": "ok", "strumenti": 3},
+               "note": {"raggiungibile": True, "messaggio": "ok", "indirizzo": "x"}}
+
+
+class FakeAgentClient:
+    status_value = GOOD_STATUS
+    prompts_value = []
+
+    def __init__(self, url, *args, **kwargs):
+        self.url = url
+        self.closed = 0
+        FakeAgentClient.instance = self
+
+    def status(self):
+        if isinstance(self.status_value, BaseException):
+            raise self.status_value
+        return self.status_value
+
+    def prompts(self):
+        if isinstance(self.prompts_value, BaseException):
+            raise self.prompts_value
+        return self.prompts_value
+
+    def close(self):
+        self.closed += 1
+
+
+@pytest.fixture
+def start_env(monkeypatch, restore_sigint, restore_logging):
+    """Ambiente di _start con servizio e client finti; restituisce la lista delle chiamate a run."""
+    import assistant.agent_client
+    import assistant.cli
+
+    FakeAgentClient.status_value = GOOD_STATUS
+    FakeAgentClient.prompts_value = []
+    runs = []
+    monkeypatch.setenv("LMSTUDIO_BASE_URL", "http://127.0.0.1:9/v1")
+    monkeypatch.setenv("LMSTUDIO_MODEL", "x")
+    monkeypatch.delenv("AGENT_SERVICE_URL", raising=False)
+    # _start importa load_dotenv al suo interno: senza questo copierebbe il vero .env in os.environ
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setattr(assistant.agent_client, "LocalAgentService", FakeService)
+    monkeypatch.setattr(assistant.agent_client, "AgentClient", FakeAgentClient)
+    monkeypatch.setattr(assistant.cli, "run", lambda *a, **k: runs.append((a, k)) or 0)
+    return runs
+
+
+def test_agent_unreachable_at_startup_stops_with_message(start_env, monkeypatch, capsys):
+    from assistant.__main__ import _start
+    from assistant.agent_client import AgentUnavailable
+
+    import assistant.agent_client
+    monkeypatch.setattr(assistant.agent_client, "LocalAgentService",
+                        lambda **k: FakeService(start=AgentUnavailable("L'agente non è partito.")))
+    assert _start() == 1
+    err = capsys.readouterr().err
+    assert "L'agente non è partito." in err
+    assert "Traceback" not in err
+    assert FakeService.instance.closed == 1
+    assert start_env == []
+
+
+def test_status_with_unreachable_model_stops_with_model_message(start_env, monkeypatch, capsys):
+    from assistant.__main__ import _start
+
+    FakeAgentClient.status_value = {**GOOD_STATUS, "modello": {
+        "raggiungibile": False, "messaggio": "LM Studio non è raggiungibile all'indirizzo x.", "modello": "m"}}
+    assert _start() == 1
+    assert "LM Studio non è raggiungibile all'indirizzo x." in capsys.readouterr().err
+    assert FakeAgentClient.instance.closed == 1 and FakeService.instance.closed == 1
+    assert start_env == []
+
+
+def test_status_with_unreachable_tools_stops_with_tools_message(start_env, capsys):
+    from assistant.__main__ import _start
+
+    FakeAgentClient.status_value = {**GOOD_STATUS, "strumenti": {
+        "raggiungibile": False, "messaggio": "Il server degli strumenti non risponde: x", "strumenti": 0}}
+    assert _start() == 1
+    assert "Il server degli strumenti non risponde: x" in capsys.readouterr().err
+    assert start_env == []
+
+
+def test_agent_unavailable_on_status_stops_with_message(start_env, capsys):
+    from assistant.__main__ import _start
+    from assistant.agent_client import UNAVAILABLE, AgentUnavailable
+
+    FakeAgentClient.status_value = AgentUnavailable(UNAVAILABLE)
+    assert _start() == 1
+    assert UNAVAILABLE in capsys.readouterr().err
+
+
+def test_prompt_list_error_is_warning_and_startup_continues(start_env, capsys):
     import assistant.mcp_client
     from assistant.__main__ import _start
 
-    class FakeClient:
-        closed = False
+    FakeAgentClient.prompts_value = assistant.mcp_client.MCPPromptError("il server non ha prompt")
+    assert _start() == 0
+    # configure_logging(force=True) sostituisce gli handler: l'avviso si legge su stderr
+    assert "[mcp] prompt non disponibili (il server non ha prompt): nessun prompt" in capsys.readouterr().err
+    (args, kwargs), = start_env
+    assert list(kwargs["prompt_list"]) == [] and kwargs["model"] == "m"
+    assert FakeAgentClient.instance.closed == 1 and FakeService.instance.closed == 1
 
-        def __init__(self, *args, **kwargs):
-            FakeClient.instance = self
 
-        def start(self):
-            return [types.SimpleNamespace(name="get_current_time")]
+def test_remote_agent_url_skips_local_service(start_env, monkeypatch):
+    from assistant.__main__ import _start
 
-        def read_resource(self, uri):
-            raise assistant.mcp_client.MCPConnectionError("connessione persa")
+    monkeypatch.setenv("AGENT_SERVICE_URL", "http://agent:8001/")
+    FakeService.instance = None
+    assert _start() == 0
+    assert FakeAgentClient.instance.url == "http://agent:8001"
+    assert FakeService.instance is None
 
-        def close(self):
-            self.closed = True
 
-    monkeypatch.setenv("LMSTUDIO_BASE_URL", "http://127.0.0.1:9/v1")
-    monkeypatch.setenv("LMSTUDIO_MODEL", "x")
-    # _start importa load_dotenv al suo interno: senza questo copierebbe il vero .env in os.environ
-    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: False)
-    monkeypatch.setattr(assistant.llm, "check_model", lambda settings: None)
-    monkeypatch.setattr(assistant.mcp_client, "MCPClient", FakeClient)
-    assert _start() == 1
-    err = capsys.readouterr().err
-    assert "connessione persa" in err
-    assert "Traceback" not in err
-    assert FakeClient.instance.closed
+def test_ctrl_c_while_service_starts_closes_it(start_env, monkeypatch, restore_sigint):
+    import assistant.agent_client
+    from assistant.__main__ import _start
+
+    monkeypatch.setattr(assistant.agent_client, "LocalAgentService",
+                        lambda **k: FakeService(start=KeyboardInterrupt()))
+    with pytest.raises(KeyboardInterrupt):
+        _start()
+    assert FakeService.instance.closed == 1
+
+
+def test_ctrl_c_after_start_closes_service_and_client(start_env, restore_sigint):
+    from assistant.__main__ import _start
+
+    FakeAgentClient.status_value = KeyboardInterrupt()
+    with pytest.raises(KeyboardInterrupt):
+        _start()
+    assert FakeService.instance.closed == 1 and FakeAgentClient.instance.closed == 1
+
+
+def test_unexpected_error_after_start_closes_service(start_env, restore_sigint):
+    from assistant.__main__ import _start
+
+    FakeAgentClient.prompts_value = RuntimeError("boom")
+    with pytest.raises(RuntimeError):
+        _start()
+    assert FakeService.instance.closed == 1 and FakeAgentClient.instance.closed == 1
 
 
 def test_library_serializer_warnings_silenced():
@@ -152,55 +280,3 @@ def test_library_serializer_warnings_silenced():
         warnings.warn("Pydantic serializer warnings:\n  PydanticSerializationUnexpectedValue(...)", UserWarning)
         warnings.warn("altro avviso", UserWarning)
     assert [str(w.message) for w in caught] == ["altro avviso"]
-
-
-def test_prompt_list_error_is_warning_and_startup_continues(monkeypatch, capsys, restore_sigint, restore_logging):
-    import types
-
-    import assistant.llm
-    import assistant.mcp_client
-    import assistant.notes
-    from assistant.__main__ import _start
-
-    class Stop(Exception):
-        pass
-
-    class FakeClient:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def start(self):
-            return [types.SimpleNamespace(name="get_current_time")]
-
-        def read_resource(self, uri):
-            return "{}"
-
-        def list_prompts(self):
-            raise assistant.mcp_client.MCPPromptError("il server non ha prompt")
-
-        def close(self):
-            pass
-
-    class StopService:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def start(self):
-            raise Stop()
-
-        def close(self):
-            pass
-
-    monkeypatch.setenv("LMSTUDIO_BASE_URL", "http://127.0.0.1:9/v1")
-    monkeypatch.setenv("LMSTUDIO_MODEL", "x")
-    monkeypatch.delenv("NOTES_SERVICE_URL", raising=False)
-    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: False)
-    monkeypatch.setattr(assistant.llm, "check_model", lambda settings: None)
-    monkeypatch.setattr(assistant.mcp_client, "MCPClient", FakeClient)
-    monkeypatch.setattr("assistant.preferences.load_preferences",
-                        lambda read, tz: types.SimpleNamespace(fuso_orario=tz))
-    monkeypatch.setattr(assistant.notes, "LocalNotesService", StopService)
-    with pytest.raises(Stop):
-        _start()
-    # configure_logging(force=True) sostituisce gli handler: l'avviso si legge su stderr
-    assert "[mcp] prompt non disponibili (il server non ha prompt): nessun prompt" in capsys.readouterr().err
