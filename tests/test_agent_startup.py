@@ -1,7 +1,9 @@
 import os
+import signal
 import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import httpx
@@ -118,3 +120,67 @@ def test_main_exits_with_1_on_startup_error():
                             capture_output=True, timeout=60)
     assert result.returncode == 1
     assert "SCOPE_FILE non valida: 'config/inesistente.txt' non esiste o è vuoto." in result.stderr.decode("utf-8")
+
+
+def test_model_status_uses_short_timeout():
+    timeouts = []
+    model_status(make_settings(LMSTUDIO_TIMEOUT="120"), list_models=lambda url, timeout: timeouts.append(timeout) or [])
+    model_status(make_settings(LMSTUDIO_TIMEOUT="2"), list_models=lambda url, timeout: timeouts.append(timeout) or [])
+    assert timeouts == [5.0, 2.0]
+
+
+# Il servizio note locale usa sempre la porta 8000: nel sottoprocesso lo sostituisco con uno su porta di prova
+WRAPPER = """
+import sys
+from pathlib import Path
+from agent_service import startup
+from assistant.notes import LocalNotesService
+port, db = int(sys.argv.pop(1)), Path(sys.argv.pop(1))
+startup.LocalNotesService = lambda quiet: LocalNotesService(port=port, quiet=quiet, db=db)
+from agent_service.__main__ import main
+sys.exit(main())
+"""
+
+
+def kill_tree(proc):
+    if proc.poll() is None:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True)
+        else:
+            proc.kill()
+        proc.wait()
+
+
+def test_main_closes_local_services_on_stop_signal(tmp_path):
+    port, notes_port = free_port(), free_port()
+    env = {**os.environ, "LMSTUDIO_BASE_URL": f"http://127.0.0.1:{free_port()}/v1", "LMSTUDIO_MODEL": "m",
+           "NOTES_SERVICE_URL": "", "LOG_LEVEL": "INFO", "PYTHONUNBUFFERED": "1"}
+    if os.name == "nt":
+        options, stop = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}, signal.CTRL_BREAK_EVENT
+    else:
+        options, stop = {"start_new_session": True}, signal.SIGTERM
+    log = tmp_path / "agent.log"
+    command = [sys.executable, "-c", WRAPPER, str(notes_port), str(tmp_path / "n.db"), "--port", str(port)]
+    with open(log, "wb") as stderr:
+        proc = subprocess.Popen(command, cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=stderr, **options)
+        try:
+            deadline = time.monotonic() + 90
+            while True:
+                try:
+                    httpx.get(f"http://127.0.0.1:{port}/stato", timeout=15.0)
+                    break
+                except httpx.TransportError:
+                    assert proc.poll() is None and time.monotonic() < deadline, log.read_text("utf-8")
+                    time.sleep(0.2)
+            assert httpx.get(f"http://127.0.0.1:{notes_port}/notes", timeout=2.0).status_code == 200
+            proc.send_signal(stop)
+            code = proc.wait(timeout=30)
+            time.sleep(1)
+            # Nessun orfano: il servizio note avviato dall'agente deve aver liberato la porta
+            with pytest.raises(httpx.TransportError):
+                httpx.get(f"http://127.0.0.1:{notes_port}/notes", timeout=1.0)
+        finally:
+            kill_tree(proc)
+    text = log.read_text("utf-8")
+    assert code == 0, text
+    assert "Traceback" not in text

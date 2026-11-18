@@ -3,6 +3,7 @@
 import argparse
 import logging
 import os
+import signal
 import sys
 from pathlib import Path
 
@@ -41,10 +42,18 @@ def main() -> int:
     except (ConfigError, MCPConnectionError, NotesConnectionError) as error:
         print(error, file=sys.stderr)
         return 1
+    # Dopo lo shutdown uvicorn ripristina i gestori precedenti e rilancia il segnale: con SIG_DFL
+    # (SIGTERM, Ctrl+Break su Windows) il processo morirebbe senza eseguire il finally e lascerebbe orfani
+    # servizio note e server MCP. Un gestore che solleva SystemExit fa girare sempre la chiusura.
+    for name in ("SIGTERM", "SIGBREAK"):
+        if hasattr(signal, name):
+            signal.signal(getattr(signal, name), lambda signum, frame: sys.exit(0))
     try:
         logging.getLogger("assistant").info("[api] agente in ascolto su http://%s:%d", args.host, args.port)
         uvicorn.run(create_app(agent), host=args.host, port=args.port, log_level=level.lower(),
                     access_log=not args.quiet)
+    except KeyboardInterrupt:
+        pass
     finally:
         close()
     return 0

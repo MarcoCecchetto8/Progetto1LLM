@@ -9,6 +9,7 @@ from pathlib import Path
 import httpx
 
 from agent_service.app import Agent
+from agent_service.errors import NOTES_DOWN, TOOLS_DOWN, model_unreachable
 from assistant.config import Settings, load_scope
 from assistant.graph import build_graph, system_prompt
 from assistant.llm import LMStudioUnavailable, ModelNotFound, build_chat_model, list_models
@@ -23,17 +24,15 @@ from lab_server.timezones import get_timezone
 
 logger = logging.getLogger("assistant")
 
-TOOLS_DOWN = "Il server degli strumenti non risponde: riavvia l'agente (in locale basta riavviare l'assistente)."
-NOTES_DOWN = "Il servizio delle note non risponde: riavvia l'agente (in locale basta riavviare l'assistente)."
+# Controllo breve: con LM Studio appeso /stato non deve attendere tutto LMSTUDIO_TIMEOUT (bloccherebbe la CLI)
+STATUS_TIMEOUT = 5.0
 
 
 def model_status(settings: Settings, list_models=list_models) -> dict:
     try:
-        available = list_models(settings.base_url, settings.timeout)
+        available = list_models(settings.base_url, min(settings.timeout, STATUS_TIMEOUT))
     except LMStudioUnavailable:
-        message = (f"LM Studio non è raggiungibile all'indirizzo {settings.base_url}. "
-                   "Controlla che sia attivo e riprova.")
-        return {"raggiungibile": False, "messaggio": message, "modello": settings.model}
+        return {"raggiungibile": False, "messaggio": model_unreachable(settings.base_url), "modello": settings.model}
     if settings.model not in available:
         return {"raggiungibile": False, "messaggio": str(ModelNotFound(settings.model, available)),
                 "modello": settings.model}
