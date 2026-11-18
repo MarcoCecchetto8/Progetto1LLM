@@ -143,6 +143,18 @@ def _responds(url: str) -> bool:
     return True
 
 
+def wait_until_responds(url: str, timeout: float | None = None, alive=lambda: True) -> bool:
+    """Attende che /stato risponda (con qualsiasi codice); False se scade il tempo o `alive` diventa falso."""
+    deadline = time.monotonic() + (START_TIMEOUT if timeout is None else timeout)
+    while alive():
+        if _responds(url):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.2)
+    return False
+
+
 class LocalAgentService:
     """Avvia il servizio agente come sottoprocesso locale."""
 
@@ -175,18 +187,14 @@ class LocalAgentService:
         if self.env is not None:
             options["env"] = dict(self.env)
         proc = self._proc = subprocess.Popen(command, **options)
-        deadline = time.monotonic() + START_TIMEOUT
-        while True:
-            if proc.poll() is not None:
-                details = self._last_stderr_lines()
-                self.close()
-                raise AgentUnavailable("L'agente non è partito" + (f": {details}" if details else "."))
-            if _responds(url):
-                return url
-            if time.monotonic() >= deadline:
-                self.close()
-                raise AgentUnavailable(f"L'agente non è partito entro {START_TIMEOUT:g} secondi.")
-            time.sleep(0.2)
+        if wait_until_responds(url, alive=lambda: proc.poll() is None):
+            return url
+        if proc.poll() is not None:
+            details = self._last_stderr_lines()
+            self.close()
+            raise AgentUnavailable("L'agente non è partito" + (f": {details}" if details else "."))
+        self.close()
+        raise AgentUnavailable(f"L'agente non è partito entro {START_TIMEOUT:g} secondi.")
 
     def _last_stderr_lines(self) -> str:
         if self._stderr is None:

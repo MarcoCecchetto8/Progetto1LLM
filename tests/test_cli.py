@@ -259,6 +259,13 @@ def test_agent_unavailable_keeps_session():
     assert out[-1] == "Arrivederci!"
 
 
+def test_stream_ending_without_final_event_reports_unavailable_and_keeps_history():
+    agent = FakeAgent([done([user("d1"), assistant("r1")])], [("risposta", {"testo": "Ecco"})], [done([])])
+    _, out = session(agent, "d1", "troncata", "terza", "quit")
+    assert UNAVAILABLE in out
+    assert agent.payloads[2]["cronologia"] == [user("d1"), assistant("r1")]
+
+
 def test_ctrl_c_during_streaming_closes_generator_and_keeps_history():
     agent = FakeAgent([done([user("d1"), assistant("r1")])], [("risposta", {"testo": "Ecco"}), done([])])
     out = []

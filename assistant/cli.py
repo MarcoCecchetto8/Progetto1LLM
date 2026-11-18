@@ -5,7 +5,7 @@ import os
 import sys
 
 from assistant import GOODBYE
-from assistant.agent_client import AgentRequestError, AgentUnavailable
+from assistant.agent_client import UNAVAILABLE, AgentRequestError, AgentUnavailable
 from assistant.config import Settings
 from assistant.mcp_client import MCPConnectionError, MCPPromptError, PromptInfo
 from assistant.prompts import (PromptCommandError, format_prompt_list, parse_prompt_command,
@@ -79,6 +79,8 @@ def run(agent, settings: Settings, input_fn=input, output_fn=print, clear_fn=cle
         finally:
             events.close()
             view.finish()
+        # Flusso chiuso senza `fine` né `errore`: l'agente è caduto o la connessione è stata interrotta
+        output_fn(UNAVAILABLE)
         return None
 
     def ask(confirmations: list[dict]) -> dict[str, bool]:

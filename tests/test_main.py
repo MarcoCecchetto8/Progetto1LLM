@@ -220,6 +220,46 @@ def test_agent_unavailable_on_status_stops_with_message(start_env, capsys):
     assert UNAVAILABLE in capsys.readouterr().err
 
 
+def test_agent_request_error_on_status_stops_with_message(start_env, capsys):
+    from assistant.__main__ import _start
+    from assistant.agent_client import AgentRequestError
+
+    FakeAgentClient.status_value = AgentRequestError("richiesta_non_valida", "Richiesta rifiutata dall'agente (HTTP 404).")
+    assert _start() == 1
+    err = capsys.readouterr().err
+    assert "Richiesta rifiutata dall'agente (HTTP 404)." in err
+    assert "Traceback" not in err
+    assert start_env == []
+
+
+def test_remote_agent_url_waits_until_agent_responds(start_env, monkeypatch):
+    import time
+
+    import assistant.agent_client
+    from assistant.__main__ import _start
+
+    answers = iter([False, False, True])
+    monkeypatch.setattr(assistant.agent_client, "_responds", lambda url: next(answers))
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
+    monkeypatch.setenv("AGENT_SERVICE_URL", "http://agent:8001")
+    assert _start() == 0
+    assert next(answers, "finito") == "finito"  # tre tentativi consumati prima di status()
+    assert len(start_env) == 1
+
+
+def test_remote_agent_url_never_responding_stops_with_message(start_env, monkeypatch, capsys):
+    import assistant.agent_client
+    from assistant.__main__ import _start
+
+    monkeypatch.setattr(assistant.agent_client, "_responds", lambda url: False)
+    monkeypatch.setattr(assistant.agent_client, "START_TIMEOUT", 0.3)
+    monkeypatch.setenv("AGENT_SERVICE_URL", "http://agent:8001")
+    assert _start() == 1
+    err = capsys.readouterr().err
+    assert "http://agent:8001" in err and "Traceback" not in err
+    assert start_env == []
+
+
 def test_prompt_list_error_is_warning_and_startup_continues(start_env, capsys):
     import assistant.mcp_client
     from assistant.__main__ import _start
@@ -234,8 +274,10 @@ def test_prompt_list_error_is_warning_and_startup_continues(start_env, capsys):
 
 
 def test_remote_agent_url_skips_local_service(start_env, monkeypatch):
+    import assistant.agent_client
     from assistant.__main__ import _start
 
+    monkeypatch.setattr(assistant.agent_client, "_responds", lambda url: True)
     monkeypatch.setenv("AGENT_SERVICE_URL", "http://agent:8001/")
     FakeService.instance = None
     assert _start() == 0

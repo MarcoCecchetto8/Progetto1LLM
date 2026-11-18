@@ -46,7 +46,8 @@ def _start() -> int:
     # Librerie caricate qui, dentro main(): un Ctrl+C durante i secondi di caricamento dà il saluto
     from dotenv import load_dotenv
 
-    from assistant.agent_client import AgentClient, AgentRequestError, AgentUnavailable, LocalAgentService
+    from assistant.agent_client import (START_TIMEOUT, AgentClient, AgentRequestError, AgentUnavailable, LocalAgentService,
+                                        wait_until_responds)
     from assistant.cli import run
     from assistant.config import ConfigError, load_settings
     from assistant.mcp_client import MCPConnectionError, MCPPromptError
@@ -70,6 +71,9 @@ def _start() -> int:
     try:
         try:
             url = settings.agent_service_url or service.start()
+            # Con un agente remoto (Docker) il container può essere avviato ma non ancora in ascolto
+            if service is None and not wait_until_responds(url):
+                raise AgentUnavailable(f"L'agente non risponde all'indirizzo {url} (atteso {START_TIMEOUT:g} secondi).")
             client = AgentClient(url)
             status = client.status()
             for part in ("modello", "strumenti"):
@@ -81,7 +85,7 @@ def _start() -> int:
             except (MCPPromptError, MCPConnectionError, AgentRequestError) as error:
                 log.warning("[mcp] prompt non disponibili (%s): nessun prompt", error)
                 prompt_list = []
-        except AgentUnavailable as error:
+        except (AgentUnavailable, AgentRequestError) as error:
             print(error, file=sys.stderr)
             return 1
         log.info("[agente] servizio: %s", url)
