@@ -5,7 +5,6 @@ import os
 import re
 import subprocess
 import sys
-import threading
 import time
 import unicodedata
 from collections.abc import Callable
@@ -14,6 +13,7 @@ from pathlib import Path
 
 import httpx
 from langchain_core.messages import AnyMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool, ToolException, tool
 
 from assistant.reviewer import last_question_index
@@ -21,7 +21,6 @@ from assistant.reviewer import last_question_index
 logger = logging.getLogger("assistant.notes")
 
 TIMEOUT = 5.0
-YES = {"s", "si", "sì"}
 
 SAVE_WARNING = "⚠ Attenzione: nessuna nota è stata salvata (lo strumento non l'ha confermato)."
 DELETE_WARNING = "⚠ Attenzione: nessuna nota è stata eliminata (lo strumento non l'ha confermato)."
@@ -42,33 +41,6 @@ _DELETE_CLAIM = re.compile(
 
 class NotesConnectionError(Exception):
     """Servizio non raggiungibile. Non è una ToolException: deve uscire dal grafo."""
-
-
-# La conferma gira in un thread del ToolNode: lo stato è a livello di modulo e thread-safe.
-# Serve al ciclo da terminale per distinguere un Ctrl+C alla conferma da uno durante il modello.
-_pending = threading.Event()
-
-
-def confirmation_pending() -> bool:
-    return _pending.is_set()
-
-
-def reset_confirmation() -> None:
-    _pending.clear()
-
-
-def ask_in_terminal(question: str, input_fn=input) -> bool:
-    _pending.set()
-    try:
-        answer = input_fn(question)
-    except EOFError:
-        _pending.clear()
-        return False
-    except KeyboardInterrupt:
-        # Resta segnata: chi sta in ascolto sa che l'utente ha interrotto proprio la conferma
-        return False
-    _pending.clear()
-    return answer.strip().casefold() in YES
 
 
 def _days(n: int) -> str:
@@ -101,12 +73,37 @@ def _call(client: httpx.Client, method: str, url: str, **kw) -> httpx.Response:
     return resp
 
 
-def build_note_tools(client: httpx.Client, today: Callable[[], date],
-                     confirm: Callable[[str], bool]) -> list[BaseTool]:
-    # ToolNode esegue in parallelo le chiamate di uno stesso messaggio: senza lock due
-    # conferme comparirebbero insieme e la risposta dell'utente potrebbe valere per la nota sbagliata.
-    delete_lock = threading.Lock()
+def _confirmation_question(note: dict, today: date) -> str:
+    return f"Elimino la nota {note['id']} «{note['text']}» · {due_phrase(note['due_date'], today)}? [s/N] "
 
+
+def build_confirmation_check(client: httpx.Client,
+                             today: Callable[[], date]) -> Callable[[list[dict], dict[int, bool]], list[dict]]:
+    def check(calls: list[dict], decisions: dict[int, bool]) -> list[dict]:
+        """Domande di conferma per le eliminazioni non ancora decise; le note inesistenti non chiedono nulla."""
+        ids = []
+        for call in calls:
+            note_id = call["args"].get("note_id") if call["name"] == "delete_note" else None
+            # I modelli locali passano spesso l'ID come stringa ("1"): il ToolNode lo converte, quindi va chiesto
+            if isinstance(note_id, str) and note_id.isascii() and note_id.isdigit():
+                note_id = int(note_id)
+            if (isinstance(note_id, int) and not isinstance(note_id, bool)
+                    and note_id not in decisions and note_id not in ids):
+                ids.append(note_id)
+        needed = []
+        for note_id in ids:
+            try:
+                note = _call(client, "GET", f"/notes/{note_id}").json()
+            except ToolException as e:
+                # Il tool rifà la stessa chiamata e restituisce l'errore (404 compreso) al modello
+                continue
+            needed.append({"id_nota": note_id, "domanda": _confirmation_question(note, today())})
+        return needed
+
+    return check
+
+
+def build_note_tools(client: httpx.Client, today: Callable[[], date]) -> list[BaseTool]:
     @tool
     def add_note(text: str, due_date: str | None = None) -> str:
         """Salva una nota (promemoria) con testo e, se richiesta, una scadenza.
@@ -132,22 +129,25 @@ def build_note_tools(client: httpx.Client, today: Callable[[], date],
         return "\n".join([header, *rows])
 
     @tool
-    def delete_note(note_id: int) -> str:
+    def delete_note(note_id: int, config: RunnableConfig) -> str:
         """Elimina una nota dato il suo ID (visibile con list_notes). Prima chiede conferma all'utente."""
-        with delete_lock:
-            try:
-                note = _call(client, "GET", f"/notes/{note_id}").json()
-            except ToolException as e:
-                if "Nessuna nota con ID" in str(e):
-                    raise ToolException(f"Nessuna nota con ID {note_id}: nulla è stato eliminato.") from e
-                raise
-            phrase = due_phrase(note["due_date"], today())
-            if not confirm(f"Elimino la nota {note_id} «{note['text']}» · {phrase}? [s/N] "):
-                logger.info("[note] eliminazione della nota %s annullata dall'utente", note_id)
-                return f"Eliminazione della nota {note_id} annullata dall'utente."
-            logger.info("[note] eliminazione della nota %s confermata dall'utente", note_id)
-            _call(client, "DELETE", f"/notes/{note_id}")
-            return f"Nota {note_id} eliminata: «{note['text']}»."
+        try:
+            note = _call(client, "GET", f"/notes/{note_id}").json()
+        except ToolException as e:
+            if "Nessuna nota con ID" in str(e):
+                raise ToolException(f"Nessuna nota con ID {note_id}: nulla è stato eliminato.") from e
+            raise
+        # La decisione arriva dal grafo, che ha sospeso il turno per chiederla all'utente
+        decision = config.get("configurable", {}).get("note_decisions", {}).get(note_id)
+        if decision is None:
+            logger.warning("[note] eliminazione della nota %s senza conferma: annullata", note_id)
+            return f"Eliminazione della nota {note_id} annullata dall'utente."
+        if not decision:
+            logger.info("[note] eliminazione della nota %s annullata dall'utente", note_id)
+            return f"Eliminazione della nota {note_id} annullata dall'utente."
+        logger.info("[note] eliminazione della nota %s confermata dall'utente", note_id)
+        _call(client, "DELETE", f"/notes/{note_id}")
+        return f"Nota {note_id} eliminata: «{note['text']}»."
 
     return [add_note, list_notes, delete_note]
 

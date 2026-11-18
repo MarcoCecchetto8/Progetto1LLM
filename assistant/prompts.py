@@ -2,8 +2,6 @@
 
 import json
 
-from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
-
 from assistant.mcp_client import PromptInfo
 
 USO = "Uso: /prompt <nome> argomento=valore …  (elenco con /prompts)"
@@ -91,14 +89,12 @@ def parse_prompt_command(
     return name, arguments
 
 
-def prompt_messages(messages: list[tuple[str, str]]) -> list[AnyMessage]:
-    result: list[AnyMessage] = []
-    for role, text in messages:
-        if role == "user":
-            result.append(HumanMessage(text))
-        elif role == "assistant":
-            result.append(AIMessage(text))
-    return result
+ROLES = {"user": "utente", "assistant": "assistente"}
+
+
+def prompt_messages(messages: list[tuple[str, str]]) -> list[dict]:
+    """Messaggi nel formato dell'API dell'agente; i ruoli diversi da utente e assistente si scartano."""
+    return [{"ruolo": ROLES[role], "contenuto": text} for role, text in messages if role in ROLES]
 
 
 def prompt_log_line(

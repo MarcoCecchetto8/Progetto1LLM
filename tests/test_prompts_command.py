@@ -1,5 +1,4 @@
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage
 
 from assistant.mcp_client import PromptArgument, PromptInfo
 from assistant.prompts import (
@@ -105,8 +104,8 @@ def test_elenco_vuoto():
 
 def test_messaggi():
     assert prompt_messages([("user", "a"), ("assistant", "b"), ("system", "c")]) == [
-        HumanMessage("a"),
-        AIMessage("b"),
+        {"ruolo": "utente", "contenuto": "a"},
+        {"ruolo": "assistente", "contenuto": "b"},
     ]
 
 

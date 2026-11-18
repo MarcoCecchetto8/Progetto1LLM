@@ -5,7 +5,6 @@ import os
 import signal
 import sys
 import warnings
-from pathlib import Path
 
 from assistant import GOODBYE
 
@@ -47,22 +46,11 @@ def _start() -> int:
     # Librerie caricate qui, dentro main(): un Ctrl+C durante i secondi di caricamento dà il saluto
     from dotenv import load_dotenv
 
+    from assistant.agent_client import (START_TIMEOUT, AgentClient, AgentRequestError, AgentUnavailable, LocalAgentService,
+                                        wait_until_responds)
     from assistant.cli import run
-    from assistant.config import ConfigError, load_scope, load_settings
-    from assistant.graph import build_graph
-    from assistant.reviewer import build_reviewer
-    from assistant.router import build_router
-    from assistant.summarizer import build_summarizer
-    from assistant.llm import LMStudioUnavailable, ModelNotFound, build_chat_model, check_model
-    from datetime import datetime
-
-    import httpx
-
-    from assistant.preferences import load_preferences
-    from assistant.mcp_client import (MCPClient, MCPConnectionError, MCPPromptError, server_command, server_env)
-    from assistant.notes import (LocalNotesService, NotesConnectionError, TIMEOUT, ask_in_terminal,
-                                 build_note_tools, check_note_claims, wait_until_ready)
-    from lab_server.timezones import get_timezone
+    from assistant.config import ConfigError, load_settings
+    from assistant.mcp_client import MCPConnectionError, MCPPromptError
 
     # Con stdout/stderr rediretti Windows può usare cp1252: forza UTF-8 per non rompere "→" e "…"
     for stream in (sys.stdout, sys.stderr):
@@ -72,72 +60,50 @@ def _start() -> int:
     quiet_library_warnings()
     try:
         settings = load_settings(os.environ)
-        root = Path(__file__).resolve().parent.parent
-        scope = load_scope(settings.scope_file, root)
-        configure_logging(settings.log_level)
-        logging.getLogger("assistant").info(
-            "[router] ambito: %s (%d righe)", settings.scope_file, len(scope.splitlines()))
-        check_model(settings)
-    except (ConfigError, LMStudioUnavailable, ModelNotFound) as error:
+    except ConfigError as error:
         print(error, file=sys.stderr)
         return 1
-    client = MCPClient(server_command(), server_env(settings))
+    configure_logging(settings.log_level)
+    log = logging.getLogger("assistant")
+    service = None if settings.agent_service_url else LocalAgentService(quiet=settings.log_level != "DEBUG")
+    client = None
+    # Il finally copre anche un Ctrl+C durante l'attesa di start(): il processo figlio non resta vivo
     try:
         try:
-            tools = client.start()
-            if not tools:
-                raise MCPConnectionError("Il server degli strumenti non espone nessuno strumento.")
-            # Il catalogo arriva dal server (discovery), non è scritto nell'assistente
-            logging.getLogger("assistant").info("[mcp] catalogo: %s", ", ".join(tool.name for tool in tools))
-            # Letta una volta, prima della prima domanda; un collegamento caduto è l'errore di sempre
-            preferences = load_preferences(client.read_resource, settings.default_timezone)
+            url = settings.agent_service_url or service.start()
+            # Con un agente remoto (Docker) il container può essere avviato ma non ancora in ascolto
+            if service is None and not wait_until_responds(url):
+                raise AgentUnavailable(f"L'agente non risponde all'indirizzo {url} (atteso {START_TIMEOUT:g} secondi).")
+            # Con l'agente avviato in silenzio gli avvisi di avvio (preferenze, modello) non arriverebbero al terminale
+            for line in service.startup_warnings() if service is not None else []:
+                print(line, file=sys.stderr)
+            client = AgentClient(url)
+            status = client.status()
+            for part in ("modello", "strumenti"):
+                if not status[part]["raggiungibile"]:
+                    print(status[part]["messaggio"], file=sys.stderr)
+                    return 1
             try:
-                prompt_list = client.list_prompts()
-            except MCPPromptError as error:
-                logging.getLogger("assistant").warning("[mcp] prompt non disponibili (%s): nessun prompt", error)
+                prompt_list = client.prompts()
+            except (MCPPromptError, MCPConnectionError, AgentRequestError) as error:
+                log.warning("[mcp] prompt non disponibili (%s): nessun prompt", error)
                 prompt_list = []
-            logging.getLogger("assistant").info(
-                "[mcp] prompt: %s", ", ".join(p.name for p in prompt_list) or "nessuno")
-        except MCPConnectionError as error:
+        except (AgentUnavailable, AgentRequestError) as error:
             print(error, file=sys.stderr)
             return 1
-        service = None if settings.notes_service_url else LocalNotesService(quiet=settings.log_level != "DEBUG")
-        http = None
-        try:
-            try:
-                url = settings.notes_service_url or service.start()
-                if service is None:
-                    wait_until_ready(url)
-            except NotesConnectionError as error:
-                print(error, file=sys.stderr)
-                return 1
-            http = httpx.Client(base_url=url, timeout=TIMEOUT)
-            logging.getLogger("assistant").info("[note] servizio: %s", url)
-            zone = get_timezone(preferences.fuso_orario)
-            tools = tools + build_note_tools(http, lambda: datetime.now(zone).date(), ask_in_terminal)
-            model = build_chat_model(settings)
-            graph = build_graph(model, tools, settings.max_steps, answer_check=check_note_claims,
-                                router=build_router(model, scope), reviewer=build_reviewer(model),
-                                max_reviews=settings.max_reviews, summarizer=build_summarizer(model),
-                                summary_threshold=settings.summary_threshold,
-                                summary_keep_turns=settings.summary_keep_turns)
-            logging.getLogger("assistant").info("[revisore] limite: %d revisioni", settings.max_reviews)
-            logging.getLogger("assistant").info(
-                "[riassunto] soglia: %d token stimati, turni conservati: %d",
-                settings.summary_threshold, settings.summary_keep_turns)
-            color = sys.stdout.isatty()
-            if color and os.name == "nt":
-                # Abilita l'elaborazione VT nella console classica; Windows Terminal e VS Code la hanno già
-                os.system("")
-            return run(graph, settings, color=color, preferences=preferences,
-                       prompt_list=prompt_list, get_prompt=client.get_prompt)
-        finally:
-            if http is not None:
-                close_quietly(http)
-            if service is not None:
-                close_quietly(service)
+        log.info("[agente] servizio: %s", url)
+        log.info("[mcp] prompt: %s", ", ".join(p.name for p in prompt_list) or "nessuno")
+        color = sys.stdout.isatty()
+        if color and os.name == "nt":
+            # Abilita l'elaborazione VT nella console classica; Windows Terminal e VS Code la hanno già
+            os.system("")
+        return run(client, settings, color=color, model=status["modello"].get("modello", settings.model),
+                   prompt_list=prompt_list)
     finally:
-        close_quietly(client)
+        if client is not None:
+            close_quietly(client)
+        if service is not None:
+            close_quietly(service)
 
 
 if __name__ == "__main__":

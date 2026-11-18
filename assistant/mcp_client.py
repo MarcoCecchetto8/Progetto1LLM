@@ -162,6 +162,10 @@ class MCPClient:
             detail = str(error) or type(error).__name__
             raise MCPConnectionError(f"Il server degli strumenti non risponde: {detail}") from error
 
+    def ping(self) -> None:
+        """Richiesta leggera sulla sessione aperta: MCPConnectionError se il server non risponde."""
+        self._await_session(lambda session: session.send_ping(), MCPConnectionError)
+
     def read_resource(self, uri: str) -> str:
         """Legge una resource del server sulla stessa sessione dei tool e ne restituisce il testo."""
         result = self._await_session(lambda session: session.read_resource(AnyUrl(uri)), MCPResourceError)

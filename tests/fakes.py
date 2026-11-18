@@ -61,3 +61,51 @@ class FakeStreamGraph:
     def stream(self, state, config=None, stream_mode=None):
         yield from self.events
         yield ("values", self.final)
+
+
+def done(history: list[dict] | None = None, summary: str = "") -> tuple[str, dict]:
+    """Evento `fine` di un turno completato."""
+    return "fine", {"esito": "completato", "risposta": "", "cronologia": history or [], "riassunto": summary}
+
+
+def confirmation(*questions: tuple[int, str], suspended: dict | None = None) -> tuple[str, dict]:
+    """Evento `fine` di un turno sospeso in attesa di conferma."""
+    return "fine", {"esito": "conferma_richiesta", "sospeso": suspended or {"stato": "x"},
+                    "conferme": [{"id_nota": note_id, "domanda": question} for note_id, question in questions]}
+
+
+class FakeAgent:
+    """Agente finto per la CLI: ogni chiamata a stream_turn consuma una sequenza di eventi
+    (o un'eccezione da sollevare). Senza sequenze, il turno si chiude con «ok» in cronologia."""
+
+    def __init__(self, *turns, prompt=None):
+        self.turns = list(turns)
+        self.payloads: list[dict] = []
+        self.closed = 0
+        self._prompt = prompt
+        self.prompt_calls: list[tuple[str, dict]] = []
+
+    def stream_turn(self, payload):
+        self.payloads.append(payload)
+        turn = self.turns.pop(0) if self.turns else None
+        try:
+            if turn is None:
+                reply = {"ruolo": "assistente", "contenuto": "ok"}
+                yield "risposta", {"testo": "ok"}
+                yield done(payload.get("cronologia", []) + payload.get("messaggi", []) + [reply])
+                return
+            if isinstance(turn, BaseException):
+                raise turn
+            for item in turn:
+                if isinstance(item, BaseException):
+                    raise item
+                yield item
+        finally:
+            # Registra la chiusura del generatore (Ctrl+C durante lo streaming)
+            self.closed += 1
+
+    def get_prompt(self, name, arguments):
+        self.prompt_calls.append((name, arguments))
+        if callable(self._prompt):
+            return self._prompt(name, arguments)
+        return self._prompt if self._prompt is not None else [("user", "Spiega MCP in breve.")]

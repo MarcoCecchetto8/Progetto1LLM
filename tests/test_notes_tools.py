@@ -1,8 +1,6 @@
 """Test dei tool delle note: servizio FastAPI in memoria tramite TestClient, nessun modello."""
 
 import logging
-import time
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
 import httpx
@@ -13,9 +11,8 @@ from langchain_core.tools import ToolException
 
 from assistant.graph import build_graph
 from assistant.reviewer import feedback_message
-from assistant.notes import (DELETE_WARNING, SAVE_WARNING, NotesConnectionError, ask_in_terminal,
-                             build_note_tools, check_note_claims, confirmation_pending, due_phrase,
-                             reset_confirmation)
+from assistant.notes import (DELETE_WARNING, SAVE_WARNING, NotesConnectionError,
+                             build_confirmation_check, build_note_tools, check_note_claims, due_phrase)
 from notes_service.app import create_app
 from tests.fakes import fake, tool_call
 
@@ -27,9 +24,13 @@ def client(tmp_path):
     return TestClient(create_app(tmp_path / "n.db"))
 
 
-def make_tools(client, confirm=lambda q: True):
-    tools = build_note_tools(client, lambda: TODAY, confirm)
+def make_tools(client):
+    tools = build_note_tools(client, lambda: TODAY)
     return {t.name: t for t in tools}
+
+
+def decided(decisions):
+    return {"configurable": {"note_decisions": decisions}}
 
 
 @pytest.mark.parametrize("due, expected", [
@@ -78,98 +79,84 @@ def test_list_notes_single(client):
     assert tools["list_notes"].invoke({}).splitlines()[0] == "1 nota:"
 
 
+def test_delete_note_has_no_config_argument(client):
+    assert "config" not in make_tools(client)["delete_note"].args
+
+
 def test_delete_note_confirmed(client):
-    questions = []
-    tools = make_tools(client, lambda q: questions.append(q) or True)
+    tools = make_tools(client)
     tools["add_note"].invoke({"text": "consegnare il report", "due_date": "2026-11-13"})
-    out = tools["delete_note"].invoke({"note_id": 1})
+    out = tools["delete_note"].invoke({"note_id": 1}, config=decided({1: True}))
     assert out == "Nota 1 eliminata: «consegnare il report»."
-    assert questions == ["Elimino la nota 1 «consegnare il report» · scadenza 2026-11-13 (fra 4 giorni)? [s/N] "]
     assert client.get("/notes/1").status_code == 404
 
 
 def test_delete_note_declined(client, caplog):
-    tools = make_tools(client, lambda q: False)
+    tools = make_tools(client)
     tools["add_note"].invoke({"text": "tenere"})
     with caplog.at_level(logging.INFO, logger="assistant.notes"):
-        out = tools["delete_note"].invoke({"note_id": 1})
+        out = tools["delete_note"].invoke({"note_id": 1}, config=decided({1: False}))
     assert out == "Eliminazione della nota 1 annullata dall'utente."
     assert client.get("/notes/1").status_code == 200
     assert "annullata dall'utente" in caplog.text
 
 
-def test_delete_note_confirmations_are_serialized(client):
-    windows = []
+def test_delete_note_without_decision_is_cancelled(client, caplog):
+    tools = make_tools(client)
+    tools["add_note"].invoke({"text": "tenere"})
+    with caplog.at_level(logging.WARNING, logger="assistant.notes"):
+        out = tools["delete_note"].invoke({"note_id": 1})
+    assert out == "Eliminazione della nota 1 annullata dall'utente."
+    assert client.get("/notes/1").status_code == 200
+    assert "eliminazione della nota 1 senza conferma: annullata" in caplog.text
 
-    def slow_confirm(question):
-        start = time.monotonic()
-        time.sleep(0.2)
-        windows.append((start, time.monotonic()))
-        return True
 
-    tools = make_tools(client, slow_confirm)
+def test_delete_note_missing(client):
+    with pytest.raises(ToolException) as exc:
+        make_tools(client)["delete_note"].invoke({"note_id": 99}, config=decided({99: True}))
+    assert str(exc.value) == "Nessuna nota con ID 99: nulla è stato eliminato."
+
+
+def delete_call(note_id, id="d"):
+    return {"name": "delete_note", "args": {"note_id": note_id}, "id": id}
+
+
+def test_confirmation_check_question(client):
+    make_tools(client)["add_note"].invoke({"text": "report"})
+    check = build_confirmation_check(client, lambda: TODAY)
+    assert check([delete_call(1)], {}) == [
+        {"id_nota": 1, "domanda": "Elimino la nota 1 «report» · senza scadenza? [s/N] "}]
+
+
+def test_confirmation_check_skips_missing_decided_and_repeated(client):
+    tools = make_tools(client)
     tools["add_note"].invoke({"text": "uno"})
     tools["add_note"].invoke({"text": "due"})
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        results = list(pool.map(lambda i: tools["delete_note"].invoke({"note_id": i}), [1, 2]))
-    assert len(results) == 2 and len(windows) == 2
-    first, second = sorted(windows)
-    assert first[1] <= second[0]
-    assert client.get("/notes/1").status_code == 404
-    assert client.get("/notes/2").status_code == 404
+    check = build_confirmation_check(client, lambda: TODAY)
+    calls = [delete_call(99, "a"), delete_call(1, "b"), delete_call(2, "c"), delete_call(2, "d"),
+             {"name": "add_note", "args": {"text": "x"}, "id": "e"}]
+    assert [c["id_nota"] for c in check(calls, {1: False})] == [2]
 
 
-def test_delete_note_missing_does_not_ask(client):
-    calls = []
-    tools = make_tools(client, lambda q: calls.append(q) or True)
-    with pytest.raises(ToolException) as exc:
-        tools["delete_note"].invoke({"note_id": 99})
-    assert str(exc.value) == "Nessuna nota con ID 99: nulla è stato eliminato."
-    assert calls == []
+def test_confirmation_check_digit_string_id(client):
+    # I modelli locali passano spesso l'ID come stringa: senza conferma il ToolNode lo convertirebbe e annullerebbe
+    make_tools(client)["add_note"].invoke({"text": "report"})
+    check = build_confirmation_check(client, lambda: TODAY)
+    assert [c["id_nota"] for c in check([delete_call("1", "a"), delete_call(1, "b")], {})] == [1]
+    assert check([delete_call("1")], {1: True}) == []
+    assert check([delete_call(True), delete_call("x"), delete_call(" 1"), delete_call("-1")], {}) == []
 
 
-@pytest.mark.parametrize("answer", ["s", "Sì", " SI "])
-def test_ask_in_terminal_yes(answer):
-    assert ask_in_terminal("?", lambda q: answer) is True
+def test_confirmation_check_tool_error_is_left_to_the_tool():
+    # Un errore del servizio diverso dal 404 non deve rompere il turno: lo strumento lo riporterà al modello
+    broken = httpx.Client(base_url="http://x", transport=httpx.MockTransport(lambda r: httpx.Response(500)))
+    assert build_confirmation_check(broken, lambda: TODAY)([delete_call(1)], {}) == []
 
 
-@pytest.mark.parametrize("answer", ["", "n", "forse"])
-def test_ask_in_terminal_no(answer):
-    assert ask_in_terminal("?", lambda q: answer) is False
-
-
-def test_ask_in_terminal_eof():
-    def eof(q):
-        raise EOFError
-    assert ask_in_terminal("?", eof) is False
-
-
-@pytest.fixture(autouse=False)
-def clean_confirmation():
-    reset_confirmation()
-    yield
-    reset_confirmation()
-
-
-def test_confirmation_cleared_after_normal_answer(clean_confirmation):
-    assert ask_in_terminal("?", lambda q: "s") is True
-    assert not confirmation_pending()
-
-
-def test_confirmation_stays_pending_on_interrupt(clean_confirmation):
-    def broken(q):
-        raise KeyboardInterrupt
-    assert ask_in_terminal("?", broken) is False
-    assert confirmation_pending()
-    reset_confirmation()
-    assert not confirmation_pending()
-
-
-def test_confirmation_cleared_after_eof(clean_confirmation):
-    def eof(q):
-        raise EOFError
-    assert ask_in_terminal("?", eof) is False
-    assert not confirmation_pending()
+def test_confirmation_check_connection_error():
+    dead = httpx.Client(base_url="http://127.0.0.1:9", timeout=0.5)
+    with pytest.raises(NotesConnectionError):
+        build_confirmation_check(dead, lambda: TODAY)([delete_call(1)], {})
 
 
 def test_connection_error():
@@ -204,14 +191,58 @@ def test_graph_add_note(client):
     assert "Nota 1 salvata" in msgs[0].content
 
 
-def test_graph_delete_declined(client):
-    t = make_tools(client, lambda q: False)
-    t["add_note"].invoke({"text": "report"})
-    model = fake(tool_call({"note_id": 1}, "d1", name="delete_note"), AIMessage("Ok"))
-    out = build_graph(model, list(t.values()), 5).invoke(_start("elimina"))
-    msgs = [m for m in out["messages"] if isinstance(m, ToolMessage)]
-    assert msgs[0].status == "success" and "annullata" in msgs[0].content
+def confirming_graph(client, *answers):
+    tools = list(make_tools(client).values())
+    return build_graph(fake(*answers), tools, 5,
+                       confirmation_check=build_confirmation_check(client, lambda: TODAY))
+
+
+def resume(out, decisions):
+    return {"messages": out["messages"], "steps": out["steps"], "decisions": decisions}
+
+
+def tool_messages(out):
+    return [m for m in out["messages"] if isinstance(m, ToolMessage)]
+
+
+def test_graph_delete_suspends_and_resumes(client):
+    make_tools(client)["add_note"].invoke({"text": "report"})
+    both = AIMessage("", tool_calls=[{"name": "add_note", "args": {"text": "nuova"}, "id": "a1"},
+                                     {"name": "delete_note", "args": {"note_id": 1}, "id": "d1"}])
+    graph = confirming_graph(client, both, AIMessage("Fatto"))
+    out = graph.invoke(_start("aggiungi nuova ed elimina report"))
+    assert out["confirmations"] == [{"id_nota": 1, "domanda": "Elimino la nota 1 «report» · senza scadenza? [s/N] "}]
+    assert tool_messages(out) == []
+    assert client.get("/notes").json()["total"] == 1
+
+    out = graph.invoke(resume(out, {1: True}))
+    assert out["confirmations"] == []
+    assert client.get("/notes/1").status_code == 404
+    assert [n["text"] for n in client.get("/notes").json()["notes"]] == ["nuova"]
+    assert [m.tool_call_id for m in tool_messages(out)] == ["a1", "d1"]
+    assert out["messages"][-1].content == "Fatto"
+
+
+def test_graph_decided_note_does_not_suspend_again(client):
+    make_tools(client)["add_note"].invoke({"text": "report"})
+    graph = confirming_graph(client, tool_call({"note_id": 1}, "d1", name="delete_note"),
+                             tool_call({"note_id": 1}, "d2", name="delete_note"), AIMessage("Ok"))
+    out = graph.invoke(_start("elimina"))
+    assert len(out["confirmations"]) == 1
+    out = graph.invoke(resume(out, {1: False}))
+    assert out["confirmations"] == []
+    assert [m.content for m in tool_messages(out)] == ["Eliminazione della nota 1 annullata dall'utente."] * 2
     assert client.get("/notes/1").status_code == 200
+
+
+def test_graph_two_deletes_two_confirmations(client):
+    tools = make_tools(client)
+    tools["add_note"].invoke({"text": "uno"})
+    tools["add_note"].invoke({"text": "due"})
+    two = AIMessage("", tool_calls=[delete_call(1, "d1"), delete_call(2, "d2")])
+    out = confirming_graph(client, two).invoke(_start("elimina tutto"))
+    assert [c["id_nota"] for c in out["confirmations"]] == [1, 2]
+    assert tool_messages(out) == []
 
 
 def turn(answer, *tools, history=()):
