@@ -44,6 +44,23 @@ _DELETE_CLAIM = re.compile(
     r"|" + _FRASE + _NOTA_N + r"(eliminat|cancellat|rimoss)[aoie]\b"
 )
 
+# Richiesta esplicita dell'utente, cercata sulla domanda normalizzata. Il salvataggio conta solo a inizio
+# domanda (con "per favore/ok/ehi" facoltativo): "Come si salva un file" o "Ricordami come mi chiamo" non
+# sono richieste di note. L'eliminazione vale anche dopo e/ed/poi/virgola ("salva ... ed elimina la nota 3").
+_ARTICOLO = r"(?:(?:una|la|le|questa|un|il|questo|i)\s+)?"
+_SAVE_REQUEST = re.compile(
+    r"^\s*(?:(?:per favore|ok|ehi)\s*,?\s*)?(?:"
+    r"(?:salva|salvami|annota|annotami|segna|segnati|segnami|scrivi|scrivimi|aggiungi|crea)\s+"
+    r"(?:(?:una|la|le|questa|un|il|questo)\s+)?(?:nota|note|promemoria)\b"
+    r"|(?:annota|annotati|segna|segnati|scrivi|scriviti)\s+che\b"
+    r"|ricordami\s+di\b"
+    r"|(?:nota|promemoria)\s*:)"
+)
+_DELETE_REQUEST = re.compile(
+    r"(?:^\s*(?:(?:per favore|ok|ehi)\s*,?\s*)?|\b(?:e|ed|poi)\s+|,\s*)"
+    r"(?:elimina|cancella|rimuovi)\s+" + _ARTICOLO + r"(?:nota|note|promemoria)\b"
+)
+
 
 class NotesConnectionError(Exception):
     """Servizio non raggiungibile. Non è una ToolException: deve uscire dal grafo."""
@@ -164,7 +181,8 @@ def _normalize(text: str) -> str:
 
 
 def check_note_claims(messages: list[AnyMessage]) -> list[str]:
-    """Avvisi per le risposte che dichiarano un salvataggio o un'eliminazione mai confermati da uno strumento."""
+    """Avvisi per le risposte che dichiarano, o che l'utente aveva chiesto esplicitamente, un salvataggio
+    o un'eliminazione mai confermati da uno strumento."""
     answer = messages[-1].content
     if not isinstance(answer, str):
         return []
@@ -172,10 +190,18 @@ def check_note_claims(messages: list[AnyMessage]) -> list[str]:
     confirmed = {m.name for m in messages[last_human + 1:]
                  if isinstance(m, ToolMessage) and m.status != "error"}
     text = _normalize(answer)
+    question = messages[last_human].content if last_human >= 0 else None
+    # Una domanda di chiarimento («Che testo vuoi salvare?») non è un falso successo.
+    asks_back = text.rstrip().endswith("?")
+    save_asked = delete_asked = False
+    if isinstance(question, str) and not asks_back:
+        q = _normalize(question)
+        save_asked = bool(_SAVE_REQUEST.search(q))
+        delete_asked = bool(_DELETE_REQUEST.search(q))
     warnings = []
-    if _SAVE_CLAIM.search(text) and "add_note" not in confirmed:
+    if (_SAVE_CLAIM.search(text) or save_asked) and "add_note" not in confirmed:
         warnings.append(SAVE_WARNING)
-    if _DELETE_CLAIM.search(text) and "delete_note" not in confirmed:
+    if (_DELETE_CLAIM.search(text) or delete_asked) and "delete_note" not in confirmed:
         warnings.append(DELETE_WARNING)
     return warnings
 

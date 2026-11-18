@@ -465,6 +465,23 @@ Esiti del 2026-11-15 con `google/gemma-4-e2b`, domande inviate da pipe (la confe
 
 **Falsi successi.** Senza controllo il modello dichiarava note salvate che non esistevano (1 volta su 5 con «Ricordami di comprare il latte», 3 su 5 con «venerdì»). Con il controllo, nelle stesse misure nessun falso successo è arrivato all'utente senza avviso. Il controllo non rende il modello affidabile: lo rende onesto verso l'utente. Può comparire un avviso ridondante quando il modello stesso dice che nulla è stato eliminato o salvato.
 
+**Regole del controllo (note).** L'avviso ⚠ compare in due casi, sempre solo se lo strumento corrispondente (`add_note`, `delete_note`) non ha dato un risultato senza errore dopo l'ultima domanda (una eliminazione annullata vale come conferma):
+
+1. *Dichiarazione*: la risposta dice di aver salvato o eliminato («Ho salvato…», «La nota è stata salvata», anche la frase breve «Nota salvata.» a inizio frase; non gli aggettivi di `list_notes`, come «Nessuna nota salvata.»).
+2. *Richiesta esplicita*: la domanda dell'utente (l'ultima vera, non le indicazioni del revisore) chiede di salvare («Salva/Annota/Aggiungi/Crea una nota…», «Annota che…», «Segnati che…», «Ricordami di…», «Nota: …») solo a inizio domanda, oppure di eliminare («Elimina/Cancella/Rimuovi la nota…») a inizio domanda o dopo «e», «ed», «poi», virgola.
+
+Eccezione: se la risposta termina con «?» (domanda di chiarimento, per esempio «Che testo vuoi salvare?») l'avviso legato alla richiesta non compare; la dichiarazione falsa avvisa comunque. Limiti: le forme di richiesta non previste passano senza avviso (nel dubbio una forma resta fuori dall'elenco: se l'utente parla d'altro l'avviso non deve mai comparire), e «Ricordami di…» seguito da un chiarimento non avvisa.
+
+**Misura del 2026-11-18** con `liquid/lfm2-24b-a2b` su 21 domande vere: richieste riconosciute 11/11, avvisi sulle domande d'altro 0/10. Risposte senza strumento: «Nota: comprare le uova» → dichiarazione falsa, con avviso; «Ricordami di innaffiare…» e «Segnati che venerdì…» → chiarimento, senza avviso.
+
+Prova reale degli avvisi (da provare):
+
+| Prova | Atteso | Esito |
+|---|---|---|
+| Una richiesta di salvataggio («Salva una nota: …») | nota salvata, nessun avviso | da provare |
+| «Nota salvata.» senza strumento, se ricapita | avviso ⚠ | da provare |
+| Una domanda d'altro con «ricordami» («Ricordami come mi chiamo») | nessun avviso | da provare |
+
 ### Prova reale dello streaming
 
 Esiti del 2026-11-16 con `google/gemma-4-e2b`. Le prove con input da pipe (senza terminale, quindi senza colori) le ha eseguite Claude; quelle in un terminale vero (colori, Ctrl+C) le ha eseguite l'utente, tutte con esito positivo.
@@ -579,7 +596,7 @@ Esiti del 2026-11-18 con `google/gemma-4-e2b`. Le prove locali e Docker sono sta
 
 Limiti osservati:
 
-- Il modello piccolo a volte dichiara «Nota salvata.» senza chiamare `add_note`. Il controllo dei falsi successi riconosce le forme con l'ausiliare («ho salvato», «è stata salvata»), non la frase secca «Nota salvata.», quindi in quel caso l'avviso ⚠ non compare. Il limite c'era già prima dell'agente come servizio.
+- Il modello piccolo a volte dichiara «Nota salvata.» senza chiamare `add_note`. Il controllo dei falsi successi ora riconosce anche la frase secca «Nota salvata.» e la richiesta esplicita non eseguita (vedi «Regole del controllo»); il limite c'era prima dell'agente come servizio.
 - Una domanda mista («Spiegami la ricorsione… voglio una pompa») passa il router, perché una parte è in ambito: l'agente risponde alla parte in ambito e rifiuta l'altra. Per rifiutarle per intero basterebbe un esempio in `config/ambito.txt`.
 
 ## Diagnosi

@@ -253,6 +253,81 @@ def tool_msg(content, name, status="success"):
     return ToolMessage(content, tool_call_id="t", name=name, status=status)
 
 
+def asked(question, answer, *tools, history=()):
+    return [SystemMessage("s"), *history, HumanMessage(question), *tools, AIMessage(answer)]
+
+
+SAVE_REQUESTS = ["Salva una nota: comprare il pane", "Annota che domani ho il dentista",
+                 "Segnati che venerdì devo chiamare Luca", "Aggiungi una nota: pagare la bolletta",
+                 "Ricordami di innaffiare le piante", "Crea un promemoria per la riunione di lunedì",
+                 "Nota: comprare le uova", "Scrivi una nota: riportare il libro",
+                 "Per favore, salvami un promemoria: x"]
+DELETE_REQUESTS = ["Elimina la nota 1", "Cancella la nota 2", "Rimuovi il promemoria 3", "elimina le note 4 e 5"]
+OTHER_TOPICS = ["Ricordami come mi chiamo", "Ricordami cosa abbiamo detto", "Cos'è una nota a piè di pagina?",
+                "Come si cancella un file in Python?", "Come elimino un elemento da una lista in Python?",
+                "Come si salva un file in Python?", "Che differenza c'è tra annotazioni e commenti in Python?",
+                "Salva il mondo dalla noia: spiegami cos'è il machine learning",
+                "Qual è la nota più alta di un pianoforte?", "Che note ho?", "Mi ricordi di cosa parla la nota 3?"]
+
+
+@pytest.mark.parametrize("question", SAVE_REQUESTS)
+def test_save_request_without_tool_warns(question):
+    assert check_note_claims(asked(question, "Ti ricordo di farlo.")) == [SAVE_WARNING]
+
+
+@pytest.mark.parametrize("question", SAVE_REQUESTS)
+def test_save_request_with_tool_no_warning(question):
+    assert check_note_claims(asked(question, "Fatto.", tool_msg("Nota 1 salvata: «x»", "add_note"))) == []
+
+
+@pytest.mark.parametrize("question", DELETE_REQUESTS)
+def test_delete_request_without_tool_warns(question):
+    assert check_note_claims(asked(question, "Dovrai prima confermare l'eliminazione.")) == [DELETE_WARNING]
+
+
+@pytest.mark.parametrize("question", OTHER_TOPICS)
+def test_other_topics_never_warn(question):
+    assert check_note_claims(asked(question, "Ecco la risposta.")) == []
+
+
+def test_request_and_claim_give_one_warning():
+    assert check_note_claims(asked("Salva una nota: x", "Nota salvata.")) == [SAVE_WARNING]
+
+
+def test_save_and_delete_request_both_warn():
+    assert check_note_claims(asked("Salva una nota: x ed elimina la nota 3", "Ok.")) == [SAVE_WARNING, DELETE_WARNING]
+
+
+def test_clarifying_question_no_request_warning():
+    assert check_note_claims(asked("Salva una nota", "Che testo vuoi salvare?  ")) == []
+
+
+def test_false_claim_with_question_still_warns():
+    assert check_note_claims(asked("Salva una nota: x", "Ho salvato la tua nota. Vuoi una scadenza?")) == [SAVE_WARNING]
+
+
+def test_failed_tool_warns():
+    msgs = asked("Elimina la nota 99", "Non esiste.", tool_msg("Nessuna nota con ID 99…", "delete_note", "error"))
+    assert check_note_claims(msgs) == [DELETE_WARNING]
+
+
+def test_review_feedback_keeps_request():
+    msgs = [SystemMessage("s"), HumanMessage("Salva una nota: x"), AIMessage("bozza"),
+            feedback_message("manca lo strumento"), AIMessage("Ok.")]
+    assert check_note_claims(msgs) == [SAVE_WARNING]
+
+
+def test_previous_turn_request_not_counted():
+    history = [HumanMessage("Salva una nota: x"), AIMessage("…")]
+    assert check_note_claims(asked("Che ore sono?", "Sono le 10.", history=history)) == []
+
+
+def test_non_text_question_ignored():
+    msgs = [SystemMessage("s"), HumanMessage(content=[{"type": "text", "text": "Salva una nota: x"}]),
+            AIMessage("Ok.")]
+    assert check_note_claims(msgs) == []
+
+
 @pytest.mark.parametrize("answer", [
     'Ho salvato la nota: "comprare il latte".',
     'Ho salvato un promemoria per te: "consegnare il report" venerdì.',
