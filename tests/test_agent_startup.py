@@ -1,0 +1,120 @@
+import os
+import socket
+import subprocess
+import sys
+from pathlib import Path
+
+import httpx
+import pytest
+
+from agent_service import startup
+from agent_service.startup import build_agent, model_status
+from assistant.config import ConfigError, load_settings
+from assistant.llm import LMStudioUnavailable
+from assistant.mcp_client import MCPConnectionError
+from assistant.notes import LocalNotesService
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def make_settings(**extra):
+    env = {"LMSTUDIO_BASE_URL": f"http://127.0.0.1:{free_port()}/v1", "LMSTUDIO_MODEL": "modello-prova",
+           "LMSTUDIO_TIMEOUT": "2", **extra}
+    return load_settings(env)
+
+
+def test_model_status_ok():
+    settings = make_settings()
+    status = model_status(settings, list_models=lambda url, timeout: ["altro", "modello-prova"])
+    assert status == {"raggiungibile": True, "messaggio": "Modello modello-prova disponibile.",
+                      "modello": "modello-prova"}
+
+
+def test_model_status_lm_studio_down():
+    settings = make_settings()
+
+    def down(url, timeout):
+        raise LMStudioUnavailable("spento")
+
+    status = model_status(settings, list_models=down)
+    assert status == {"raggiungibile": False,
+                      "messaggio": f"LM Studio non è raggiungibile all'indirizzo {settings.base_url}. "
+                                   "Controlla che sia attivo e riprova.",
+                      "modello": "modello-prova"}
+
+
+def test_model_status_model_missing():
+    settings = make_settings()
+    status = model_status(settings, list_models=lambda url, timeout: ["altro"])
+    assert status == {"raggiungibile": False,
+                      "messaggio": "Modello 'modello-prova' non trovato. Modelli disponibili: altro.",
+                      "modello": "modello-prova"}
+
+
+@pytest.fixture
+def notes_url(tmp_path):
+    service = LocalNotesService(port=free_port(), db=tmp_path / "n.db")
+    url = service.start()
+    yield url
+    service.close()
+
+
+def test_build_agent_with_model_down(notes_url, caplog):
+    settings = make_settings(NOTES_SERVICE_URL=notes_url)
+    agent, close = build_agent(settings, ROOT)
+    try:
+        assert "[modello] LM Studio non è raggiungibile" in caplog.text
+        assert agent.settings is settings
+        assert agent.system
+        status = agent.status()
+        assert status["modello"]["raggiungibile"] is False
+        assert status["strumenti"]["raggiungibile"] is True
+        assert status["strumenti"]["messaggio"].startswith("Server degli strumenti attivo (")
+        assert status["note"] == {"raggiungibile": True, "messaggio": f"Servizio delle note attivo ({notes_url}).",
+                                  "indirizzo": notes_url}
+        assert {p.name for p in agent.list_prompts()} == {"riassumi_conversazione", "spiega"}
+    finally:
+        close()
+    status = agent.status()
+    assert status["strumenti"]["raggiungibile"] is False
+    assert status["strumenti"]["messaggio"] == ("Il server degli strumenti non risponde: riavvia l'agente "
+                                                "(in locale basta riavviare l'assistente).")
+
+
+def test_closing_frees_local_notes_service(tmp_path, monkeypatch):
+    port = free_port()
+    monkeypatch.setattr(startup, "LocalNotesService",
+                        lambda quiet: LocalNotesService(port=port, quiet=quiet, db=tmp_path / "n.db"))
+    agent, close = build_agent(make_settings(), ROOT)
+    url = f"http://127.0.0.1:{port}"
+    assert agent.status()["note"]["raggiungibile"] is True
+    close()
+    with pytest.raises(httpx.TransportError):
+        httpx.get(f"{url}/notes", timeout=1.0)
+    assert agent.status()["note"]["raggiungibile"] is False
+
+
+def test_missing_scope_file_raises_config_error(notes_url):
+    with pytest.raises(ConfigError, match="SCOPE_FILE"):
+        build_agent(make_settings(SCOPE_FILE="config/inesistente.txt", NOTES_SERVICE_URL=notes_url), ROOT)
+
+
+def test_missing_mcp_command_raises_connection_error(notes_url, monkeypatch):
+    monkeypatch.setattr(startup, "server_command", lambda: [sys.executable, "-m", "modulo_inesistente"])
+    with pytest.raises(MCPConnectionError):
+        build_agent(make_settings(NOTES_SERVICE_URL=notes_url), ROOT)
+
+
+def test_main_exits_with_1_on_startup_error():
+    env = {**os.environ, "LMSTUDIO_BASE_URL": f"http://127.0.0.1:{free_port()}/v1", "LMSTUDIO_MODEL": "m",
+           "SCOPE_FILE": "config/inesistente.txt"}
+    result = subprocess.run([sys.executable, "-m", "agent_service", "--port", str(free_port())], cwd=ROOT, env=env,
+                            capture_output=True, timeout=60)
+    assert result.returncode == 1
+    assert "SCOPE_FILE non valida: 'config/inesistente.txt' non esiste o è vuoto." in result.stderr.decode("utf-8")

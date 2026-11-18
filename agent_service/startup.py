@@ -1,0 +1,116 @@
+"""Costruzione dell'agente: configurazione, server MCP, preferenze, servizio note e grafo."""
+
+import logging
+from collections.abc import Callable
+from contextlib import ExitStack
+from datetime import datetime
+from pathlib import Path
+
+import httpx
+
+from agent_service.app import Agent
+from assistant.config import Settings, load_scope
+from assistant.graph import build_graph, system_prompt
+from assistant.llm import LMStudioUnavailable, ModelNotFound, build_chat_model, list_models
+from assistant.mcp_client import MCPClient, MCPConnectionError, MCPPromptError, server_command, server_env
+from assistant.notes import (TIMEOUT, LocalNotesService, _responds, build_confirmation_check, build_note_tools,
+                             check_note_claims, wait_until_ready)
+from assistant.preferences import load_preferences
+from assistant.reviewer import build_reviewer
+from assistant.router import build_router
+from assistant.summarizer import build_summarizer
+from lab_server.timezones import get_timezone
+
+logger = logging.getLogger("assistant")
+
+TOOLS_DOWN = "Il server degli strumenti non risponde: riavvia l'agente (in locale basta riavviare l'assistente)."
+NOTES_DOWN = "Il servizio delle note non risponde: riavvia l'agente (in locale basta riavviare l'assistente)."
+
+
+def model_status(settings: Settings, list_models=list_models) -> dict:
+    try:
+        available = list_models(settings.base_url, settings.timeout)
+    except LMStudioUnavailable:
+        message = (f"LM Studio non è raggiungibile all'indirizzo {settings.base_url}. "
+                   "Controlla che sia attivo e riprova.")
+        return {"raggiungibile": False, "messaggio": message, "modello": settings.model}
+    if settings.model not in available:
+        return {"raggiungibile": False, "messaggio": str(ModelNotFound(settings.model, available)),
+                "modello": settings.model}
+    return {"raggiungibile": True, "messaggio": f"Modello {settings.model} disponibile.", "modello": settings.model}
+
+
+def _tools_status(client: MCPClient, count: int) -> dict:
+    try:
+        client.ping()
+    except MCPConnectionError:
+        return {"raggiungibile": False, "messaggio": TOOLS_DOWN, "strumenti": count}
+    return {"raggiungibile": True, "messaggio": f"Server degli strumenti attivo ({count} strumenti).",
+            "strumenti": count}
+
+
+def _notes_status(url: str) -> dict:
+    if not _responds(url):
+        return {"raggiungibile": False, "messaggio": NOTES_DOWN, "indirizzo": url}
+    return {"raggiungibile": True, "messaggio": f"Servizio delle note attivo ({url}).", "indirizzo": url}
+
+
+def build_agent(settings: Settings, root: Path) -> tuple[Agent, Callable[[], None]]:
+    """Costruisce l'agente; restituisce anche la funzione che chiude servizio note, client HTTP e client MCP.
+
+    ConfigError, MCPConnectionError e NotesConnectionError si propagano dopo aver chiuso quanto già aperto.
+    Il modello spento non ferma l'avvio: ChatOpenAI non lo contatta finché non serve.
+    """
+    scope = load_scope(settings.scope_file, root)
+    logger.info("[router] ambito: %s (%d righe)", settings.scope_file, len(scope.splitlines()))
+    model = model_status(settings)
+    if not model["raggiungibile"]:
+        logger.warning("[modello] %s", model["messaggio"])
+    with ExitStack() as stack:
+        client = MCPClient(server_command(), server_env(settings))
+        stack.callback(client.close)
+        mcp_tools = client.start()
+        if not mcp_tools:
+            raise MCPConnectionError("Il server degli strumenti non espone nessuno strumento.")
+        # Il catalogo arriva dal server (discovery), non è scritto nell'agente
+        logger.info("[mcp] catalogo: %s", ", ".join(tool.name for tool in mcp_tools))
+        preferences = load_preferences(client.read_resource, settings.default_timezone)
+        try:
+            prompt_list = client.list_prompts()
+        except MCPPromptError as error:
+            logger.warning("[mcp] prompt non disponibili (%s): nessun prompt", error)
+            prompt_list = []
+        logger.info("[mcp] prompt: %s", ", ".join(p.name for p in prompt_list) or "nessuno")
+
+        if settings.notes_service_url:
+            url = settings.notes_service_url
+            wait_until_ready(url)
+        else:
+            service = LocalNotesService(quiet=settings.log_level != "DEBUG")
+            stack.callback(service.close)
+            url = service.start()
+        http = httpx.Client(base_url=url, timeout=TIMEOUT)
+        stack.callback(http.close)
+        logger.info("[note] servizio: %s", url)
+
+        zone = get_timezone(preferences.fuso_orario)
+        today = lambda: datetime.now(zone).date()  # noqa: E731
+        chat_model = build_chat_model(settings)
+        graph = build_graph(chat_model, mcp_tools + build_note_tools(http, today), settings.max_steps,
+                            answer_check=check_note_claims, router=build_router(chat_model, scope),
+                            reviewer=build_reviewer(chat_model), max_reviews=settings.max_reviews,
+                            summarizer=build_summarizer(chat_model), summary_threshold=settings.summary_threshold,
+                            summary_keep_turns=settings.summary_keep_turns,
+                            confirmation_check=build_confirmation_check(http, today))
+        logger.info("[revisore] limite: %d revisioni", settings.max_reviews)
+        logger.info("[riassunto] soglia: %d token stimati, turni conservati: %d",
+                    settings.summary_threshold, settings.summary_keep_turns)
+
+        def status() -> dict:
+            return {"modello": model_status(settings), "strumenti": _tools_status(client, len(mcp_tools)),
+                    "note": _notes_status(url)}
+
+        agent = Agent(graph=graph, system=system_prompt(preferences), settings=settings,
+                      list_prompts=client.list_prompts, get_prompt=client.get_prompt, status=status)
+        close = stack.pop_all().close
+    return agent, close

@@ -221,3 +221,12 @@ def test_get_prompt_after_server_crash():
             client.list_prompts()
     finally:
         client.close()
+
+
+def test_ping_and_closed_session():
+    client = MCPClient(TEST_SERVER, os.environ)
+    client.start()
+    client.ping()
+    client.close()
+    with pytest.raises(MCPConnectionError):
+        client.ping()
