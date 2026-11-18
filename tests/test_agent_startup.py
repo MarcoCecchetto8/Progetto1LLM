@@ -166,6 +166,20 @@ sys.exit(main())
 """
 
 
+def kill_port(port):
+    """Termina chi ascolta sulla porta di prova: un padre già uscito non lascia il nipote al taskkill /T."""
+    if os.name == "nt":
+        out = subprocess.run(["netstat", "-ano", "-p", "TCP"], capture_output=True, text=True).stdout
+        pids = {line.split()[-1] for line in out.splitlines()
+                if f"127.0.0.1:{port} " in line and "LISTENING" in line}
+        for pid in pids:
+            subprocess.run(["taskkill", "/T", "/F", "/PID", pid], capture_output=True)
+    else:
+        out = subprocess.run(["lsof", "-t", f"-iTCP:{port}", "-sTCP:LISTEN"], capture_output=True, text=True).stdout
+        for pid in out.split():
+            subprocess.run(["kill", "-9", pid], capture_output=True)
+
+
 def kill_tree(proc):
     if proc.poll() is None:
         if os.name == "nt":
@@ -175,18 +189,32 @@ def kill_tree(proc):
         proc.wait()
 
 
+def agent_env():
+    return {**os.environ, "LMSTUDIO_BASE_URL": f"http://127.0.0.1:{free_port()}/v1", "LMSTUDIO_MODEL": "m",
+            "NOTES_SERVICE_URL": "", "LOG_LEVEL": "INFO", "PYTHONUNBUFFERED": "1"}
+
+
+def stop_options():
+    if os.name == "nt":
+        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}, signal.CTRL_BREAK_EVENT
+    return {"start_new_session": True}, signal.SIGTERM
+
+
+def notes_up(port):
+    try:
+        return httpx.get(f"http://127.0.0.1:{port}/notes", timeout=2.0).status_code == 200
+    except httpx.TransportError:
+        return False
+
+
 def test_main_closes_local_services_on_stop_signal(tmp_path):
     port, notes_port = free_port(), free_port()
-    env = {**os.environ, "LMSTUDIO_BASE_URL": f"http://127.0.0.1:{free_port()}/v1", "LMSTUDIO_MODEL": "m",
-           "NOTES_SERVICE_URL": "", "LOG_LEVEL": "INFO", "PYTHONUNBUFFERED": "1"}
-    if os.name == "nt":
-        options, stop = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}, signal.CTRL_BREAK_EVENT
-    else:
-        options, stop = {"start_new_session": True}, signal.SIGTERM
+    options, stop = stop_options()
     log = tmp_path / "agent.log"
     command = [sys.executable, "-c", WRAPPER, str(notes_port), str(tmp_path / "n.db"), "--port", str(port)]
     with open(log, "wb") as stderr:
-        proc = subprocess.Popen(command, cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=stderr, **options)
+        proc = subprocess.Popen(command, cwd=ROOT, env=agent_env(), stdout=subprocess.DEVNULL, stderr=stderr,
+                                **options)
         try:
             deadline = time.monotonic() + 90
             while True:
@@ -196,15 +224,48 @@ def test_main_closes_local_services_on_stop_signal(tmp_path):
                 except httpx.TransportError:
                     assert proc.poll() is None and time.monotonic() < deadline, log.read_text("utf-8")
                     time.sleep(0.2)
-            assert httpx.get(f"http://127.0.0.1:{notes_port}/notes", timeout=2.0).status_code == 200
+            assert notes_up(notes_port)
             proc.send_signal(stop)
             code = proc.wait(timeout=30)
             time.sleep(1)
             # Nessun orfano: il servizio note avviato dall'agente deve aver liberato la porta
-            with pytest.raises(httpx.TransportError):
-                httpx.get(f"http://127.0.0.1:{notes_port}/notes", timeout=1.0)
+            assert not notes_up(notes_port)
         finally:
             kill_tree(proc)
+            kill_port(notes_port)
+    text = log.read_text("utf-8")
+    assert code == 0, text
+    assert "Traceback" not in text
+
+
+# Avvio rallentato dopo le note: simula lo stop dell'agente mentre build_agent è in corso
+SLOW_WRAPPER = WRAPPER.replace("from agent_service.__main__ import main", """import time
+# Pause brevi: i gestori Python dei segnali girano solo tra un'istruzione e l'altra
+startup.build_graph = lambda *args, **kwargs: [time.sleep(0.1) for _ in range(1200)]
+from agent_service.__main__ import main""")
+
+
+def test_main_closes_local_services_on_stop_signal_during_startup(tmp_path):
+    port, notes_port = free_port(), free_port()
+    options, stop = stop_options()
+    log = tmp_path / "agent.log"
+    command = [sys.executable, "-c", SLOW_WRAPPER, str(notes_port), str(tmp_path / "n.db"), "--port", str(port)]
+    with open(log, "wb") as stderr:
+        proc = subprocess.Popen(command, cwd=ROOT, env=agent_env(), stdout=subprocess.DEVNULL, stderr=stderr,
+                                **options)
+        try:
+            deadline = time.monotonic() + 90
+            while not notes_up(notes_port):
+                assert proc.poll() is None and time.monotonic() < deadline, log.read_text("utf-8")
+                time.sleep(0.2)
+            time.sleep(1.5)  # il processo è dentro build_graph (in pausa)
+            proc.send_signal(stop)
+            code = proc.wait(timeout=30)
+            time.sleep(1)
+            assert not notes_up(notes_port)
+        finally:
+            kill_tree(proc)
+            kill_port(notes_port)
     text = log.read_text("utf-8")
     assert code == 0, text
     assert "Traceback" not in text

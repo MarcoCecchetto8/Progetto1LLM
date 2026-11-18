@@ -34,6 +34,13 @@ def main() -> int:
             stream.reconfigure(encoding="utf-8")
     load_dotenv()
     quiet_library_warnings()
+    # Dopo lo shutdown uvicorn ripristina i gestori precedenti e rilancia il segnale: con SIG_DFL
+    # (SIGTERM, Ctrl+Break su Windows) il processo morirebbe senza eseguire il finally e lascerebbe orfani
+    # servizio note e server MCP. Un gestore che solleva SystemExit fa girare sempre la chiusura; va installato
+    # prima di build_agent, che impiega secondi e può essere fermato (Ctrl+C della CLI, timeout di avvio).
+    for name in ("SIGTERM", "SIGBREAK"):
+        if hasattr(signal, name):
+            signal.signal(getattr(signal, name), lambda signum, frame: sys.exit(0))
     try:
         settings = load_settings(os.environ)
         level = "WARNING" if args.quiet else settings.log_level
@@ -42,12 +49,9 @@ def main() -> int:
     except (ConfigError, MCPConnectionError, NotesConnectionError) as error:
         print(error, file=sys.stderr)
         return 1
-    # Dopo lo shutdown uvicorn ripristina i gestori precedenti e rilancia il segnale: con SIG_DFL
-    # (SIGTERM, Ctrl+Break su Windows) il processo morirebbe senza eseguire il finally e lascerebbe orfani
-    # servizio note e server MCP. Un gestore che solleva SystemExit fa girare sempre la chiusura.
-    for name in ("SIGTERM", "SIGBREAK"):
-        if hasattr(signal, name):
-            signal.signal(getattr(signal, name), lambda signum, frame: sys.exit(0))
+    except (KeyboardInterrupt, SystemExit):
+        # Fermato durante l'avvio: build_agent ha già chiuso quanto aveva aperto
+        return 0
     try:
         logging.getLogger("assistant").info("[api] agente in ascolto su http://%s:%d", args.host, args.port)
         uvicorn.run(create_app(agent), host=args.host, port=args.port, log_level=level.lower(),
