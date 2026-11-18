@@ -113,6 +113,30 @@ def test_missing_mcp_command_raises_connection_error(notes_url, monkeypatch):
         build_agent(make_settings(NOTES_SERVICE_URL=notes_url), ROOT)
 
 
+def test_connection_lost_reading_preferences_stops_startup_and_closes_client(monkeypatch):
+    import types
+
+    class FakeClient:
+        closed = 0
+
+        def __init__(self, *args, **kwargs):
+            FakeClient.instance = self
+
+        def start(self):
+            return [types.SimpleNamespace(name="get_current_time")]
+
+        def read_resource(self, uri):
+            raise MCPConnectionError("connessione persa")
+
+        def close(self):
+            self.closed += 1
+
+    monkeypatch.setattr(startup, "MCPClient", FakeClient)
+    with pytest.raises(MCPConnectionError, match="connessione persa"):
+        build_agent(make_settings(), ROOT)
+    assert FakeClient.instance.closed == 1
+
+
 def test_main_exits_with_1_on_startup_error():
     env = {**os.environ, "LMSTUDIO_BASE_URL": f"http://127.0.0.1:{free_port()}/v1", "LMSTUDIO_MODEL": "m",
            "SCOPE_FILE": "config/inesistente.txt"}
