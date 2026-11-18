@@ -26,6 +26,11 @@ def test_parse_sse_italian_text_and_newlines():
         ("risposta", {"testo": "è «x» ⚠\nriga"}), ("fine", {"esito": "completato"})]
 
 
+def test_parse_sse_ignores_keepalive_comments():
+    body = ": \n\n" + sse("riga", {"a": 1}) + ":\n\n" + ": \n" + sse("fine", {"esito": "completato"})
+    assert list(parse_sse(body.split("\n"))) == [("riga", {"a": 1}), ("fine", {"esito": "completato"})]
+
+
 def test_parse_sse_joins_data_lines():
     lines = ["event: riga", 'data: {"a":', "data: 1}", ""]
     assert list(parse_sse(lines)) == [("riga", {"a": 1})]

@@ -32,6 +32,9 @@ logger = logging.getLogger("assistant.agent")
 ROLES = {"user": "utente", "assistant": "assistente"}
 ERRORS = {code: {"model": ErrorBody} for code in (422, 500, 502, 503, 504)}
 SSE_MEDIA_TYPE = "text/event-stream; charset=utf-8"
+# Commento SSE dopo questo silenzio: su Windows Ctrl+C interrompe la lettura del client solo se arrivano byte
+KEEPALIVE_SECONDS = 0.5
+KEEPALIVE = ": \n\n"
 
 
 @dataclass
@@ -119,15 +122,21 @@ async def stream_events(agent: Agent, body: TurnRequest, suspended: Suspended | 
     """Righe SSE del turno, eseguito in un thread; chiudere il generatore annulla il turno."""
     events: queue.Queue = queue.Queue()
     threading.Thread(target=_stream_worker, args=(agent, body, suspended, events, cancelled), daemon=True).start()
+    last_sent = time.monotonic()
     try:
         while True:
             try:
                 item = events.get_nowait()
             except queue.Empty:
-                await asyncio.sleep(0.05)
+                if time.monotonic() - last_sent >= KEEPALIVE_SECONDS:
+                    last_sent = time.monotonic()
+                    yield KEEPALIVE
+                else:
+                    await asyncio.sleep(0.05)
                 continue
             if item is None:
                 return
+            last_sent = time.monotonic()
             yield _sse(*item)
     finally:
         cancelled.set()

@@ -66,7 +66,10 @@ def parse_sse(body: str) -> list[tuple[str, dict]]:
     for block in body.split("\n\n"):
         if not block.strip():
             continue
-        lines = dict(line.split(": ", 1) for line in block.split("\n"))
+        # Le righe di commento (keepalive) non sono eventi
+        lines = dict(line.split(": ", 1) for line in block.split("\n") if not line.startswith(":"))
+        if not lines:
+            continue
         events.append((lines["event"], json.loads(lines["data"])))
     return events
 
@@ -254,6 +257,35 @@ def test_closing_stream_cancels_turn(caplog):
     assert agent.lock.locked() is False
     assert "[api] turno annullato in" in caplog.text
     assert "[api] turno completato" not in caplog.text
+
+
+def test_stream_sends_keepalive_comment_while_turn_is_silent(monkeypatch):
+    # Senza byte il client su Windows non può interrompere la lettura con Ctrl+C
+    monkeypatch.setattr("agent_service.app.KEEPALIVE_SECONDS", 0.05)
+    released = threading.Event()
+
+    @tool
+    def slow() -> str:
+        """Strumento che aspetta il via del test."""
+        released.wait(5)
+        return "fatto"
+
+    graph = build_graph(fake(tool_call({}, "s1", name="slow"), AIMessage("finito")), [slow], 5)
+    agent = make_agent(graph)
+
+    async def main():
+        events = stream_events(agent, TurnRequest(**ask("vai")), None, threading.Event())
+        first = await events.__anext__()
+        silent = await events.__anext__()
+        released.set()
+        rest = [e async for e in events]
+        return first, silent, rest
+
+    first, silent, rest = asyncio.run(main())
+    assert first.startswith("event: strumento\n")
+    assert silent == ": \n\n"
+    assert rest[-1].startswith("event: fine\n")
+    assert parse_sse("".join([first, silent, *rest]))[-1][0] == "fine"
 
 
 def test_cancelled_before_lock_skips_turn():
