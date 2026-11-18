@@ -341,3 +341,19 @@ def test_openapi():
     spec = response.json()
     assert spec["info"]["title"] == "Agente del laboratorio"
     assert {"/chat", "/chat/stream", "/stato", "/prompts", "/prompts/{nome}"} <= set(spec["paths"])
+
+
+def test_json_responses_declare_utf8_charset():
+    # Senza charset, Windows PowerShell 5.1 (Invoke-RestMethod) legge il corpo come Latin-1: «è» diventa «Ã¨»
+    _, client = client_for(clock_graph("È l'ora: sono le 14:32."))
+    _, down = client_for(RaisingGraph(openai.APIConnectionError(request=REQUEST)))
+    responses = {
+        "/chat": client.post("/chat", json=ask("Che ore sono?")),
+        "/stato": client.get("/stato"),
+        "/prompts": client.get("/prompts"),
+        "/prompts/spiega": client.post("/prompts/spiega", json={"argomenti": {"argomento": "ricorsione"}}),
+        "errore del modello": down.post("/chat", json=ask("ciao")),
+        "richiesta non valida": client.post("/chat", json={}),
+    }
+    for name, response in responses.items():
+        assert response.headers["content-type"] == "application/json; charset=utf-8", name

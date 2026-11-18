@@ -10,6 +10,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from agent_service.errors import AgentError, classify
@@ -142,12 +144,22 @@ async def stream_events(agent: Agent, body: TurnRequest, suspended: Suspended | 
         cancelled.set()
 
 
+class UTF8JSONResponse(JSONResponse):
+    # Senza charset, Windows PowerShell 5.1 (Invoke-RestMethod) legge il corpo come Latin-1
+    media_type = "application/json; charset=utf-8"
+
+
 def create_app(agent: Agent) -> FastAPI:
-    app = FastAPI(title="Agente del laboratorio")
+    app = FastAPI(title="Agente del laboratorio", default_response_class=UTF8JSONResponse)
+
+    @app.exception_handler(RequestValidationError)
+    def validation_error_handler(request: Request, exc: RequestValidationError):
+        # Stesso corpo del gestore predefinito di FastAPI, con il charset
+        return UTF8JSONResponse(status_code=422, content={"detail": jsonable_encoder(exc.errors())})
 
     @app.exception_handler(AgentError)
     def agent_error_handler(request: Request, exc: AgentError):
-        return JSONResponse(status_code=exc.status, content={"codice": exc.code, "messaggio": exc.message})
+        return UTF8JSONResponse(status_code=exc.status, content={"codice": exc.code, "messaggio": exc.message})
 
     # Endpoint sincroni: il turno è bloccante, FastAPI li esegue in un thread
     @app.post("/chat", response_model=TurnResponse, responses=ERRORS)
@@ -169,7 +181,7 @@ def create_app(agent: Agent) -> FastAPI:
         """Stato di agente, modello, server degli strumenti e servizio note: 503 se qualcosa non risponde."""
         parts = agent.status()
         code = 200 if all(part["raggiungibile"] for part in parts.values()) else 503
-        return JSONResponse(status_code=code, content={"agente": "ok", **parts})
+        return UTF8JSONResponse(status_code=code, content={"agente": "ok", **parts})
 
     @app.get("/prompts", response_model=list[PromptOut], responses=ERRORS)
     def prompts():
