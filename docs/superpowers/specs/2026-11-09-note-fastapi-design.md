@@ -1,6 +1,6 @@
 # Note persistenti con FastAPI — specifica
 
-Data: 2026-11-09 · Stato: approvata dall'utente il 2026-11-09 · **Revisione 2026-11-11** (sezione 5.4, controllo dei falsi successi, dopo la prova reale): approvata dall'utente il 2026-11-11 · **Revisione 2026-11-15** (5.4: solo avviso, niente nuovo tentativo): scelta dell'utente
+Data: 2026-11-09 · Stato: approvata dall'utente il 2026-11-09 · **Revisione 2026-11-11** (sezione 5.4, controllo dei falsi successi, dopo la prova reale): approvata dall'utente il 2026-11-11 · **Revisione 2026-11-15** (5.4: solo avviso, niente nuovo tentativo): scelta dell'utente · **Revisione 2026-11-18** (sezione 5.5: frasi brevi e avviso legato alla richiesta, dopo la prova reale dell'agente come servizio): approvata dall'utente il 2026-11-18, comprese le due scelte di Claude
 
 Riferimenti: lezione 5 del corso, slide 16 (scelta del confine), 19 e 21 (variante FastAPI + wrapper HTTP), 6 (controllo dei permessi da parte dell'applicazione), 26 («Note persistenti: un tool che produce effetti») e 31 (evidenze). Specifiche precedenti `2026-11-02-strumenti-mcp-design.md` e `2026-11-09-catalogo-linguaggi-design.md`, valide per tutto ciò che qui non cambia.
 
@@ -137,6 +137,29 @@ Dichiarazione senza conferma = **falso successo**. Le frasi negative che conteng
 - Non risolve il caso «Elimina la nota 99» in cui il modello risponde «Dovrai prima confermare» senza chiamare `delete_note`: non è un falso successo (non dichiara nulla di fatto). Per questo si torna alla formulazione originale del prompt (sezione 5.2).
 - **Streaming** (prossima funzionalità richiesta dall'utente): se la risposta verrà mostrata mentre si genera, il controllo arriverebbe dopo che l'utente l'ha già letta. La specifica dello streaming dovrà dire come convivono (per esempio avviso dopo il testo, o niente streaming per le risposte che toccano le note).
 
+### 5.5 Frasi brevi e avviso legato alla richiesta (revisione 2026-11-18)
+
+**Perché.** Nella prova reale dell'agente come servizio (2026-11-18, `gemma-4-e2b`) il modello ha risposto «Nota salvata.» a «Salva una nota: …» senza chiamare `add_note`, e l'avviso non è comparso: il riconoscimento della 5.4 cerca solo forme con l'ausiliare («ho salvato», «è stata salvata»). In un altro turno, a «Elimina la nota 6» ha risposto «Dovrai prima confermare l'eliminazione» senza chiamare `delete_note` (caso già dichiarato come limite nella 5.4). L'utente vuole una regola semplice: **se chiedo di salvare o eliminare una nota, o vedo la conferma dello strumento o vedo l'avviso**; e, altrettanto importante, **se parlo d'altro non deve mai comparire un avviso sulle note**.
+
+**Che cosa cambia.** Il controllo della 5.4 resta (stesso posto, stessi testi degli avvisi, solo avviso, log `INFO`) e si allarga in due direzioni indipendenti.
+
+1. **Dichiarazioni brevi del modello.** Oltre alle forme con l'ausiliare, conta come dichiarazione anche il participio senza ausiliare quando **apre la frase** e si riferisce a una nota: «Nota salvata.», «Ok, nota salvata!», «Fatto: promemoria registrato.», «Nota 6 eliminata.». Le frasi in cui il participio è un aggettivo restano escluse, come oggi: «Nessuna nota salvata.», «Non hai note salvate.» (risposte vere di `list_notes`). Regola invariata per la conferma: serve un risultato **senza errore** dello strumento corrispondente nello stesso turno (per l'eliminazione vale anche «annullata dall'utente»).
+2. **Richiesta esplicita dell'utente.** Se la domanda del turno (l'ultima dell'utente, esclusi i messaggi del revisore) contiene una **richiesta esplicita** di salvare o di eliminare una nota e nello stesso turno lo strumento corrispondente **non è stato chiamato**, compare l'avviso corrispondente, qualunque cosa abbia scritto il modello. Esplicita vuol dire una forma imperativa rivolta all'assistente da un **elenco stretto**, per esempio:
+   - salvataggio: «salva / salvami / annota / segna / segnati / scrivi» seguito da «una nota», «un promemoria» o «che …»; «aggiungi / crea una nota (un promemoria)»; «ricordami di …» (con «di» subito dopo: «ricordami come mi chiamo» non conta); «nota:» o «promemoria:» all'inizio della domanda;
+   - eliminazione: «elimina / cancella / rimuovi» seguito da «la nota», «le note», «il promemoria» (con o senza ID).
+   L'elenco esatto si fissa al piano **dopo una misura** (sotto). In caso di dubbio una forma **non** entra nell'elenco: per questa parte un avviso mancato è meglio di un avviso sbagliato, perché l'utente non vuole avvisi sulle note quando parla d'altro.
+
+**Due avvisi uguali non si ripetono:** se la richiesta e la dichiarazione scattano insieme per il salvataggio, compare un solo avviso di salvataggio (lo stesso per l'eliminazione); salvataggio ed eliminazione restano indipendenti (una domanda che chiede entrambe le cose può avere entrambi gli avvisi).
+
+**Misura prima del piano.** Con la sonda end-to-end (grafo vero, archivio temporaneo) e il modello che l'utente userà (vedi sotto), circa 20 domande: richieste vere di salvataggio ed eliminazione in forme diverse, e domande che parlano d'altro usando le stesse parole («ricordami come mi chiamo», «cos'è una nota a piè di pagina?», «come si cancella un file in Python?», «salva il mondo» …). Si registrano le risposte del modello e quali avvisi scatterebbero. Obiettivo: **zero avvisi sulle domande che parlano d'altro**; i numeri vanno nel README.
+
+**Limiti dichiarati.**
+- Le richieste in forme non previste («metti in agenda…») passano senza avviso, come oggi.
+- Se il modello risponde con una domanda di chiarimento a una richiesta esplicita («Salva una nota» → «Che testo vuoi salvare?») e non chiama lo strumento, l'avviso compare: dice il vero (nessuna nota è stata salvata) ma è superfluo. Proposta di Claude per evitarlo: per la parte 2, nessun avviso se la risposta del modello **termina con un punto interrogativo** (la parte 1 resta valida).
+- Il controllo riconosce ancora parole, non intenzioni.
+
+**Scelta del modello.** In parallelo l'utente valuta `liquid/lfm2-24b-a2b` al posto di `google/gemma-4-e2b`. Prima della misura si confrontano i due modelli con le sonde esistenti (strumenti, router, revisore, tempi); la misura delle frasi si fa sul modello scelto. Il cambio di modello non tocca il codice (`LMSTUDIO_MODEL`) e non fa parte di questa revisione.
+
 ## 6. Docker
 
 - `compose.yaml`: nuovo servizio `notes` (stessa immagine, comando che avvia il servizio su `0.0.0.0:8000`), porta `8000` pubblicata sull'host (per `/docs` da Windows); il servizio `app` riceve `NOTES_SERVICE_URL=http://notes:8000` e dipende da `notes`.
@@ -174,6 +197,14 @@ SQLite con `sqlite3` della libreria standard. `httpx` potrebbe già essere insta
   - eliminazione: «Ho eliminato…» senza `delete_note` → intervento; dopo `delete_note` annullata dall'utente → nessun intervento;
   - risposte che non parlano di note (ora, catalogo) → nessun intervento; grafo senza controllo → comportamento invariato;
   - funzione di riconoscimento testata a parte su frasi reali raccolte nella prova (comprese le negative scelte al piano).
+- **Frasi brevi e richiesta esplicita** (revisione 2026-11-18), senza modello:
+  - «Nota salvata.», «Ok, nota salvata!», «Nota 6 eliminata.» senza strumento → avviso; con lo strumento riuscito nello stesso turno → nessun avviso;
+  - «Nessuna nota salvata.», «Non hai note salvate.» → nessun avviso (invariato);
+  - ogni forma dell'elenco di richieste, senza chiamata allo strumento e con una risposta qualsiasi (anche «Ti ricordo di…» o «Dovrai prima confermare…») → avviso; con lo strumento chiamato → nessun avviso;
+  - le domande che parlano d'altro raccolte nella misura → nessun avviso;
+  - richiesta e dichiarazione insieme → un solo avviso; richiesta di salvare ed eliminare insieme → entrambi gli avvisi;
+  - i messaggi del revisore non contano come domanda dell'utente;
+  - (se approvato) risposta che termina con «?» → nessun avviso legato alla richiesta.
 - Restano verdi tutti i test esistenti.
 
 ### Verifica diretta
@@ -209,6 +240,7 @@ Branch `feature/note-fastapi` da `developer`; merge `--no-ff` in `developer` dop
 - Timeout HTTP 5 secondi; servizio irraggiungibile = errore di collegamento (turno interrotto).
 - Porta 8000 pubblicata in Docker; bind mount di `data/`.
 - Nessuna modifica di note esistenti.
+- *Revisione 2026-11-18:* participio senza ausiliare riconosciuto solo a inizio frase; per la parte legata alla richiesta vale la stessa conferma della 5.4 (risultato senza errore), quindi anche un `add_note` fallito o «Elimina la nota 99» con ID inesistente mostrano l'avviso (dice il vero); elenco stretto delle richieste fissato dopo la misura; un solo avviso per tipo; nessun avviso legato alla richiesta se la risposta termina con «?» (confermato).
 - *Revisione 2026-11-11/15:* controllo dei falsi successi nel programma, **solo avviso** (scelta dell'utente dopo la misura sul nuovo tentativo); riconoscimento per parole; controllo passato a `build_graph` come funzione facoltativa e implementato nel modulo delle note; avviso aggiunto in fondo alla risposta e conservato in cronologia.
 
 ## 11. Lasciato al piano
