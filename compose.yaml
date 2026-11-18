@@ -6,8 +6,9 @@ services:
       - "127.0.0.1:8000:8000"
     volumes:
       - ./data:/app/data
-  app:
+  agent:
     build: .
+    command: ["python", "-m", "agent_service", "--host", "0.0.0.0", "--port", "8001"]
     env_file: .env
     environment:
       # Sovrascrive il valore locale del .env: dal container LM Studio è sull'host.
@@ -15,9 +16,18 @@ services:
       NOTES_SERVICE_URL: http://notes:8000
     depends_on:
       - notes
+    ports:
+      - "127.0.0.1:8001:8001"
     volumes:
       - ./config/preferenze.json:/app/config/preferenze.json:ro
-    stdin_open: true
-    tty: true
     extra_hosts:
       - "host.docker.internal:host-gateway"
+  app:
+    build: .
+    env_file: .env
+    environment:
+      AGENT_SERVICE_URL: http://agent:8001
+    depends_on:
+      - agent
+    stdin_open: true
+    tty: true
