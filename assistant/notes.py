@@ -95,10 +95,8 @@ def build_confirmation_check(client: httpx.Client,
             try:
                 note = _call(client, "GET", f"/notes/{note_id}").json()
             except ToolException as e:
-                # La nota inesistente arriva al tool, che restituisce l'errore al modello
-                if "Nessuna nota con ID" in str(e):
-                    continue
-                raise
+                # Il tool rifà la stessa chiamata e restituisce l'errore (404 compreso) al modello
+                continue
             needed.append({"id_nota": note_id, "domanda": _confirmation_question(note, today())})
         return needed
 

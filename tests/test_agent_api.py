@@ -95,7 +95,7 @@ def test_chat_with_tool(caplog):
     assert body["strumenti"][0]["nome"] == "get_current_time"
     assert [m["ruolo"] for m in body["cronologia"]] == ["utente", "assistente", "strumento", "assistente"]
     assert body["sospeso"] is None
-    assert "[api] turno: 0 messaggi in cronologia, 1 nuovi" in caplog.text
+    assert "[api] turno /chat: 0 messaggi in cronologia, 1 nuovi" in caplog.text
     assert "[api] strumento get_current_time" in caplog.text
     assert "[api] turno completato in" in caplog.text
 
@@ -178,6 +178,8 @@ def test_unexpected_error_logged_with_traceback(caplog):
     {"messaggi": [{"ruolo": "utente", "contenuto": "x"}],
      "cronologia": [{"ruolo": "strumento", "contenuto": "x", "nome": "a"}]},
     {"messaggi": [{"ruolo": "strumento", "contenuto": "x", "nome": "a", "id_chiamata": "c"}]},
+    {"messaggi": [{"ruolo": "assistente", "contenuto": "",
+                   "chiamate": [{"id": "c", "nome": "delete_note", "argomenti": {"note_id": 1}}]}]},
     {"messaggi": [{"ruolo": "utente", "contenuto": "x"}], "ripresa": {"sospeso": {}, "decisioni": {}}},
     {"cronologia": [{"ruolo": "utente", "contenuto": "x"}], "ripresa": {"sospeso": {}, "decisioni": {}}},
     {"messaggi": []},

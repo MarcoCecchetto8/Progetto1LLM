@@ -147,6 +147,12 @@ def test_confirmation_check_digit_string_id(client):
     assert check([delete_call(True), delete_call("x"), delete_call(" 1"), delete_call("-1")], {}) == []
 
 
+def test_confirmation_check_tool_error_is_left_to_the_tool():
+    # Un errore del servizio diverso dal 404 non deve rompere il turno: lo strumento lo riporterà al modello
+    broken = httpx.Client(base_url="http://x", transport=httpx.MockTransport(lambda r: httpx.Response(500)))
+    assert build_confirmation_check(broken, lambda: TODAY)([delete_call(1)], {}) == []
+
+
 def test_confirmation_check_connection_error():
     dead = httpx.Client(base_url="http://127.0.0.1:9", timeout=0.5)
     with pytest.raises(NotesConnectionError):

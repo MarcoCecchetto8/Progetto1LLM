@@ -54,16 +54,18 @@ def _suspended(body: TurnRequest) -> Suspended | None:
         raise AgentError(422, "sospeso_non_valido", str(error)) from None
 
 
-def _run(agent: Agent, body: TurnRequest, suspended: Suspended | None, emit=None, cancelled=None) -> dict:
+def _run(agent: Agent, endpoint: str, body: TurnRequest, suspended: Suspended | None, emit=None,
+         cancelled=None) -> dict:
     """Esegue il turno (da chiamare con il lock preso), lo registra nei log e restituisce il corpo della risposta."""
     start = time.monotonic()
     try:
         if suspended is not None:
-            logger.info("[api] ripresa: %d decisioni", len(body.ripresa.decisioni))
+            logger.info("[api] ripresa %s: %d decisioni", endpoint, len(body.ripresa.decisioni))
             outcome = resume_turn(agent.graph, agent.system, suspended, body.ripresa.decisioni, agent.settings,
                                   emit, cancelled)
         else:
-            logger.info("[api] turno: %d messaggi in cronologia, %d nuovi", len(body.cronologia), len(body.messaggi))
+            logger.info("[api] turno %s: %d messaggi in cronologia, %d nuovi", endpoint, len(body.cronologia),
+                        len(body.messaggi))
             outcome = run_turn(agent.graph, agent.system, to_langchain(body.cronologia), to_langchain(body.messaggi),
                                body.riassunto, agent.settings, emit, cancelled)
         # Anche la conversione sta qui: un suo errore diventa errore_imprevisto, non uno stream troncato
@@ -103,7 +105,7 @@ def _stream_worker(agent: Agent, body: TurnRequest, suspended: Suspended | None,
         with agent.lock:
             if cancelled.is_set():
                 return
-            response = _run(agent, body, suspended, lambda name, data: events.put((name, data)), cancelled)
+            response = _run(agent, "/chat/stream", body, suspended, lambda name, data: events.put((name, data)), cancelled)
         events.put(("fine", response))
     except TurnCancelled:
         pass
@@ -144,7 +146,7 @@ def create_app(agent: Agent) -> FastAPI:
         """Esegue un turno e restituisce tutto insieme. Con `ripresa` prosegue un turno sospeso."""
         suspended = _suspended(body)
         with agent.lock:
-            return _run(agent, body, suspended)
+            return _run(agent, "/chat", body, suspended)
 
     @app.post("/chat/stream", responses={**ERRORS, 200: {"content": {"text/event-stream": {}}}})
     def chat_stream(body: TurnRequest):

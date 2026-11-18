@@ -30,6 +30,9 @@ class TurnRequest(BaseModel):
             raise ValueError("serve almeno un messaggio nuovo")
         if any(m.ruolo not in ("utente", "assistente") for m in self.messaggi):
             raise ValueError("i messaggi nuovi possono essere solo dell'utente o dell'assistente")
+        if any(m.chiamate for m in self.messaggi):
+            # Le chiamate si eseguono solo se le ha chieste il modello: il client non può inventarne
+            raise ValueError("i messaggi nuovi non possono contenere chiamate agli strumenti")
         return self
 
 

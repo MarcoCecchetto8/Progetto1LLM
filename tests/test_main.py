@@ -99,7 +99,8 @@ def test_mcp_client_closed_with_ctrl_c_ignored(restore_sigint):
 def test_missing_scope_file_stops_startup_with_clear_message(tmp_path):
     # Senza traceback e prima di avviare server MCP e servizio delle note
     env = {**os.environ, "LMSTUDIO_BASE_URL": "http://127.0.0.1:9/v1", "LMSTUDIO_MODEL": "x",
-           "SCOPE_FILE": str(tmp_path / "manca.txt")}
+           "SCOPE_FILE": str(tmp_path / "manca.txt"),
+           "AGENT_SERVICE_URL": ""}
     result = subprocess.run([sys.executable, "-m", "assistant"], capture_output=True, text=True,
                             env=env, input="quit\n", timeout=60)
     assert result.returncode == 1
