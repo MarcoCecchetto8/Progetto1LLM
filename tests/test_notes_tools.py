@@ -333,9 +333,28 @@ def test_both_claims_warn_in_order():
     "Dovrai prima confermare l'eliminazione della nota con ID 99.",
     "Sono le 14:32.",
     "Ti ricordo di consegnare il report venerdì.",
+    "Hai 2 note salvate.",
+    "Ecco le note salvate finora: nessuna.",
 ])
 def test_no_claim_no_warning(answer):
     assert check_note_claims(turn(answer)) == []
+
+
+@pytest.mark.parametrize("answer", [
+    "Nota salvata.", "Ok, nota salvata!", "Fatto: promemoria registrato.", "Nota 6 salvata: «x».",
+    "Perfetto, la nota è stata aggiunta.", "Ho creato un promemoria per lunedì.", "La nota è stata creata.",
+])
+def test_short_and_passive_save_claims_warn(answer):
+    assert check_note_claims(turn(answer)) == [SAVE_WARNING]
+
+
+@pytest.mark.parametrize("answer", ["Nota 6 eliminata.", "Ok, nota cancellata.", "Promemoria 3 rimosso."])
+def test_short_delete_claims_warn(answer):
+    assert check_note_claims(turn(answer)) == [DELETE_WARNING]
+
+
+def test_short_claim_confirmed_by_tool():
+    assert check_note_claims(turn("Nota 6 salvata: «x».", tool_msg("Nota 6 salvata: «x»", "add_note"))) == []
 
 
 def test_non_string_answer_ignored():
