@@ -52,6 +52,18 @@ def parse_sse(lines: Iterable[str]) -> Iterator[tuple[str, dict]]:
         yield name, json.loads("\n".join(data))
 
 
+def _sse_lines(chunks: Iterable[str]) -> Iterator[str]:
+    """Righe divise solo su a capo: iter_lines di httpx spezza anche su U+2028, U+0085 ecc., che nel JSON sono testo."""
+    buffer = ""
+    for chunk in chunks:
+        buffer += chunk
+        while "\n" in buffer:
+            line, buffer = buffer.split("\n", 1)
+            yield line.removesuffix("\r")
+    if buffer:
+        yield buffer
+
+
 def _error_from(response: httpx.Response) -> AgentRequestError:
     try:
         body = response.json()
@@ -108,7 +120,7 @@ class AgentClient:
                 if response.status_code != 200:
                     response.read()
                     raise _error_from(response)
-                yield from parse_sse(response.iter_lines())
+                yield from parse_sse(_sse_lines(response.iter_text()))
         except httpx.TransportError as error:
             raise AgentUnavailable(UNAVAILABLE) from error
 

@@ -21,7 +21,8 @@ def sse(name, data):
 
 def test_parse_sse_italian_text_and_newlines():
     body = sse("risposta", {"testo": "è «x» ⚠\nriga"}) + sse("fine", {"esito": "completato"})
-    assert list(parse_sse(body.splitlines(keepends=True))) == [
+    # Come il client: righe divise solo su \n (splitlines spezzerebbe anche U+2028 e U+0085)
+    assert list(parse_sse(body.split("\n"))) == [
         ("risposta", {"testo": "è «x» ⚠\nriga"}), ("fine", {"esito": "completato"})]
 
 
@@ -32,6 +33,20 @@ def test_parse_sse_joins_data_lines():
 
 def test_parse_sse_last_event_without_blank_line():
     assert list(parse_sse(["event: fine", 'data: {"x": 1}'])) == [("fine", {"x": 1})]
+
+
+SEPARATORS = "a b\x85c\x0bd\x0ce\x1cf"
+
+
+def test_parse_sse_keeps_unicode_separators():
+    body = sse("risposta", {"testo": SEPARATORS})
+    assert list(parse_sse(body.split("\n"))) == [("risposta", {"testo": SEPARATORS})]
+
+
+def test_stream_turn_keeps_unicode_separators():
+    body = sse("risposta", {"testo": SEPARATORS}) + sse("fine", {"esito": "completato"})
+    client = mock_client(lambda request: httpx.Response(200, content=body.encode("utf-8")))
+    assert list(client.stream_turn({})) == [("risposta", {"testo": SEPARATORS}), ("fine", {"esito": "completato"})]
 
 
 def mock_client(handler):
