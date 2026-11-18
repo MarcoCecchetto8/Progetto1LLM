@@ -121,7 +121,7 @@ I log dell'agente (traccia dei turni, strumenti, revisore) si leggono con `docke
 
 I comandi non distinguono maiuscole e minuscole.
 
-Un turno interrotto con Ctrl+C non entra nella cronologia. Uno strumento già eseguito non viene annullato: una nota già salvata resta salvata. Il Ctrl+C ferma il modello al pezzo successivo della risposta; uno strumento già in esecuzione (chiamata MCP o HTTP al servizio delle note) viene invece atteso fino alla fine, poi compare `Risposta interrotta.`. Il servizio delle note e il server degli strumenti restano attivi dopo l'interruzione. Il comportamento su Windows con il keepalive (Ctrl+C subito anche durante router, revisore e strumenti) è da riprovare nella prova reale.
+Un turno interrotto con Ctrl+C non entra nella cronologia. Uno strumento già eseguito non viene annullato: una nota già salvata resta salvata. Il Ctrl+C ferma il modello al pezzo successivo della risposta; uno strumento già in esecuzione (chiamata MCP o HTTP al servizio delle note) viene invece atteso fino alla fine, poi compare `Risposta interrotta.`. Il servizio delle note e il server degli strumenti restano attivi dopo l'interruzione. Su Windows il Ctrl+C ferma il turno subito anche durante router, revisore e strumenti, quando non arriva ancora testo: l'agente manda un evento vuoto (keepalive) ogni mezzo secondo (verificato il 2026-11-18).
 
 ## L'agente da solo (HTTP)
 
@@ -157,7 +157,7 @@ La richiesta ha `messaggi` (nuovi, ruoli `utente` o `assistente`), `cronologia` 
 Invoke-RestMethod http://127.0.0.1:8001/stato
 ```
 
-Con tutto raggiungibile (verificato il 2026-11-18, in locale e in Docker) risponde 200 con `agente: ok` e, per `modello`, `strumenti` e `note`, `raggiungibile: true` con un messaggio. Con LM Studio spento risponde 503 con lo stesso corpo (da provare; `Invoke-RestMethod` lo segnala come errore).
+Con tutto raggiungibile (verificato il 2026-11-18, in locale e in Docker) risponde 200 con `agente: ok` e, per `modello`, `strumenti` e `note`, `raggiungibile: true` con un messaggio. Con LM Studio non raggiungibile risponde 503 con lo stesso corpo e `raggiungibile: false` per il modello (verificato il 2026-11-18 con un indirizzo chiuso in `LMSTUDIO_BASE_URL`; `Invoke-RestMethod` lo segnala come errore).
 
 **Eventi dello streaming (`/chat/stream`):** ogni evento è `event: <nome>` e `data: <json>`. Nomi: `ragionamento`, `risposta` (dati `{testo}`), `strumento` (`{nome, argomenti}`), `esito_strumento` (`{nome, contenuto, errore}`), `riga` (`{testo}`: revisore, riassunto, rifiuto), `fine` (la risposta completa, come `/chat`) ed `errore` (`{codice, messaggio}`).
 
@@ -170,7 +170,7 @@ $ripresa = @{ ripresa = @{ sospeso = $r.sospeso; decisioni = @{ "1" = $true } } 
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8001/chat -ContentType 'application/json; charset=utf-8' -Body $ripresa
 ```
 
-(Da provare: gli esempi di chiamata a `/chat` e di conferma non sono stati eseguiti con il modello; l'uso reale è nella sezione «Prova reale dell'agente come servizio».)
+Entrambi gli esempi sono stati eseguiti il 2026-11-18 con Windows PowerShell 5.1 e `google/gemma-4-e2b` (con l'ID di una nota di prova al posto di `1`). Le risposte JSON dichiarano `charset=utf-8`: senza, PowerShell 5.1 mostrerebbe gli accenti illeggibili.
 
 **Errori.** Prima dello streaming e per `/chat` sono un codice HTTP con corpo `{"codice": ..., "messaggio": ...}`; durante lo streaming arrivano come evento `errore` con gli stessi codici.
 
@@ -556,22 +556,31 @@ Osservato nella stessa sessione, senza legame con i prompt: dopo le due spiegazi
 
 ### Prova reale dell'agente come servizio
 
-Da eseguire a mano, con LM Studio acceso e il modello caricato. Esiti da compilare dopo la prova.
+Esiti del 2026-11-18 con `google/gemma-4-e2b`. Le prove locali e Docker sono state inviate da pipe (`printf ... | python -m assistant`, `docker compose run --rm -T app`); le prove con Ctrl+C e la visualizzazione in streaming sono state fatte a mano in un terminale PowerShell.
 
 | Prova | Atteso | Esito |
 |---|---|---|
-| Locale: `python -m assistant` (agente avviato in automatico), domanda con strumento («che ora è?») | risposta con ora corretta e riga `[strumento]` | da provare |
-| Locale: domanda fuori ambito | rifiuto del router | da provare |
-| Locale: salvare una nota ed eliminarla, con risposta `s` e poi con `N` | domanda `[s/N]`; con `s` nota eliminata, con `N` annullata | da provare |
-| Locale: Ctrl+C durante una risposta, poi un'altra domanda | `Risposta interrotta.`, il turno dopo funziona | da provare |
-| Locale (Windows): Ctrl+C mentre router o revisore lavorano, senza testo in arrivo | `Risposta interrotta.` entro circa un secondo (keepalive SSE) | da riprovare |
-| Locale: preferenze con un valore non ammesso, `python -m assistant` senza `LOG_LEVEL=DEBUG` | l'avviso `[preferenze] ...` compare comunque all'avvio | da provare |
-| Locale: `/prompt spiega argomento=...` | spiegazione dal prompt MCP | da provare |
-| Agente da solo: `python -m agent_service`, `/docs` nel browser | pagina della documentazione | avvio, `/docs` 200 e arresto con Ctrl+Break (porte 8000 e 8001 libere) verificati il 2026-11-18; browser da provare |
-| Agente da solo: `Invoke-RestMethod` su `/chat` con una domanda che usa uno strumento | risposta e traccia `[api]` nei log dell'agente | da provare |
-| `/stato` con LM Studio spento (503 e messaggio) e con il modello acceso (200) | 503 con il messaggio del modello / 200 | 200 con il modello acceso verificato il 2026-11-18; 503 da provare |
-| Docker: `docker compose build`, `docker compose run --rm app`, una domanda con strumento | come in locale | `build` ok; `up -d agent` con `/docs` e `/stato` 200 verificati il 2026-11-18; `run --rm app` da riprovare (la CLI ora attende l'agente fino a 60 s) |
-| Docker: `docker compose logs agent` | traccia del turno | da provare |
+| Locale: `python -m assistant` (agente avviato in automatico), domanda con strumento («che ore sono?») | risposta con ora corretta e riga `[strumento]` | ok: `[agente] servizio: http://127.0.0.1:8001`, `get_current_time` chiamato, ora di Roma corretta, revisore «coerente» |
+| Locale: domanda fuori ambito | rifiuto del router | ok: «Chi ha vinto i mondiali di calcio del 2006?» rifiutata |
+| Locale: eliminare una nota, con risposta `s` e poi con `N` | domanda `[s/N]`; con `s` nota eliminata, con `N` annullata | ok (due note di prova create prima sul servizio): `Elimino la nota 6 «prova agente servizio A» · senza scadenza? [s/N]`, con `s` nota eliminata; per la nota 7 con `n` «Eliminazione della nota 7 annullata dall'utente.»; database controllato. Sulla nota 6 il modello ha prima chiesto conferma a parole senza chiamare `delete_note`: il revisore l'ha rimandato indietro e al secondo tentativo ha chiamato lo strumento |
+| Locale: salvare una nota | `add_note` chiamato | non riuscito: il modello ha scritto «Nota salvata.» senza chiamare `add_note` e senza avviso ⚠ (vedi sotto) |
+| Locale: Ctrl+C durante una risposta, poi un'altra domanda | `Risposta interrotta.`, il turno dopo funziona | ok (a mano): la risposta si ferma subito |
+| Locale (Windows): Ctrl+C mentre router o revisore lavorano, senza testo in arrivo | `Risposta interrotta.` entro circa un secondo (keepalive SSE) | ok (a mano): si interrompe subito |
+| Locale: streaming in un terminale vero | ragionamento e risposta token per token | ok (a mano). Misura: eventi ogni 0,06–0,12 s; prima del primo token 18–45 s di silenzio (router e modello); le risposte brevi compaiono quasi tutte insieme; le righe `[revisore]`, `[strumento]` e il rifiuto del router arrivano interi |
+| Locale: preferenze con un valore non ammesso, `python -m assistant` senza `LOG_LEVEL=DEBUG` | l'avviso `[preferenze] ...` compare comunque all'avvio | ok: `[preferenze] lingua 'klingon' non ammesso: uso 'italiano'`, risposta in italiano |
+| Locale: `/prompt spiega argomento=...` | spiegazione dal prompt MCP | ok: spiegazione della ricorsione di livello base, approvata |
+| Agente da solo: `python -m agent_service`, `/docs` | pagina della documentazione | ok: `/docs` 200 e arresto con Ctrl+Break (codice 0, porte 8000 e 8001 libere); browser non provato |
+| Agente da solo: `Invoke-RestMethod` su `/chat` con una domanda che usa uno strumento | risposta e traccia `[api]` nei log dell'agente | ok: `esito: completato`, chiamata `get_current_time` in `cronologia`; log `[api] turno /chat: …`, `[api] strumento …`, `[api] turno completato in 68.8 s` |
+| Agente da solo: conferma in due chiamate | `conferma_richiesta`, poi eliminazione | ok: `conferme` con `id_nota` 7 e la domanda, ripresa con `{"7": true}` → nota eliminata; log `[grafo] turno sospeso`, `[api] ripresa /chat: 1 decisioni` |
+| `/stato` con LM Studio non raggiungibile (503 e messaggio) e con il modello acceso (200) | 503 con il messaggio del modello / 200 | ok: 200 con tutto acceso; 503 con «LM Studio non è raggiungibile all'indirizzo http://127.0.0.1:9/v1…» (indirizzo chiuso al posto di LM Studio spento) |
+| Accenti con Windows PowerShell 5.1 | «è» e «»» leggibili | prima non riuscito (`Content-Type: application/json` senza charset: «è» diventava «Ã¨»); corretto con `charset=utf-8` e riverificato |
+| Docker: `docker compose build`, `docker compose run --rm app` partendo dai container fermi, una domanda con strumento | come in locale | ok: la CLI aspetta l'agente (due `GET /stato` nei log), `get_current_time`, ora corretta, revisore «coerente» |
+| Docker: `docker compose logs agent` | traccia del turno | ok: righe di avvio, `[api] turno /chat/stream`, `[api] strumento get_current_time …`, `[api] turno completato in 66.7 s` |
+
+Limiti osservati:
+
+- Il modello piccolo a volte dichiara «Nota salvata.» senza chiamare `add_note`. Il controllo dei falsi successi riconosce le forme con l'ausiliare («ho salvato», «è stata salvata»), non la frase secca «Nota salvata.», quindi in quel caso l'avviso ⚠ non compare. Il limite c'era già prima dell'agente come servizio.
+- Una domanda mista («Spiegami la ricorsione… voglio una pompa») passa il router, perché una parte è in ambito: l'agente risponde alla parte in ambito e rifiuta l'altra. Per rifiutarle per intero basterebbe un esempio in `config/ambito.txt`.
 
 ## Diagnosi
 
