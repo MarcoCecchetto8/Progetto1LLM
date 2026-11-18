@@ -54,8 +54,8 @@ def _suspended(body: TurnRequest) -> Suspended | None:
         raise AgentError(422, "sospeso_non_valido", str(error)) from None
 
 
-def _run(agent: Agent, body: TurnRequest, suspended: Suspended | None, emit=None, cancelled=None) -> TurnOutcome:
-    """Esegue il turno (da chiamare con il lock preso) e lo registra nei log."""
+def _run(agent: Agent, body: TurnRequest, suspended: Suspended | None, emit=None, cancelled=None) -> dict:
+    """Esegue il turno (da chiamare con il lock preso), lo registra nei log e restituisce il corpo della risposta."""
     start = time.monotonic()
     try:
         if suspended is not None:
@@ -66,6 +66,8 @@ def _run(agent: Agent, body: TurnRequest, suspended: Suspended | None, emit=None
             logger.info("[api] turno: %d messaggi in cronologia, %d nuovi", len(body.cronologia), len(body.messaggi))
             outcome = run_turn(agent.graph, agent.system, to_langchain(body.cronologia), to_langchain(body.messaggi),
                                body.riassunto, agent.settings, emit, cancelled)
+        # Anche la conversione sta qui: un suo errore diventa errore_imprevisto, non uno stream troncato
+        response = _response(outcome).model_dump(mode="json")
     except TurnCancelled:
         logger.info("[api] turno annullato in %.1f s", time.monotonic() - start)
         raise
@@ -80,7 +82,7 @@ def _run(agent: Agent, body: TurnRequest, suspended: Suspended | None, emit=None
     for tool in outcome.tools:
         logger.info("[api] strumento %s %s → %s", tool["nome"], tool["argomenti"], tool["esito"])
     logger.info("[api] turno %s in %.1f s", outcome.status, time.monotonic() - start)
-    return outcome
+    return response
 
 
 def _response(outcome: TurnOutcome) -> TurnResponse:
@@ -101,8 +103,8 @@ def _stream_worker(agent: Agent, body: TurnRequest, suspended: Suspended | None,
         with agent.lock:
             if cancelled.is_set():
                 return
-            outcome = _run(agent, body, suspended, lambda name, data: events.put((name, data)), cancelled)
-        events.put(("fine", _response(outcome).model_dump(mode="json")))
+            response = _run(agent, body, suspended, lambda name, data: events.put((name, data)), cancelled)
+        events.put(("fine", response))
     except TurnCancelled:
         pass
     except AgentError as error:
@@ -142,7 +144,7 @@ def create_app(agent: Agent) -> FastAPI:
         """Esegue un turno e restituisce tutto insieme. Con `ripresa` prosegue un turno sospeso."""
         suspended = _suspended(body)
         with agent.lock:
-            return _response(_run(agent, body, suspended))
+            return _run(agent, body, suspended)
 
     @app.post("/chat/stream", responses={**ERRORS, 200: {"content": {"text/event-stream": {}}}})
     def chat_stream(body: TurnRequest):

@@ -11,7 +11,8 @@ import httpx
 import openai
 import pytest
 from fastapi.testclient import TestClient
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.tools import tool
 
 from agent_service.app import Agent, create_app, stream_events
 from agent_service.schemas import TurnRequest
@@ -20,7 +21,7 @@ from assistant.graph import build_graph
 from assistant.mcp_client import MCPConnectionError, MCPPromptError, PromptArgument, PromptInfo
 from assistant.notes import build_confirmation_check, build_note_tools
 from notes_service.app import create_app as create_notes_app
-from tests.fakes import fake, fake_clock as clock, tool_call
+from tests.fakes import FakeStreamGraph, fake, fake_clock as clock, tool_call
 
 SETTINGS = Settings(base_url="http://localhost:1234/v1", model="m", timeout=120, temperature=0, max_steps=5,
                     default_timezone="Europe/Rome", log_level="INFO")
@@ -203,24 +204,54 @@ def test_lock_released_after_error():
     assert client.post("/chat", json=ask("che ore sono?")).status_code == 200
 
 
-def test_closing_stream_sets_cancelled():
-    agent = make_agent(clock_graph())
+def test_conversion_error_is_unexpected_error(caplog):
+    # Un ToolMessage senza nome non diventa un Message valido: errore nella conversione della risposta
+    final = {"messages": [SystemMessage("sistema"), HumanMessage("ciao"), tool_call({}, "c1"),
+                          ToolMessage("ok", tool_call_id="c1"), AIMessage("Fatto.")], "steps": 1}
+    _, client = client_for(FakeStreamGraph([], final))
+    with caplog.at_level(logging.INFO, logger="assistant.agent"):
+        response = client.post("/chat", json=ask("ciao"))
+        stream = client.post("/chat/stream", json=ask("ciao"))
+    assert response.status_code == 500
+    assert response.json()["codice"] == "errore_imprevisto"
+    events = parse_sse(stream.text)
+    assert [name for name, _ in events] == ["errore"]
+    assert events[0][1]["codice"] == "errore_imprevisto"
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING and r.name == "assistant.agent"]
+    assert len(warnings) == 2 and all(r.exc_info for r in warnings)
+
+
+def test_closing_stream_cancels_turn(caplog):
+    released = threading.Event()
+
+    @tool
+    def slow() -> str:
+        """Strumento che aspetta il via del test."""
+        released.wait(5)
+        return "fatto"
+
+    graph = build_graph(fake(tool_call({}, "s1", name="slow"), AIMessage("non deve arrivare")), [slow], 5)
+    agent = make_agent(graph)
     cancelled = threading.Event()
 
     async def main():
-        events = stream_events(agent, TurnRequest(**ask("che ore sono?")), None, cancelled)
+        events = stream_events(agent, TurnRequest(**ask("vai")), None, cancelled)
         first = await events.__anext__()
         await events.aclose()
         return first
 
-    first = asyncio.run(main())
-    assert first.startswith("event: strumento\n")
-    assert cancelled.is_set()
-    # Il thread del turno termina e rilascia il lock
-    deadline = time.monotonic() + 5
-    while agent.lock.locked() and time.monotonic() < deadline:
-        time.sleep(0.01)
+    with caplog.at_level(logging.INFO, logger="assistant.agent"):
+        first = asyncio.run(main())
+        assert first.startswith("event: strumento\n")
+        assert cancelled.is_set()
+        # Il turno è ancora nello strumento: alla chiamata successiva del modello si ferma
+        released.set()
+        deadline = time.monotonic() + 5
+        while agent.lock.locked() and time.monotonic() < deadline:
+            time.sleep(0.01)
     assert agent.lock.locked() is False
+    assert "[api] turno annullato in" in caplog.text
+    assert "[api] turno completato" not in caplog.text
 
 
 def test_cancelled_before_lock_skips_turn():
