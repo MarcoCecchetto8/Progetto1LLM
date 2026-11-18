@@ -70,6 +70,25 @@ def test_start_serves_and_close_leaves_no_orphans(agents, notes_url, monkeypatch
     service.close()
 
 
+def test_startup_warnings_reads_child_stderr_lines():
+    import tempfile
+
+    service = LocalAgentService(port=1)
+    assert service.startup_warnings() == []  # niente stderr raccolto (non in modalità silenziosa)
+    service._stderr = tempfile.TemporaryFile()
+    service._stderr.write("[preferenze] lingua non valida\n\n[modello] LM Studio spento ⚠\n".encode("utf-8"))
+    assert service.startup_warnings() == ["[preferenze] lingua non valida", "[modello] LM Studio spento ⚠"]
+    service.close()
+    assert service.startup_warnings() == []
+
+
+def test_real_agent_warnings_reach_the_cli(agents):
+    # Il modello è spento: l'avviso di avvio dell'agente figlio è nello stderr raccolto
+    service = agents()
+    service.start()
+    assert any(line.startswith("[modello] ") for line in service.startup_warnings())
+
+
 def test_port_in_use_is_reported(agents):
     first = agents()
     first.start()

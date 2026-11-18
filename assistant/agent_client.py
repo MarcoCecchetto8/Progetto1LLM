@@ -196,12 +196,17 @@ class LocalAgentService:
         self.close()
         raise AgentUnavailable(f"L'agente non è partito entro {START_TIMEOUT:g} secondi.")
 
+    def startup_warnings(self) -> list[str]:
+        """Righe di avviso già scritte dall'agente (in modalità silenziosa il suo stderr non arriva al terminale)."""
+        if self._stderr is None:
+            return []
+        self._stderr.seek(0)
+        return [line for line in self._stderr.read().decode("utf-8", "replace").splitlines() if line.strip()]
+
     def _last_stderr_lines(self) -> str:
         if self._stderr is None:
             return ""
-        self._stderr.seek(0)
-        lines = [line for line in self._stderr.read().decode("utf-8", "replace").splitlines() if line.strip()]
-        return "\n".join(lines[-5:])
+        return "\n".join(self.startup_warnings()[-5:])
 
     def close(self) -> None:
         proc, self._proc = self._proc, None

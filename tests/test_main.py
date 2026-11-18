@@ -122,6 +122,9 @@ class FakeService:
             raise self.start_effect
         return "http://127.0.0.1:8001"
 
+    def startup_warnings(self):
+        return ["[preferenze] lingua non valida"]
+
     def close(self):
         self.closed += 1
 
@@ -218,6 +221,13 @@ def test_agent_unavailable_on_status_stops_with_message(start_env, capsys):
     FakeAgentClient.status_value = AgentUnavailable(UNAVAILABLE)
     assert _start() == 1
     assert UNAVAILABLE in capsys.readouterr().err
+
+
+def test_local_agent_startup_warnings_are_shown(start_env, capsys):
+    from assistant.__main__ import _start
+
+    assert _start() == 0
+    assert "[preferenze] lingua non valida" in capsys.readouterr().err
 
 
 def test_agent_request_error_on_status_stops_with_message(start_env, capsys):

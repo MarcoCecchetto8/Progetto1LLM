@@ -74,6 +74,9 @@ def _start() -> int:
             # Con un agente remoto (Docker) il container può essere avviato ma non ancora in ascolto
             if service is None and not wait_until_responds(url):
                 raise AgentUnavailable(f"L'agente non risponde all'indirizzo {url} (atteso {START_TIMEOUT:g} secondi).")
+            # Con l'agente avviato in silenzio gli avvisi di avvio (preferenze, modello) non arriverebbero al terminale
+            for line in service.startup_warnings() if service is not None else []:
+                print(line, file=sys.stderr)
             client = AgentClient(url)
             status = client.status()
             for part in ("modello", "strumenti"):
