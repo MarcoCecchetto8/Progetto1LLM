@@ -1,6 +1,6 @@
 # Data di oggi nel messaggio di sistema — specifica breve
 
-Data: 2026-11-19 · Stato: approvata dall'utente il 2026-11-19
+Data: 2026-11-19 · Stato: approvata dall'utente il 2026-11-19 · **Revisione 2026-11-19** (date relative calcolate dal programma, dopo la misura): approvata dall'utente
 
 ## Perché
 
@@ -28,3 +28,19 @@ Con `liquid/lfm2-24b-a2b` (modello in uso dal 2026-11-18) le date relative sono 
 ## Lasciato al piano
 
 Nome e posto della funzione che compone la riga (accanto a `with_summary` o nel grafo), come passare l'orologio a `build_graph` e a `build_reviewer` (oggi `startup.py` ha già `today` nel fuso delle preferenze), nomi dei giorni e dei mesi in italiano senza dipendere dalla lingua del sistema operativo.
+
+## Revisione 2026-11-19: date relative calcolate dal programma
+
+**Perché.** Misura «dopo» con la riga della data (lfm2, 3 ripetizioni): «domani» 3/3, «lunedì» 3/3, Natale 3/3, ma «venerdì» 0/3: il modello salva sempre 2026-11-22 (domenica) scrivendo «venerdì 22 novembre»; il revisore non se ne accorge. Il modello conosce la data ma sbaglia il conto. L'utente sceglie la soluzione che il modello non può sbagliare: il calcolo lo fa il programma.
+
+**Che cosa cambia.**
+- Il parametro `due_date` di `add_note` accetta, oltre a `AAAA-MM-GG`: `oggi`, `domani`, `dopodomani`, i giorni della settimana `lunedì` … `domenica`, anche seguiti da `prossimo`/`prossima` e senza accento (`lunedi`); maiuscole e spazi ai lati ignorati.
+- Un giorno della settimana è sempre il **prossimo** con quel nome, mai oggi: detto di giovedì, «giovedì» = fra 7 giorni (scelta dell'utente).
+- Il calcolo sta nel wrapper di `add_note` (`assistant/notes.py`), con l'orologio «oggi» nel fuso delle preferenze già usato dalle note; al servizio delle note arriva sempre `AAAA-MM-GG` (servizio invariato).
+- Forma non riconosciuta → errore dello strumento con l'elenco delle forme ammesse (il modello può correggersi).
+- La descrizione di `add_note` dice di passare le date relative così come sono (es. `due_date="venerdì"`) senza calcolarle; nel messaggio di sistema la frase «ricavala tu con `get_current_time` e `add_days`» diventa la stessa indicazione. La riga della data di oggi resta.
+- La risposta dello strumento riporta già la data calcolata («scadenza 2026-11-20 (fra 1 giorno)»).
+
+**Fuori.** «fra 3 giorni», «il 5 dicembre», «la settimana prossima»: il modello le converte in `AAAA-MM-GG` o usa `add_days`.
+
+**Verifica.** Test senza modello con orologio finto: ogni giorno della settimana da ogni giorno, oggi/domani/dopodomani, forme senza accento e con «prossimo», maiuscole e spazi, forme non valide, passaggio di fine mese e di fine anno; misura con lfm2 sulle 4 domande (3 ripetizioni) e prova reale.

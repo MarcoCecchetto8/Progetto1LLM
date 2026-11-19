@@ -160,6 +160,10 @@ Dichiarazione senza conferma = **falso successo**. Le frasi negative che conteng
 
 **Scelta del modello.** In parallelo l'utente valuta `liquid/lfm2-24b-a2b` al posto di `google/gemma-4-e2b`. Prima della misura si confrontano i due modelli con le sonde esistenti (strumenti, router, revisore, tempi); la misura delle frasi si fa sul modello scelto. Il cambio di modello non tocca il codice (`LMSTUDIO_MODEL`) e non fa parte di questa revisione.
 
+### 5.6 Date relative nella scadenza (revisione 2026-11-19)
+
+`due_date` di `add_note` accetta anche oggi, domani, dopodomani e i giorni della settimana, calcolati dal programma: vedi `2026-11-19-data-nel-prompt-design.md`, revisione 2026-11-19.
+
 ## 6. Docker
 
 - `compose.yaml`: nuovo servizio `notes` (stessa immagine, comando che avvia il servizio su `0.0.0.0:8000`), porta `8000` pubblicata sull'host (per `/docs` da Windows); il servizio `app` riceve `NOTES_SERVICE_URL=http://notes:8000` e dipende da `notes`.
