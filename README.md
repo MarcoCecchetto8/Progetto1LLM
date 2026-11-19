@@ -257,6 +257,17 @@ Lingua delle risposte, fuso orario predefinito e stile non sono scritti nel codi
 - **Campi e valori**: `lingua` (`italiano`, `inglese`, `spagnolo`); `fuso_orario` (nome IANA esatto, maiuscole comprese, come `DEFAULT_TIMEZONE`); `stile` (`sintetico`: una o due frasi, solo ciò che è chiesto; `dettagliato`: la risposta più il contesto utile preso dai risultati degli strumenti). I valori si confrontano esattamente come scritti; i campi in più sono ignorati.
 - **Riserve e avvisi**: un campo assente o con valore non ammesso usa la riserva di quel campo (`italiano`, `sintetico`, `DEFAULT_TIMEZONE`) e un avviso `WARNING` `[preferenze] ...` lo nomina; gli altri campi validi restano. Resource non disponibile o contenuto non valido: tutte le riserve e un avviso. L'avvio non si ferma mai per le preferenze.
 - **Fuso orario**: il fuso delle preferenze, se valido, è anche quello predefinito del server (`get_current_time` senza `timezone`, «oggi» degli strumenti delle date) e delle note, così host e server non sono in disaccordo.
+- **Data di oggi**: l'agente aggiunge al messaggio di sistema una riga come `Oggi è giovedì 19 novembre 2026 (2026-11-19), fuso orario Europe/Rome.`, calcolata a ogni chiamata al modello (non all'avvio, quindi corretta anche a cavallo della mezzanotte) nel fuso delle preferenze. Arriva all'agente e al revisore, non al router; non entra mai nella cronologia. Solo la data: l'ora resta allo strumento `get_current_time`.
+
+  Misura della data (`liquid/lfm2-24b-a2b`, 3 ripetizioni):
+
+  | Domanda | Prima | Dopo |
+  |---|---|---|
+  | «Ricordami di consegnare il report venerdì» | 0/3 (sempre 2026-07-03) | da misurare |
+  | «Ricordami di chiamare Luca domani» | 0/3 (2 volte nessun salvataggio, 1 volta 2025-11-19) | da misurare |
+  | «Crea una nota per lunedì: riunione» | 0/3 (sempre 2024-06-17) | da misurare |
+  | «Quanti giorni mancano a Natale?» | 3/3 (36 giorni) | da misurare |
+
 - **La resource non è tra i tool**: i tool passati al modello restano quelli del catalogo più le note. `python -m lab_server.check` elenca la resource dopo i tool.
 - **Log** (scritto dall'agente: vedi «Log»): all'avvio una riga `INFO` `[preferenze] utente://preferenze: lingua=<...>, fuso_orario=<...>, stile=<...>`, distinta dalle chiamate ai tool.
 - **Docker**: `compose.yaml` monta `config/preferenze.json` in sola lettura in `/app/config/preferenze.json`: una modifica vale dalla sessione successiva senza `docker compose build`. Il file deve esistere sull'host: con la sintassi breve del bind mount, se manca Docker crea una cartella vuota `config/preferenze.json`. Con un `PREFERENCES_FILE` diverso in Docker si usa la copia dentro l'immagine, perché si monta solo `config/preferenze.json`.

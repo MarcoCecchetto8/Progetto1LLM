@@ -4,13 +4,14 @@ import socket
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
 import pytest
 
 from agent_service import startup
-from agent_service.startup import build_agent, model_status
+from agent_service.startup import build_agent, date_line_for, model_status
 from assistant.config import ConfigError, load_settings
 from assistant.llm import LMStudioUnavailable
 from assistant.mcp_client import MCPConnectionError
@@ -269,3 +270,9 @@ def test_main_closes_local_services_on_stop_signal_during_startup(tmp_path):
     text = log.read_text("utf-8")
     assert code == 0, text
     assert "Traceback" not in text
+
+
+def test_date_line_uses_preferences_timezone():
+    utc = datetime(2026, 11, 20, 3, 30, tzinfo=timezone.utc)  # a New York è ancora il 19
+    line = date_line_for("America/New_York", now=lambda zone: utc.astimezone(zone))()
+    assert line == "Oggi è giovedì 19 novembre 2026 (2026-11-19), fuso orario America/New_York."
