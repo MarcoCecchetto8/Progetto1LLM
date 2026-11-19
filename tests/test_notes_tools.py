@@ -276,7 +276,8 @@ OTHER_TOPICS = ["Ricordami come mi chiamo", "Ricordami cosa abbiamo detto", "Cos
                 "Crea un promemoria in Python", "Crea una nota musicale in Python con pygame",
                 "Scrivi note per una presentazione sul machine learning",
                 "Crea note di studio per l'esame di fisica", "Nota: questa funzione è lenta, perché?",
-                "Salva una nota: x?", "Elimina la nota 3?"]
+                "Salva una nota: x?", "Elimina la nota 3?",
+                "Salva una nota di testo in Python con open()", "Crea un promemoria di Python per l'esame"]
 
 
 @pytest.mark.parametrize("question", SAVE_REQUESTS)

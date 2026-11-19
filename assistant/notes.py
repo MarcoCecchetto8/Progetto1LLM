@@ -52,7 +52,7 @@ _PREFISSO = r"(?:(?:per favore|ok|ehi)\s*,?\s*)?"
 _SAVE_REQUEST = re.compile(
     r"^\s*" + _PREFISSO + r"(?:"
     r"(?:salva|salvami|annota|annotami|segna|segnati|segnami|scrivi|scrivimi|aggiungi|crea)\s+"
-    r"(?:(?:una|la|un|il)\s+)?(?:nota|promemoria)(?:\s*:|\s+(?:per|che|su|di)\b|\s*[.!]?\s*$)"
+    r"(?:(?:una|la|un|il)\s+)?(?:nota|promemoria)(?:\s*:|\s+(?:per|che|su)\b|\s*[.!]?\s*$)"
     r"|(?:annota|annotati|segnati|segnami)\s+che\b(?!\s*(?:cos|cosa|ore)\b)"
     r"|ricordami\s+di\b(?!\s*(?:cosa|che|come|quando|perche|chi|quale|quanto|dove|se)\b)"
     r"|(?:nota|promemoria)\s*:)"
