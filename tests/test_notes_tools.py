@@ -74,6 +74,28 @@ def test_resolve_due_date_every_weekday_from_every_day():
             assert result.weekday() == i and 1 <= (result - day).days <= 7
 
 
+@pytest.mark.parametrize("value, expected", [
+    ("tomorrow", "2026-11-10"), ("Today", "2026-11-09"), ("day after tomorrow", "2026-11-11"),
+    ("friday", "2026-11-13"), ("Next Friday", "2026-11-13"), (" monday ", "2026-11-16"),
+])
+def test_resolve_due_date_english(value, expected):
+    assert resolve_due_date(value, TODAY) == expected
+
+
+def test_resolve_due_date_every_english_weekday_from_every_day():
+    for start in range(7):
+        day = date(2026, 11, 9) + timedelta(days=start)
+        for i, name in enumerate(["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]):
+            for form in (name, f"next {name}"):
+                result = date.fromisoformat(resolve_due_date(form, day))
+                assert result.weekday() == i and 1 <= (result - day).days <= 7
+
+
+def test_add_note_english_date(client):
+    out = make_tools(client)["add_note"].invoke({"text": "chiamare Luca", "due_date": "tomorrow"})
+    assert out == "Nota 1 salvata: «chiamare Luca» · scadenza 2026-11-10 (fra 1 giorno)."
+
+
 def test_resolve_due_date_month_and_year_end():
     assert resolve_due_date("domani", date(2026, 11, 30)) == "2026-12-01"
     assert resolve_due_date("venerdì", date(2026, 12, 31)) == "2027-01-01"

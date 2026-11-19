@@ -128,7 +128,8 @@ def build_confirmation_check(client: httpx.Client,
 
 
 _WEEKDAYS = ["lunedi", "martedi", "mercoledi", "giovedi", "venerdi", "sabato", "domenica"]  # come date.weekday()
-_ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+_WEEKDAYS_EN = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+_ISO_DATE =re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 def resolve_due_date(value: str | None, today: date) -> str | None:
@@ -138,12 +139,14 @@ def resolve_due_date(value: str | None, today: date) -> str | None:
     word = _normalize(value).strip()
     if _ISO_DATE.fullmatch(word):
         return word
-    offsets = {"oggi": 0, "domani": 1, "dopodomani": 2}
+    # Il modello a volte ragiona in inglese: accetto anche le forme equivalenti
+    offsets = {"oggi": 0, "domani": 1, "dopodomani": 2, "today": 0, "tomorrow": 1, "day after tomorrow": 2}
     if word in offsets:
         return (today + timedelta(days=offsets[word])).isoformat()
-    name = word.removesuffix(" prossimo").removesuffix(" prossima")
-    if name in _WEEKDAYS:
-        ahead = (_WEEKDAYS.index(name) - today.weekday() - 1) % 7 + 1  # da 1 a 7: mai oggi
+    name = word.removesuffix(" prossimo").removesuffix(" prossima").removeprefix("next ")
+    weekday = _WEEKDAYS.index(name) if name in _WEEKDAYS else _WEEKDAYS_EN.index(name) if name in _WEEKDAYS_EN else None
+    if weekday is not None:
+        ahead = (weekday - today.weekday() - 1) % 7 + 1  # da 1 a 7: mai oggi
         return (today + timedelta(days=ahead)).isoformat()
     raise ToolException(f"Scadenza non valida: «{value}». Usa AAAA-MM-GG oppure oggi, domani, dopodomani "
                         "o un giorno della settimana (es. venerdì).")
