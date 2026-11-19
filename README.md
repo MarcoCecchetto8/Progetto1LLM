@@ -261,14 +261,16 @@ Lingua delle risposte, fuso orario predefinito e stile non sono scritti nel codi
 - **Fuso orario**: il fuso delle preferenze, se valido, è anche quello predefinito del server (`get_current_time` senza `timezone`, «oggi» degli strumenti delle date) e delle note, così host e server non sono in disaccordo.
 - **Data di oggi**: l'agente aggiunge al messaggio di sistema una riga come `Oggi è giovedì 19 novembre 2026 (2026-11-19), fuso orario Europe/Rome.`, calcolata a ogni chiamata al modello (non all'avvio, quindi corretta anche a cavallo della mezzanotte) nel fuso delle preferenze. Arriva all'agente e al revisore, non al router; non entra mai nella cronologia. Solo la data: l'ora resta allo strumento `get_current_time`.
 
-  Misura della data (`liquid/lfm2-24b-a2b`, 3 ripetizioni):
+  Misura della data (`liquid/lfm2-24b-a2b`, 2026-11-19, 3 ripetizioni per domanda, sonda end-to-end con archivio delle note temporaneo; scadenza attesa: venerdì 2026-11-20, domani 2026-11-20, lunedì 2026-11-23):
 
-  | Domanda | Prima | Dopo |
-  |---|---|---|
-  | «Ricordami di consegnare il report venerdì» | 0/3 (sempre 2026-07-03) | da misurare |
-  | «Ricordami di chiamare Luca domani» | 0/3 (2 volte nessun salvataggio, 1 volta 2025-11-19) | da misurare |
-  | «Crea una nota per lunedì: riunione» | 0/3 (sempre 2024-06-17) | da misurare |
-  | «Quanti giorni mancano a Natale?» | 3/3 (36 giorni) | da misurare |
+  | Domanda | Prima | Con la riga della data | Con la riga e le date relative calcolate dal programma |
+  |---|---|---|---|
+  | «Ricordami di consegnare il report venerdì» | 0/3 (sempre 2026-07-03) | 0/3 (sempre 2026-11-22, una domenica, scritta come «venerdì») | 3/3 (`due_date="venerdì"` → 2026-11-20) |
+  | «Ricordami di chiamare Luca domani» | 0/3 (2 volte nessun salvataggio, 1 volta 2025-11-19) | 3/3 | 3/3 (`due_date="tomorrow"` → 2026-11-20) |
+  | «Crea una nota per lunedì: riunione» | 0/3 (sempre 2024-06-17) | 3/3 | 3/3 (2026-11-23) |
+  | «Quanti giorni mancano a Natale?» | 3/3 (36 giorni) | 3/3 | 3/3 |
+
+  Nella misura intermedia, prima di accettare le forme inglesi, «domani» era 0/3: il modello passava `due_date="tomorrow"`, lo strumento lo rifiutava e il modello non riprovava.
 
 - **La resource non è tra i tool**: i tool passati al modello restano quelli del catalogo più le note. `python -m lab_server.check` elenca la resource dopo i tool.
 - **Log** (scritto dall'agente: vedi «Log»): all'avvio una riga `INFO` `[preferenze] utente://preferenze: lingua=<...>, fuso_orario=<...>, stile=<...>`, distinta dalle chiamate ai tool.
