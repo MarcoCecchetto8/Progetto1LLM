@@ -267,7 +267,7 @@ Lingua delle risposte, fuso orario predefinito e stile non sono scritti nel codi
   |---|---|---|---|
   | «Ricordami di consegnare il report venerdì» | 0/3 (sempre 2026-07-03) | 0/3 (sempre 2026-11-22, una domenica, scritta come «venerdì») | 3/3 (`due_date="venerdì"` → 2026-11-20) |
   | «Ricordami di chiamare Luca domani» | 0/3 (2 volte nessun salvataggio, 1 volta 2025-11-19) | 3/3 | 3/3 (`due_date="tomorrow"` → 2026-11-20) |
-  | «Crea una nota per lunedì: riunione» | 0/3 (sempre 2024-06-17) | 3/3 | 3/3 (2026-11-23) |
+  | «Crea una nota per lunedì: riunione» | 0/3 (sempre 2024-06-17) | 3/3 | 3/3 (2026-11-23: il modello passa la data già calcolata grazie alla riga della data) |
   | «Quanti giorni mancano a Natale?» | 3/3 (36 giorni) | 3/3 | 3/3 |
 
   Nella misura intermedia, prima di accettare le forme inglesi, «domani» era 0/3: il modello passava `due_date="tomorrow"`, lo strumento lo rifiutava e il modello non riprovava.
