@@ -26,16 +26,40 @@ SAVE_WARNING = "⚠ Attenzione: nessuna nota è stata salvata (lo strumento non 
 DELETE_WARNING = "⚠ Attenzione: nessuna nota è stata eliminata (lo strumento non l'ha confermato)."
 
 # Solo forme verbali di azione compiuta: gli aggettivi ("Nessuna nota salvata") non devono scattare.
-# Desinenza libera perché il participio concorda con il pronome ("l'ho salvata"); "aggiunto" conta
-# solo se segue nota/promemoria, altrimenti "ho aggiunto 5 giorni" (add_days) darebbe un falso avviso.
+# Desinenza libera perché il participio concorda con il pronome ("l'ho salvata"); "aggiunto" e "creato"
+# contano solo se seguono nota/promemoria, altrimenti "ho aggiunto 5 giorni" (add_days) darebbe un falso avviso.
+# La frase breve ("Nota salvata.") conta solo se apre la frase (inizio del testo o dopo . ! ? :), con al
+# massimo due "ok/fatto/..." davanti: nel mezzo ("Hai 2 note salvate", "La nota salvata ieri") è un aggettivo.
+_FRASE = r"(?:^|[.!?:]\s*)(?:(?:ok|fatto|perfetto|bene)\s*[,!:]?\s*){0,2}(?:la\s+)?"
+_NOTA_N = r"(?:nota|promemoria)\s+(?:(?:n\.?\s*)?\d+\s+)?"
 _SAVE_CLAIM = re.compile(
     r"\bho\s+(?:gia\s+)?(salvat|memorizzat|annotat|registrat)[aoie]\b"
-    r"|\bho\s+(?:gia\s+)?aggiunt[aoie]\s+(?:\w+\s+){0,2}?(?:nota|note|promemoria)\b"
+    r"|\bho\s+(?:gia\s+)?(?:aggiunt|creat)[aoie]\s+(?:\w+\s+){0,2}?(?:nota|note|promemoria)\b"
     r"|\b(?:e'?|sono)\s+stat[aoie]\s+(salvat|memorizzat|annotat|registrat)[aoie]\b"
+    r"|\b(?:nota|note|promemoria)\s+(?:(?:n\.?\s*)?\d+\s+)?(?:e'?|sono)\s+stat[aoie]\s+(?:aggiunt|creat)[aoie]\b"
+    r"|" + _FRASE + _NOTA_N + r"(salvat|memorizzat|annotat|registrat|aggiunt|creat)[aoie]\b"
 )
 _DELETE_CLAIM = re.compile(
     r"\bho\s+(?:gia\s+)?(eliminat|cancellat|rimoss)[aoie]\b"
     r"|\b(?:e'?|sono)\s+stat[aoie]\s+(eliminat|cancellat|rimoss)[aoie]\b"
+    r"|" + _FRASE + _NOTA_N + r"(eliminat|cancellat|rimoss)[aoie]\b"
+)
+
+# Richiesta esplicita dell'utente, cercata sulla domanda normalizzata. Forme volutamente strette: se l'utente
+# parla d'altro («Come si salva un file», «Ricordami come mi chiamo», «Crea una nota musicale in Python»)
+# l'avviso non deve mai comparire, quindi nel dubbio una forma resta fuori. Il salvataggio conta solo a inizio
+# domanda (con "per favore/ok/ehi" facoltativo); l'eliminazione anche dopo e/ed/poi/virgola, ma solo con il numero.
+_PREFISSO = r"(?:(?:per favore|ok|ehi)\s*,?\s*)?"
+_SAVE_REQUEST = re.compile(
+    r"^\s*" + _PREFISSO + r"(?:"
+    r"(?:salva|salvami|annota|annotami|segna|segnati|segnami|scrivi|scrivimi|aggiungi|crea)\s+"
+    r"(?:(?:una|la|un|il)\s+)?(?:nota|promemoria)(?:\s*:|\s*[.!]?\s*$)"
+    r"|(?:annota|annotati|segnati|segnami)\s+che\b(?!\s*(?:cos|cosa|ore|tipo|differenza|significa)\b)"
+    r"|ricordami\s+di\s+\w+(?:[aei]re|[aei]r(?:lo|la|li|le|mi|ti|ci|vi|gli|ne))\b)"
+)
+_DELETE_REQUEST = re.compile(
+    r"(?:^\s*" + _PREFISSO + r"|\b(?:e|ed|poi)\s+|,\s*)"
+    r"(?:elimina|cancella|rimuovi)\s+(?:(?:la|le|il|i|questa)\s+)?(?:nota|note|promemoria)\s+(?:n\.?\s*)?\d"
 )
 
 
@@ -158,7 +182,8 @@ def _normalize(text: str) -> str:
 
 
 def check_note_claims(messages: list[AnyMessage]) -> list[str]:
-    """Avvisi per le risposte che dichiarano un salvataggio o un'eliminazione mai confermati da uno strumento."""
+    """Avvisi per le risposte che dichiarano, o che l'utente aveva chiesto esplicitamente, un salvataggio
+    o un'eliminazione mai confermati da uno strumento."""
     answer = messages[-1].content
     if not isinstance(answer, str):
         return []
@@ -166,10 +191,19 @@ def check_note_claims(messages: list[AnyMessage]) -> list[str]:
     confirmed = {m.name for m in messages[last_human + 1:]
                  if isinstance(m, ToolMessage) and m.status != "error"}
     text = _normalize(answer)
+    question = messages[last_human].content if last_human >= 0 else None
+    # Una domanda di chiarimento («Che testo vuoi salvare?») non è un falso successo.
+    asks_back = text.rstrip().endswith("?")
+    save_asked = delete_asked = False
+    # Una domanda che termina con «?» non è una richiesta («Nota: è lenta, perché?»).
+    if isinstance(question, str) and not asks_back and not question.rstrip().endswith("?"):
+        q = _normalize(question)
+        save_asked = bool(_SAVE_REQUEST.search(q))
+        delete_asked = bool(_DELETE_REQUEST.search(q))
     warnings = []
-    if _SAVE_CLAIM.search(text) and "add_note" not in confirmed:
+    if (_SAVE_CLAIM.search(text) or save_asked) and "add_note" not in confirmed:
         warnings.append(SAVE_WARNING)
-    if _DELETE_CLAIM.search(text) and "delete_note" not in confirmed:
+    if (_DELETE_CLAIM.search(text) or delete_asked) and "delete_note" not in confirmed:
         warnings.append(DELETE_WARNING)
     return warnings
 

@@ -465,6 +465,29 @@ Esiti del 2026-11-15 con `google/gemma-4-e2b`, domande inviate da pipe (la confe
 
 **Falsi successi.** Senza controllo il modello dichiarava note salvate che non esistevano (1 volta su 5 con «Ricordami di comprare il latte», 3 su 5 con «venerdì»). Con il controllo, nelle stesse misure nessun falso successo è arrivato all'utente senza avviso. Il controllo non rende il modello affidabile: lo rende onesto verso l'utente. Può comparire un avviso ridondante quando il modello stesso dice che nulla è stato eliminato o salvato.
 
+**Regole del controllo (note).** L'avviso ⚠ compare in due casi, sempre solo se lo strumento corrispondente (`add_note`, `delete_note`) non ha dato un risultato senza errore dopo l'ultima domanda (una eliminazione annullata vale come conferma):
+
+1. *Dichiarazione*: la risposta dice di aver salvato o eliminato («Ho salvato…», «La nota è stata salvata», anche la frase breve «Nota salvata.» a inizio frase; non gli aggettivi di `list_notes`, come «Nessuna nota salvata.»).
+2. *Richiesta esplicita*: la domanda dell'utente (l'ultima vera, non le indicazioni del revisore) chiede di salvare a inizio domanda («Salva/Annota/Segna/Scrivi/Aggiungi/Crea una nota o un promemoria» seguito da «:» o dalla fine della domanda; «Annota che…», «Segnati che…»; «Ricordami di» seguito da un verbo all'infinito, anche con il pronome attaccato: «Ricordami di innaffiare le piante», «ricordami di comprarlo»), con «per favore», «ok» o «ehi» facoltativi davanti, oppure di eliminare con il numero («Elimina la nota 3», «Cancella le note 4 e 5», «Rimuovi il promemoria 3») a inizio domanda o dopo «e», «ed», «poi», virgola. Se la domanda termina con «?» non è mai una richiesta.
+
+Le forme sono volutamente strette, perché se l'utente parla d'altro («Ricordami di cosa parlava la nota 3», «Crea una nota musicale in Python», «Annota che cos'è un type hint», «Nota: uso Python 3.12. Spiegami i type hint») l'avviso non deve mai comparire. Non contano: «Ricordami di» non seguito da un infinito («Ricordami di nuovo…», «Ricordami di cos'è…»); «Nota:» e «Promemoria:» a inizio domanda; «Annota che» seguito da cos/cosa/ore/tipo/differenza/significa; «Scrivi che» e «Segna che»; «Crea/Scrivi/Salva una nota o un promemoria» seguito da «per», «che», «su»; i plurali per il salvataggio («Aggiungi note…»). Anche i passivi «aggiunta/creata» contano solo se legati a «nota» o «promemoria» («La nota è stata aggiunta»), non in «Il file è stato creato con open()».
+
+Eccezione: se la risposta termina con «?» (domanda di chiarimento, per esempio «Che testo vuoi salvare?») l'avviso legato alla richiesta non compare; la dichiarazione falsa avvisa comunque. Limiti: le forme di richiesta non previste passano senza avviso, e «Salva una nota di…», «Crea un promemoria per…», l'eliminazione senza numero («Elimina la nota di ieri») e i plurali non avvisano; «Ricordami di…» con un chiarimento non avvisa. Una risposta con un elenco numerato o con «La nota aggiunta ieri…» può dare un avviso in più (la frase breve conta a inizio frase, dopo «.», «!», «?», «:»). Nelle risposte di programmazione «Ho cancellato il file…» o «Il record è stato eliminato» possono dare l'avviso di eliminazione (limite delle forme con ausiliare, preesistente).
+
+**Misura del 2026-11-18** con `liquid/lfm2-24b-a2b` su 21 domande vere, ricalcolata con le regole finali (`check_note_claims` su domanda, strumenti chiamati e risposta registrati). Richieste riconosciute senza strumento: 9 su 11 (le due che non avvisano più sono «Crea un promemoria per la riunione di lunedì» e «Nota: comprare le uova», uscite volutamente dalle forme); avvisi sulle 10 domande d'altro: 0 su 10, qualunque sia la risposta. Avvisi sulle risposte vere: uno solo, «Nota: comprare le uova», dove il modello dichiara «Ho salvato la tua nota» senza chiamare `add_note` (dichiarazione falsa, avviso corretto). «Ricordami di innaffiare…» e «Segnati che venerdì…» → chiarimento, senza avviso.
+
+Prova reale degli avvisi (2026-11-19, `liquid/lfm2-24b-a2b`, domande inviate da pipe a `python -m assistant`):
+
+| Prova | Atteso | Esito |
+|---|---|---|
+| «Salva una nota: prova degli avvisi» | nota salvata, nessun avviso | ok: `add_note` chiamato, nota salvata, nessun avviso |
+| «Ricordami come mi chiamo» | nessun avviso | ok |
+| «Ricordami di nuovo come funziona una closure in Python» | nessun avviso | ok: spiegazione della closure, nessun avviso |
+| «Crea un promemoria per Android in Kotlin» | nessun avviso | ok: il modello ha cercato Kotlin nel catalogo, nessun avviso |
+| «Elimina la nota 8» quando il modello non chiama `delete_note` | avviso ⚠ di eliminazione | ok: il modello ha chiesto conferma a parole («Confermi l'eliminazione della nota 8? Risposta: sì / no») senza strumento → avviso legato alla richiesta |
+| dichiarazione falsa di eliminazione | avviso ⚠ | ok: alla riga successiva (`s`, letta come nuova domanda) il modello ha scritto «La nota 8 è stata eliminata con successo.» senza strumento → avviso; il database confermava la nota ancora presente |
+| «Nota salvata.» senza strumento | avviso ⚠ | non ricapitato con lfm2 (coperto dai test) |
+
 ### Prova reale dello streaming
 
 Esiti del 2026-11-16 con `google/gemma-4-e2b`. Le prove con input da pipe (senza terminale, quindi senza colori) le ha eseguite Claude; quelle in un terminale vero (colori, Ctrl+C) le ha eseguite l'utente, tutte con esito positivo.
@@ -579,7 +602,7 @@ Esiti del 2026-11-18 con `google/gemma-4-e2b`. Le prove locali e Docker sono sta
 
 Limiti osservati:
 
-- Il modello piccolo a volte dichiara «Nota salvata.» senza chiamare `add_note`. Il controllo dei falsi successi riconosce le forme con l'ausiliare («ho salvato», «è stata salvata»), non la frase secca «Nota salvata.», quindi in quel caso l'avviso ⚠ non compare. Il limite c'era già prima dell'agente come servizio.
+- Il modello piccolo a volte dichiara «Nota salvata.» senza chiamare `add_note`. Il controllo dei falsi successi ora riconosce anche la frase secca «Nota salvata.» e la richiesta esplicita non eseguita (vedi «Regole del controllo»); il limite c'era prima dell'agente come servizio.
 - Una domanda mista («Spiegami la ricorsione… voglio una pompa») passa il router, perché una parte è in ambito: l'agente risponde alla parte in ambito e rifiuta l'altra. Per rifiutarle per intero basterebbe un esempio in `config/ambito.txt`.
 
 ## Diagnosi
