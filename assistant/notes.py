@@ -44,21 +44,22 @@ _DELETE_CLAIM = re.compile(
     r"|" + _FRASE + _NOTA_N + r"(eliminat|cancellat|rimoss)[aoie]\b"
 )
 
-# Richiesta esplicita dell'utente, cercata sulla domanda normalizzata. Il salvataggio conta solo a inizio
-# domanda (con "per favore/ok/ehi" facoltativo): "Come si salva un file" o "Ricordami come mi chiamo" non
-# sono richieste di note. L'eliminazione vale anche dopo e/ed/poi/virgola ("salva ... ed elimina la nota 3").
-_ARTICOLO = r"(?:(?:una|la|le|questa|un|il|questo|i)\s+)?"
+# Richiesta esplicita dell'utente, cercata sulla domanda normalizzata. Forme volutamente strette: se l'utente
+# parla d'altro («Come si salva un file», «Ricordami come mi chiamo», «Crea una nota musicale in Python»)
+# l'avviso non deve mai comparire, quindi nel dubbio una forma resta fuori. Il salvataggio conta solo a inizio
+# domanda (con "per favore/ok/ehi" facoltativo); l'eliminazione anche dopo e/ed/poi/virgola, ma solo con il numero.
+_PREFISSO = r"(?:(?:per favore|ok|ehi)\s*,?\s*)?"
 _SAVE_REQUEST = re.compile(
-    r"^\s*(?:(?:per favore|ok|ehi)\s*,?\s*)?(?:"
+    r"^\s*" + _PREFISSO + r"(?:"
     r"(?:salva|salvami|annota|annotami|segna|segnati|segnami|scrivi|scrivimi|aggiungi|crea)\s+"
-    r"(?:(?:una|la|le|questa|un|il|questo)\s+)?(?:nota|note|promemoria)\b"
-    r"|(?:annota|annotati|segna|segnati|scrivi|scriviti)\s+che\b"
-    r"|ricordami\s+di\b"
+    r"(?:(?:una|la|un|il)\s+)?(?:nota|promemoria)(?:\s*:|\s+(?:per|che|su|di)\b|\s*[.!]?\s*$)"
+    r"|(?:annota|annotati|segnati|segnami)\s+che\b(?!\s*(?:cos|cosa|ore)\b)"
+    r"|ricordami\s+di\b(?!\s*(?:cosa|che|come|quando|perche|chi|quale|quanto|dove|se)\b)"
     r"|(?:nota|promemoria)\s*:)"
 )
 _DELETE_REQUEST = re.compile(
-    r"(?:^\s*(?:(?:per favore|ok|ehi)\s*,?\s*)?|\b(?:e|ed|poi)\s+|,\s*)"
-    r"(?:elimina|cancella|rimuovi)\s+" + _ARTICOLO + r"(?:nota|note|promemoria)\b"
+    r"(?:^\s*" + _PREFISSO + r"|\b(?:e|ed|poi)\s+|,\s*)"
+    r"(?:elimina|cancella|rimuovi)\s+(?:(?:la|le|il|i|questa)\s+)?(?:nota|note|promemoria)\s+(?:n\.?\s*)?\d"
 )
 
 
@@ -194,7 +195,8 @@ def check_note_claims(messages: list[AnyMessage]) -> list[str]:
     # Una domanda di chiarimento («Che testo vuoi salvare?») non è un falso successo.
     asks_back = text.rstrip().endswith("?")
     save_asked = delete_asked = False
-    if isinstance(question, str) and not asks_back:
+    # Una domanda che termina con «?» non è una richiesta («Nota: è lenta, perché?»).
+    if isinstance(question, str) and not asks_back and not question.rstrip().endswith("?"):
         q = _normalize(question)
         save_asked = bool(_SAVE_REQUEST.search(q))
         delete_asked = bool(_DELETE_REQUEST.search(q))

@@ -267,7 +267,16 @@ OTHER_TOPICS = ["Ricordami come mi chiamo", "Ricordami cosa abbiamo detto", "Cos
                 "Come si cancella un file in Python?", "Come elimino un elemento da una lista in Python?",
                 "Come si salva un file in Python?", "Che differenza c'è tra annotazioni e commenti in Python?",
                 "Salva il mondo dalla noia: spiegami cos'è il machine learning",
-                "Qual è la nota più alta di un pianoforte?", "Che note ho?", "Mi ricordi di cosa parla la nota 3?"]
+                "Qual è la nota più alta di un pianoforte?", "Che note ho?", "Mi ricordi di cosa parla la nota 3?",
+                "Ricordami di cosa parlava la nota 3", "Ricordami di che colore è il cielo",
+                "Rimuovi le note a piè di pagina dal documento", "Cancella le note dal pentagramma",
+                "Elimina le note duplicate dalla mia lista Python",
+                "Dimmi cosa è un pianoforte, e rimuovi le note stonate", "Scrivi che ore sono",
+                "Annota che cos'è un type hint", "Segna che il gol è valido", "Aggiungi note al codice",
+                "Crea un promemoria in Python", "Crea una nota musicale in Python con pygame",
+                "Scrivi note per una presentazione sul machine learning",
+                "Crea note di studio per l'esame di fisica", "Nota: questa funzione è lenta, perché?",
+                "Salva una nota: x?", "Elimina la nota 3?"]
 
 
 @pytest.mark.parametrize("question", SAVE_REQUESTS)
@@ -447,3 +456,18 @@ def test_graph_appends_save_warning(client):
     out = build_graph(model, tools, 5, answer_check=check_note_claims).invoke(_start("annota latte"))
     assert out["messages"][-1].content == "Ho salvato la nota."
     assert client.get("/notes/1").status_code == 200
+
+
+@pytest.mark.parametrize("question", ["Salva una nota: x, poi cancella la nota 2", "Salva una nota: x, rimuovi il promemoria 3",
+                                       "Ok, elimina la nota 4", "Ehi, elimina la nota 4"])
+def test_delete_after_conjunction_or_prefix_warns(question):
+    assert DELETE_WARNING in check_note_claims(asked(question, "Ok."))
+
+
+@pytest.mark.parametrize("question", ["Ok, salva una nota: x", "Ehi, annota che x"])
+def test_save_with_prefix_warns(question):
+    assert check_note_claims(asked(question, "Ok.")) == [SAVE_WARNING]
+
+
+def test_delete_without_number_not_a_request():
+    assert check_note_claims(asked("Elimina la nota di ieri", "Ok.")) == []
