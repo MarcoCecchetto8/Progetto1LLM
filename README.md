@@ -14,6 +14,8 @@ Nome, descrizione e schema degli strumenti arrivano dal server (discovery): l'as
 
 Le **note** seguono un'altra strada: sono salvate in un database SQLite (`data/notes.db`, non versionato) dietro un piccolo servizio **FastAPI** (`notes_service/`), e i tre strumenti `add_note`, `list_notes` e `delete_note` sono wrapper scritti a mano in `assistant/notes.py` che chiamano il servizio via HTTP. A differenza degli strumenti MCP, qui non c'è discovery: nome, descrizione e schema sono definiti nell'assistente. L'eliminazione chiede conferma da terminale (`[s/N]`).
 
+La scadenza di `add_note` si indica come `AAAA-MM-GG` oppure con `oggi`, `domani`, `dopodomani` o un giorno della settimana (anche con accento diverso o con «prossimo»: `venerdì`, `venerdi`, `venerdì prossimo`). Le forme relative le calcola il programma, non il modello: un giorno della settimana vale sempre il prossimo con quel nome, da 1 a 7 giorni dopo oggi, mai oggi stesso (di lunedì, «lunedì» è il lunedì successivo). Sono accettate anche le forme inglesi equivalenti (`today`, `tomorrow`, `day after tomorrow`, `friday`, `next friday`), perché il modello a volte le usa. Altre forme («fra 3 giorni», «5 dicembre», «settimana prossima») sono rifiutate con un errore che elenca quelle ammesse.
+
 Un controllo del programma, non del modello, segnala i falsi successi: se la risposta finale dice di aver salvato o eliminato una nota ma nello stesso turno lo strumento corrispondente (`add_note` o `delete_note`) non ha risposto con successo, sotto la risposta compare un avviso (`⚠ Attenzione: nessuna nota è stata salvata (lo strumento non l'ha confermato).` oppure `... eliminata ...`). L'avviso fa parte della risposta e resta nella cronologia. Serve perché il modello locale a volte afferma di aver fatto un'operazione che non ha eseguito.
 
 ## Architettura: l'agente come servizio
@@ -257,6 +259,21 @@ Lingua delle risposte, fuso orario predefinito e stile non sono scritti nel codi
 - **Campi e valori**: `lingua` (`italiano`, `inglese`, `spagnolo`); `fuso_orario` (nome IANA esatto, maiuscole comprese, come `DEFAULT_TIMEZONE`); `stile` (`sintetico`: una o due frasi, solo ciò che è chiesto; `dettagliato`: la risposta più il contesto utile preso dai risultati degli strumenti). I valori si confrontano esattamente come scritti; i campi in più sono ignorati.
 - **Riserve e avvisi**: un campo assente o con valore non ammesso usa la riserva di quel campo (`italiano`, `sintetico`, `DEFAULT_TIMEZONE`) e un avviso `WARNING` `[preferenze] ...` lo nomina; gli altri campi validi restano. Resource non disponibile o contenuto non valido: tutte le riserve e un avviso. L'avvio non si ferma mai per le preferenze.
 - **Fuso orario**: il fuso delle preferenze, se valido, è anche quello predefinito del server (`get_current_time` senza `timezone`, «oggi» degli strumenti delle date) e delle note, così host e server non sono in disaccordo.
+- **Data di oggi**: l'agente aggiunge al messaggio di sistema una riga come `Oggi è giovedì 19 novembre 2026 (2026-11-19), fuso orario Europe/Rome.`, calcolata a ogni chiamata al modello (non all'avvio, quindi corretta anche a cavallo della mezzanotte) nel fuso delle preferenze. Arriva all'agente e al revisore, non al router; non entra mai nella cronologia. Solo la data: l'ora resta allo strumento `get_current_time`.
+
+  Misura della data (`liquid/lfm2-24b-a2b`, 2026-11-19, 3 ripetizioni per domanda, sonda end-to-end con archivio delle note temporaneo; scadenza attesa: venerdì 2026-11-20, domani 2026-11-20, lunedì 2026-11-23):
+
+  | Domanda | Prima | Con la riga della data | Con la riga e le date relative calcolate dal programma |
+  |---|---|---|---|
+  | «Ricordami di consegnare il report venerdì» | 0/3 (sempre 2026-07-03) | 0/3 (sempre 2026-11-22, una domenica, scritta come «venerdì») | 3/3 (`due_date="venerdì"` → 2026-11-20) |
+  | «Ricordami di chiamare Luca domani» | 0/3 (2 volte nessun salvataggio, 1 volta 2025-11-19) | 3/3 | 3/3 (`due_date="tomorrow"` → 2026-11-20) |
+  | «Crea una nota per lunedì: riunione» | 0/3 (sempre 2024-06-17) | 3/3 | 3/3 (2026-11-23: il modello passa la data già calcolata grazie alla riga della data) |
+  | «Quanti giorni mancano a Natale?» | 3/3 (36 giorni) | 3/3 | 3/3 |
+
+  Prova reale (2026-11-19, lfm2): in locale via pipe «Ricordami di consegnare il report venerdì» → `add_note` con `due_date="venerdì"`, scadenza 2026-11-20; «Che giorno è oggi?» → `get_current_time`, «giovedì 19 novembre 2026». Con Docker (`docker compose build`, poi `docker compose run --rm -T app` da container fermi) «Ricordami di chiamare Luca domani» → `due_date="tomorrow"`, scadenza 2026-11-20; nei log dell'agente la riga `[api] strumento add_note`.
+
+  Nella misura intermedia, prima di accettare le forme inglesi, «domani» era 0/3: il modello passava `due_date="tomorrow"`, lo strumento lo rifiutava e il modello non riprovava.
+
 - **La resource non è tra i tool**: i tool passati al modello restano quelli del catalogo più le note. `python -m lab_server.check` elenca la resource dopo i tool.
 - **Log** (scritto dall'agente: vedi «Log»): all'avvio una riga `INFO` `[preferenze] utente://preferenze: lingua=<...>, fuso_orario=<...>, stile=<...>`, distinta dalle chiamate ai tool.
 - **Docker**: `compose.yaml` monta `config/preferenze.json` in sola lettura in `/app/config/preferenze.json`: una modifica vale dalla sessione successiva senza `docker compose build`. Il file deve esistere sull'host: con la sintassi breve del bind mount, se manca Docker crea una cartella vuota `config/preferenze.json`. Con un `PREFERENCES_FILE` diverso in Docker si usa la copia dentro l'immagine, perché si monta solo `config/preferenze.json`.

@@ -1,7 +1,7 @@
 """Test dei tool delle note: servizio FastAPI in memoria tramite TestClient, nessun modello."""
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 
 import httpx
 import pytest
@@ -12,7 +12,8 @@ from langchain_core.tools import ToolException
 from assistant.graph import build_graph
 from assistant.reviewer import feedback_message
 from assistant.notes import (DELETE_WARNING, SAVE_WARNING, NotesConnectionError,
-                             build_confirmation_check, build_note_tools, check_note_claims, due_phrase)
+                             build_confirmation_check, build_note_tools, check_note_claims, due_phrase,
+                             resolve_due_date)
 from notes_service.app import create_app
 from tests.fakes import fake, tool_call
 
@@ -51,8 +52,68 @@ def test_add_note(client):
 
 
 def test_add_note_invalid_date(client):
-    with pytest.raises(ToolException, match="AAAA-MM-GG"):
-        make_tools(client)["add_note"].invoke({"text": "x", "due_date": "venerdì"})
+    with pytest.raises(ToolException, match="oggi, domani, dopodomani"):
+        make_tools(client)["add_note"].invoke({"text": "x", "due_date": "13/11/2026"})
+
+
+@pytest.mark.parametrize("value, expected", [
+    ("oggi", "2026-11-09"), ("domani", "2026-11-10"), ("Dopodomani", "2026-11-11"),
+    ("martedì", "2026-11-10"), ("venerdì", "2026-11-13"), ("venerdi", "2026-11-13"),
+    (" Venerdì prossimo ", "2026-11-13"), ("domenica", "2026-11-15"), ("lunedì", "2026-11-16"),
+    ("2026-12-01", "2026-12-01"), (None, None), ("", None),
+])
+def test_resolve_due_date(value, expected):
+    assert resolve_due_date(value, TODAY) == expected
+
+
+def test_resolve_due_date_every_weekday_from_every_day():
+    for start in range(7):
+        day = date(2026, 11, 9) + timedelta(days=start)
+        for i, name in enumerate(["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"]):
+            result = date.fromisoformat(resolve_due_date(name, day))
+            assert result.weekday() == i and 1 <= (result - day).days <= 7
+
+
+@pytest.mark.parametrize("value, expected", [
+    ("tomorrow", "2026-11-10"), ("Today", "2026-11-09"), ("day after tomorrow", "2026-11-11"),
+    ("friday", "2026-11-13"), ("Next Friday", "2026-11-13"), (" monday ", "2026-11-16"),
+])
+def test_resolve_due_date_english(value, expected):
+    assert resolve_due_date(value, TODAY) == expected
+
+
+def test_resolve_due_date_every_english_weekday_from_every_day():
+    for start in range(7):
+        day = date(2026, 11, 9) + timedelta(days=start)
+        for i, name in enumerate(["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]):
+            for form in (name, f"next {name}"):
+                result = date.fromisoformat(resolve_due_date(form, day))
+                assert result.weekday() == i and 1 <= (result - day).days <= 7
+
+
+def test_add_note_english_date(client):
+    out = make_tools(client)["add_note"].invoke({"text": "chiamare Luca", "due_date": "tomorrow"})
+    assert out == "Nota 1 salvata: «chiamare Luca» · scadenza 2026-11-10 (fra 1 giorno)."
+
+
+def test_resolve_due_date_month_and_year_end():
+    assert resolve_due_date("domani", date(2026, 11, 30)) == "2026-12-01"
+    assert resolve_due_date("venerdì", date(2026, 12, 31)) == "2027-01-01"
+
+
+@pytest.mark.parametrize("value", ["fra 3 giorni", "settimana prossima", "venerdìx", "5 dicembre"])
+def test_resolve_due_date_invalid(value):
+    with pytest.raises(ToolException, match="oggi, domani, dopodomani"):
+        resolve_due_date(value, TODAY)
+
+
+def test_add_note_relative_date(client):
+    out = make_tools(client)["add_note"].invoke({"text": "report", "due_date": "venerdì"})
+    assert out == "Nota 1 salvata: «report» · scadenza 2026-11-13 (fra 4 giorni)."
+
+
+def test_add_note_description_shows_relative_example():
+    assert 'due_date="venerdì"' in build_note_tools(None, lambda: TODAY)[0].description
 
 
 def test_add_note_empty_date_means_none(client):

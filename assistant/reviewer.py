@@ -50,7 +50,8 @@ def review_request(question: str, answer: str, summary: str = "", recent: str = 
     return f"{context}Domanda dell'utente:\n{question}\n\nRisposta proposta:\n{answer}"
 
 
-def build_reviewer(model: BaseChatModel) -> Callable[[str, str, str, str, str], Review]:
+def build_reviewer(model: BaseChatModel,
+                   today: Callable[[], str] | None = None) -> Callable[[str, str, str, str, str], Review]:
     # Senza ragionamento: il giudizio deve essere rapido
     structured = model.model_copy(update={"reasoning_effort": "none"}).with_structured_output(
         Review, method="json_schema"
@@ -58,6 +59,8 @@ def build_reviewer(model: BaseChatModel) -> Callable[[str, str, str, str, str], 
 
     def review(question: str, answer: str, summary: str = "", recent: str = "", tools: str = "") -> Review:
         request = review_request(question, answer, summary, recent, tools)
+        if today:
+            request = f"{today()}\n\n{request}"
         return structured.invoke([SystemMessage(REVIEWER_INSTRUCTIONS), HumanMessage(request)])
 
     return review

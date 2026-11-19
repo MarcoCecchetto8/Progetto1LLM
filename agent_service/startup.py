@@ -4,6 +4,7 @@ import logging
 from collections.abc import Callable
 from contextlib import ExitStack
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 import httpx
@@ -11,7 +12,7 @@ import httpx
 from agent_service.app import Agent
 from agent_service.errors import NOTES_DOWN, TOOLS_DOWN, model_unreachable
 from assistant.config import Settings, load_scope
-from assistant.graph import build_graph, system_prompt
+from assistant.graph import build_graph, system_prompt, today_line
 from assistant.llm import LMStudioUnavailable, ModelNotFound, build_chat_model, list_models
 from assistant.mcp_client import MCPClient, MCPConnectionError, MCPPromptError, server_command, server_env
 from assistant.notes import (TIMEOUT, LocalNotesService, _responds, build_confirmation_check, build_note_tools,
@@ -54,6 +55,12 @@ def _notes_status(url: str) -> dict:
     return {"raggiungibile": True, "messaggio": f"Servizio delle note attivo ({url}).", "indirizzo": url}
 
 
+def date_line_for(zone_name: str, now: Callable[[ZoneInfo], datetime] = datetime.now) -> Callable[[], str]:
+    """Funzione che a ogni chiamata dà la riga della data di oggi nel fuso indicato (non fissata all'avvio)."""
+    zone = get_timezone(zone_name)
+    return lambda: today_line(now(zone).date(), zone_name)
+
+
 def build_agent(settings: Settings, root: Path) -> tuple[Agent, Callable[[], None]]:
     """Costruisce l'agente; restituisce anche la funzione che chiude servizio note, client HTTP e client MCP.
 
@@ -94,13 +101,14 @@ def build_agent(settings: Settings, root: Path) -> tuple[Agent, Callable[[], Non
 
         zone = get_timezone(preferences.fuso_orario)
         today = lambda: datetime.now(zone).date()  # noqa: E731
+        date_line = date_line_for(preferences.fuso_orario)
         chat_model = build_chat_model(settings)
         graph = build_graph(chat_model, mcp_tools + build_note_tools(http, today), settings.max_steps,
                             answer_check=check_note_claims, router=build_router(chat_model, scope),
-                            reviewer=build_reviewer(chat_model), max_reviews=settings.max_reviews,
+                            reviewer=build_reviewer(chat_model, today=date_line), max_reviews=settings.max_reviews,
                             summarizer=build_summarizer(chat_model), summary_threshold=settings.summary_threshold,
                             summary_keep_turns=settings.summary_keep_turns,
-                            confirmation_check=build_confirmation_check(http, today))
+                            confirmation_check=build_confirmation_check(http, today), today=date_line)
         logger.info("[revisore] limite: %d revisioni", settings.max_reviews)
         logger.info("[riassunto] soglia: %d token stimati, turni conservati: %d",
                     settings.summary_threshold, settings.summary_keep_turns)

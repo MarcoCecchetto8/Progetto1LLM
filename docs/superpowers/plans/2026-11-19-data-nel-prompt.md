@@ -108,3 +108,59 @@ def test_date_line_uses_preferences_timezone():
 - [ ] **Step 4:** PASS; suite completa verde.
 - [ ] **Step 5:** README: descrivere la riga (esempio esatto), che si calcola a ogni chiamata nel fuso delle preferenze, che arriva ad agente e revisore e non al router, che l'ora resta allo strumento; tabella «Misura della data (lfm2)» con le colonne prima/dopo e le righe delle 4 domande lasciate «da compilare» (le compila il controller dopo la misura).
 - [ ] **Step 6: commit** `feat(agente): data di oggi nel fuso delle preferenze a ogni chiamata`
+
+---
+
+### Task 3: Date relative calcolate dal programma in `add_note` (revisione 2026-11-19 della spec)
+
+**Files:**
+- Modify: `assistant/notes.py` (nuova `resolve_due_date`, uso nel wrapper `add_note`, descrizione dello strumento)
+- Modify: `assistant/graph.py` (`system_prompt`: frase sulle date relative)
+- Modify: `README.md` (note: forme accettate per la scadenza)
+- Test: `tests/test_notes_tools.py`, `tests/test_graph.py` (se un test controlla il testo delle istruzioni)
+
+**Interfaces:**
+- Produces: `resolve_due_date(value: str | None, today: date) -> str | None` in `assistant/notes.py`: `None`/vuoto → `None`; `AAAA-MM-GG` → invariato (la validazione resta al servizio); forme relative → `AAAA-MM-GG`; altrimenti `ToolException` con il testo `Scadenza non valida: «{value}». Usa AAAA-MM-GG oppure oggi, domani, dopodomani o un giorno della settimana (es. venerdì).`
+- Regole: confronto in minuscolo, senza accenti (`_normalize` esistente) e senza spazi ai lati; `oggi`=+0, `domani`=+1, `dopodomani`=+2; giorno della settimana (con eventuale ` prossimo`/` prossima`) = prossimo con quel nome, da 1 a 7 giorni dopo oggi (mai 0).
+
+- [ ] **Step 1: test che falliscono** (`TODAY` dei test è lunedì 2026-11-09):
+
+```python
+@pytest.mark.parametrize("value, expected", [
+    ("oggi", "2026-11-09"), ("domani", "2026-11-10"), ("Dopodomani", "2026-11-11"),
+    ("martedì", "2026-11-10"), ("venerdì", "2026-11-13"), ("venerdi", "2026-11-13"),
+    (" Venerdì prossimo ", "2026-11-13"), ("domenica", "2026-11-15"), ("lunedì", "2026-11-16"),
+    ("2026-12-01", "2026-12-01"), (None, None), ("", None),
+])
+def test_resolve_due_date(value, expected):
+    assert resolve_due_date(value, TODAY) == expected
+
+def test_resolve_due_date_every_weekday_from_every_day():
+    for start in range(7):
+        day = date(2026, 11, 9) + timedelta(days=start)
+        for i, name in enumerate(["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"]):
+            result = date.fromisoformat(resolve_due_date(name, day))
+            assert result.weekday() == i and 1 <= (result - day).days <= 7
+
+def test_resolve_due_date_month_and_year_end():
+    assert resolve_due_date("domani", date(2026, 11, 30)) == "2026-12-01"
+    assert resolve_due_date("venerdì", date(2026, 12, 31)) == "2027-01-01"
+
+@pytest.mark.parametrize("value", ["fra 3 giorni", "settimana prossima", "venerdìx", "5 dicembre"])
+def test_resolve_due_date_invalid(value):
+    with pytest.raises(ToolException, match="oggi, domani, dopodomani"):
+        resolve_due_date(value, TODAY)
+
+def test_add_note_relative_date(client):
+    out = make_tools(client)["add_note"].invoke({"text": "report", "due_date": "venerdì"})
+    assert out == "Nota 1 salvata: «report» · scadenza 2026-11-13 (fra 4 giorni)."
+```
+
+  Il test esistente `test_add_note_invalid_date` (che usava «venerdì» come data non valida) va cambiato: con `"due_date": "13/11/2026"` → `ToolException` (con l'elenco delle forme ammesse).
+  Test delle istruzioni: la descrizione di `add_note` contiene `due_date="venerdì"`; `system_prompt(...)` non contiene più «ricavala tu con `get_current_time` e `add_days`» e contiene l'indicazione di passare il giorno così com'è.
+
+- [ ] **Step 2:** `.venv/Scripts/python.exe -m pytest tests/test_notes_tools.py tests/test_graph.py -q` → FAIL.
+- [ ] **Step 3:** implementare `resolve_due_date` (tabella dei giorni senza accenti indicizzata come `date.weekday()`), usarla in `add_note` prima della chiamata HTTP. Descrizione di `add_note`: `due_date: scadenza opzionale, AAAA-MM-GG oppure oggi, domani, dopodomani o un giorno della settimana: per le date relative passa la parola così com'è (es. due_date="venerdì"), il programma calcola la data; se l'utente non indica una scadenza, omettila.` In `system_prompt` sostituire «se l'utente indica un giorno della settimana (es. «venerdì») o «domani», non chiedergli la data: ricavala tu con `get_current_time` e `add_days`, poi chiama `add_note`.» con «se l'utente indica oggi, domani, dopodomani o un giorno della settimana (es. «venerdì»), non chiedergli la data e non calcolarla: passala così com'è in `due_date` (es. due_date="venerdì").» Il resto del testo invariato.
+- [ ] **Step 4:** PASS; test mirati verdi.
+- [ ] **Step 5:** README (sezione delle note): forme accettate per la scadenza, regola «prossimo giorno, mai oggi», forme non accettate.
+- [ ] **Step 6: commit** `feat(note): date relative della scadenza calcolate dal programma`

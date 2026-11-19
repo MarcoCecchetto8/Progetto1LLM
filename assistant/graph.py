@@ -1,5 +1,6 @@
 """Grafo LangGraph: stato, nodi e instradamento."""
 
+import datetime
 import json
 import logging
 from collections.abc import Callable
@@ -82,9 +83,9 @@ def system_prompt(preferences: Preferences) -> str:
         "risultati e ti servono tutti, ripetila con `max_results` più alto. "
         "Per salvare una nota DEVI chiamare `add_note`, una sola volta per richiesta: la nota esiste solo se "
         "lo strumento risponde «Nota N salvata», quindi non scrivere mai di averla salvata senza quella "
-        "risposta. La scadenza va nel formato AAAA-MM-GG; se l'utente indica un giorno della settimana "
-        "(es. «venerdì») o «domani», non chiedergli la data: ricavala tu con `get_current_time` e `add_days`, "
-        "poi chiama `add_note`. Per vedere le note usa `list_notes`. Per eliminare una nota usa `delete_note` "
+        "risposta. La scadenza va nel formato AAAA-MM-GG; se l'utente indica oggi, domani, dopodomani o un "
+        "giorno della settimana (es. «venerdì»), non chiedergli la data e non calcolarla: passala così com'è "
+        "in `due_date` (es. due_date=\"venerdì\"). Per vedere le note usa `list_notes`. Per eliminare una nota usa `delete_note` "
         "con l'ID esatto preso da `list_notes`; se non è chiaro quale nota intende l'utente, chiediglielo; "
         "prima di eliminare il programma chiederà conferma all'utente. Non dire mai che una nota è stata "
         "eliminata se lo strumento non lo conferma. "
@@ -94,6 +95,29 @@ def system_prompt(preferences: Preferences) -> str:
         "Se indica una città o un paese, passa allo strumento il nome IANA corrispondente "
         "(per esempio Tokyo → Asia/Tokyo)."
     )
+
+
+_GIORNI = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"]
+_MESI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre",
+         "novembre", "dicembre"]
+
+
+def today_line(day: datetime.date, timezone: str) -> str:
+    # Nomi da tabelle e non da locale/strftime: il risultato non dipende dal sistema
+    return (f"Oggi è {_GIORNI[day.weekday()]} {day.day} {_MESI[day.month - 1]} {day.year} "
+            f"({day.isoformat()}), fuso orario {timezone}.")
+
+
+def with_today(messages: list[AnyMessage], line: str) -> list[AnyMessage]:
+    """Copia della lista con la data di oggi nel prompt di sistema, solo per la chiamata al modello."""
+    if not line:
+        return messages
+    result = list(messages)
+    for i, message in enumerate(result):
+        if isinstance(message, SystemMessage):
+            result[i] = message.model_copy(update={"content": f"{message.content}\n\n{line}"})
+            break
+    return result
 
 
 def tool_error_message(error: ToolException) -> str:
@@ -127,7 +151,8 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
                 reviewer: Callable[[str, str, str, str, str], Review] | None = None, max_reviews: int = 3,
                 summarizer: Callable[[str, str], str] | None = None, summary_threshold: int = 4000,
                 summary_keep_turns: int = 2,
-                confirmation_check: Callable[[list[dict], dict[int, bool]], list[dict]] | None = None):
+                confirmation_check: Callable[[list[dict], dict[int, bool]], list[dict]] | None = None,
+                today: Callable[[], str] | None = None):
     model_with_tools = model.bind_tools(tools)
     # Gli errori dello strumento tornano al modello come ToolMessage con stato "error".
     # Niente wrap_tool_call: con un wrapper il ToolNode convertirebbe in messaggio anche gli errori di collegamento
@@ -136,7 +161,8 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
     def model_node(state: State) -> dict:
         steps = state["steps"] + 1
         logger.debug("[grafo] nodo model: passaggio %d/%d", steps, max_steps)
-        response = model_with_tools.invoke(with_summary(state["messages"], state.get("summary", "")))
+        response = model_with_tools.invoke(
+            with_summary(with_today(state["messages"], today() if today else ""), state.get("summary", "")))
         if REASONING_KEY in response.additional_kwargs:
             # Il ragionamento si mostra in streaming ma non entra nella cronologia
             extra = {k: v for k, v in response.additional_kwargs.items() if k != REASONING_KEY}
