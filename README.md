@@ -270,6 +270,8 @@ Lingua delle risposte, fuso orario predefinito e stile non sono scritti nel codi
   | «Crea una nota per lunedì: riunione» | 0/3 (sempre 2024-06-17) | 3/3 | 3/3 (2026-11-23: il modello passa la data già calcolata grazie alla riga della data) |
   | «Quanti giorni mancano a Natale?» | 3/3 (36 giorni) | 3/3 | 3/3 |
 
+  Prova reale (2026-11-19, lfm2): in locale via pipe «Ricordami di consegnare il report venerdì» → `add_note` con `due_date="venerdì"`, scadenza 2026-11-20; «Che giorno è oggi?» → `get_current_time`, «giovedì 19 novembre 2026». Con Docker (`docker compose build`, poi `docker compose run --rm -T app` da container fermi) «Ricordami di chiamare Luca domani» → `due_date="tomorrow"`, scadenza 2026-11-20; nei log dell'agente la riga `[api] strumento add_note`.
+
   Nella misura intermedia, prima di accettare le forme inglesi, «domani» era 0/3: il modello passava `due_date="tomorrow"`, lo strumento lo rifiutava e il modello non riprovava.
 
 - **La resource non è tra i tool**: i tool passati al modello restano quelli del catalogo più le note. `python -m lab_server.check` elenca la resource dopo i tool.
