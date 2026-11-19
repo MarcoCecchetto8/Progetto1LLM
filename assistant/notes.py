@@ -8,7 +8,7 @@ import sys
 import time
 import unicodedata
 from collections.abc import Callable
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import httpx
@@ -127,14 +127,38 @@ def build_confirmation_check(client: httpx.Client,
     return check
 
 
+_WEEKDAYS = ["lunedi", "martedi", "mercoledi", "giovedi", "venerdi", "sabato", "domenica"]  # come date.weekday()
+_ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def resolve_due_date(value: str | None, today: date) -> str | None:
+    """Traduce una scadenza relativa in AAAA-MM-GG; una data ISO passa invariata (la valida il servizio)."""
+    if value is None or not value.strip():
+        return None
+    word = _normalize(value).strip()
+    if _ISO_DATE.fullmatch(word):
+        return word
+    offsets = {"oggi": 0, "domani": 1, "dopodomani": 2}
+    if word in offsets:
+        return (today + timedelta(days=offsets[word])).isoformat()
+    name = word.removesuffix(" prossimo").removesuffix(" prossima")
+    if name in _WEEKDAYS:
+        ahead = (_WEEKDAYS.index(name) - today.weekday() - 1) % 7 + 1  # da 1 a 7: mai oggi
+        return (today + timedelta(days=ahead)).isoformat()
+    raise ToolException(f"Scadenza non valida: «{value}». Usa AAAA-MM-GG oppure oggi, domani, dopodomani "
+                        "o un giorno della settimana (es. venerdì).")
+
+
 def build_note_tools(client: httpx.Client, today: Callable[[], date]) -> list[BaseTool]:
     @tool
     def add_note(text: str, due_date: str | None = None) -> str:
         """Salva una nota (promemoria) con testo e, se richiesta, una scadenza.
 
-        text: testo della nota. due_date: scadenza opzionale in formato AAAA-MM-GG
-        (es. 2026-11-13); se l'utente non indica una scadenza, omettila."""
-        note = _call(client, "POST", "/notes", json={"text": text, "due_date": due_date or None}).json()
+        text: testo della nota. due_date: scadenza opzionale, AAAA-MM-GG oppure oggi, domani, dopodomani o un
+        giorno della settimana: per le date relative passa la parola così com'è (es. due_date="venerdì"),
+        il programma calcola la data; se l'utente non indica una scadenza, omettila."""
+        due = resolve_due_date(due_date, today())
+        note = _call(client, "POST", "/notes", json={"text": text, "due_date": due}).json()
         return f"Nota {note['id']} salvata: «{note['text']}» · {due_phrase(note['due_date'], today())}."
 
     @tool

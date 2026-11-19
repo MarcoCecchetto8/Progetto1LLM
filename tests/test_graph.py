@@ -233,8 +233,9 @@ def test_system_prompt_mentions_notes_tools():
 
 def test_system_prompt_notes_weekday_rule():
     prompt = system_prompt(prefs())
-    for word in ("add_days", "«venerdì»", "non chiedergli la data", "«Nota N salvata»"):
+    for word in ("«venerdì»", "non chiedergli la data", "così com'è", "«Nota N salvata»"):
         assert word in prompt
+    assert "ricavala tu con `get_current_time` e `add_days`" not in prompt
     assert "non chiedere tu conferma" not in prompt
 
 
