@@ -476,13 +476,17 @@ Eccezione: se la risposta termina con «?» (domanda di chiarimento, per esempio
 
 **Misura del 2026-11-18** con `liquid/lfm2-24b-a2b` su 21 domande vere, ricalcolata con le regole finali (`check_note_claims` su domanda, strumenti chiamati e risposta registrati). Richieste riconosciute senza strumento: 9 su 11 (le due che non avvisano più sono «Crea un promemoria per la riunione di lunedì» e «Nota: comprare le uova», uscite volutamente dalle forme); avvisi sulle 10 domande d'altro: 0 su 10, qualunque sia la risposta. Avvisi sulle risposte vere: uno solo, «Nota: comprare le uova», dove il modello dichiara «Ho salvato la tua nota» senza chiamare `add_note` (dichiarazione falsa, avviso corretto). «Ricordami di innaffiare…» e «Segnati che venerdì…» → chiarimento, senza avviso.
 
-Prova reale degli avvisi (da provare):
+Prova reale degli avvisi (2026-11-19, `liquid/lfm2-24b-a2b`, domande inviate da pipe a `python -m assistant`):
 
 | Prova | Atteso | Esito |
 |---|---|---|
-| Una richiesta di salvataggio («Salva una nota: …») | nota salvata, nessun avviso | da provare |
-| «Nota salvata.» senza strumento, se ricapita | avviso ⚠ | da provare |
-| Una domanda d'altro con «ricordami» («Ricordami come mi chiamo») | nessun avviso | da provare |
+| «Salva una nota: prova degli avvisi» | nota salvata, nessun avviso | ok: `add_note` chiamato, nota salvata, nessun avviso |
+| «Ricordami come mi chiamo» | nessun avviso | ok |
+| «Ricordami di nuovo come funziona una closure in Python» | nessun avviso | ok: spiegazione della closure, nessun avviso |
+| «Crea un promemoria per Android in Kotlin» | nessun avviso | ok: il modello ha cercato Kotlin nel catalogo, nessun avviso |
+| «Elimina la nota 8» quando il modello non chiama `delete_note` | avviso ⚠ di eliminazione | ok: il modello ha chiesto conferma a parole («Confermi l'eliminazione della nota 8? Risposta: sì / no») senza strumento → avviso legato alla richiesta |
+| dichiarazione falsa di eliminazione | avviso ⚠ | ok: alla riga successiva (`s`, letta come nuova domanda) il modello ha scritto «La nota 8 è stata eliminata con successo.» senza strumento → avviso; il database confermava la nota ancora presente |
+| «Nota salvata.» senza strumento | avviso ⚠ | non ricapitato con lfm2 (coperto dai test) |
 
 ### Prova reale dello streaming
 
