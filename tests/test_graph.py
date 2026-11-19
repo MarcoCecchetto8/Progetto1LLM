@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+from datetime import date
 
 import httpx
 import openai
@@ -10,7 +11,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 
-from assistant.graph import LIMIT_MESSAGE, build_graph, system_prompt
+from assistant.graph import LIMIT_MESSAGE, build_graph, system_prompt, today_line, with_today
 from assistant.llm import REASONING_KEY
 from assistant.mcp_client import MCPClient, MCPConnectionError
 from assistant.reviewer import Review, feedback_message, is_review_feedback
@@ -588,6 +589,71 @@ def test_model_receives_summary_in_system_prompt():
     out = build_graph(Recording(messages=iter([AIMessage("ok")])), [clock], 5).invoke(state)
     assert seen[0][0].content == f"s\n\n{AGENT_SUMMARY_HEADER}\nR"
     assert out["messages"][0].content == "s"
+
+
+def today_recorder():
+    seen = []
+
+    class Recording(FakeToolModel):
+        def _generate(self, messages, *args, **kwargs):
+            seen.append(list(messages))
+            return super()._generate(messages, *args, **kwargs)
+
+    return seen, Recording
+
+
+def test_today_line_italian():
+    assert today_line(date(2026, 11, 19), "Europe/Rome") == \
+        "Oggi è giovedì 19 novembre 2026 (2026-11-19), fuso orario Europe/Rome."
+    assert today_line(date(2027, 1, 3), "Asia/Tokyo") == \
+        "Oggi è domenica 3 gennaio 2027 (2027-01-03), fuso orario Asia/Tokyo."
+
+
+def test_with_today_only_for_call():
+    messages = [SystemMessage("s"), HumanMessage("q")]
+    assert with_today(messages, "") is messages
+    result = with_today(messages, "Oggi è X.")
+    assert result[0].content == "s\n\nOggi è X." and messages[0].content == "s"
+
+
+def test_model_receives_today_line():
+    seen, Recording = today_recorder()
+    out = build_graph(Recording(messages=iter([AIMessage("ok")])), [clock], 5,
+                      today=lambda: "Oggi è X.").invoke(start("ciao"))
+    assert seen[0][0].content == "s\n\nOggi è X."
+    assert out["messages"][0].content == "s"
+
+
+def test_today_line_before_summary():
+    seen, Recording = today_recorder()
+    state = start("ciao")
+    state["summary"] = "R"
+    build_graph(Recording(messages=iter([AIMessage("ok")])), [clock], 5, today=lambda: "Oggi è X.").invoke(state)
+    assert seen[0][0].content == f"s\n\nOggi è X.\n\n{AGENT_SUMMARY_HEADER}\nR"
+
+
+def test_today_line_on_every_call():
+    seen, Recording = today_recorder()
+    out = build_graph(Recording(messages=iter([tool_call({}, "a"), AIMessage("ok")])), [clock], 5,
+                      today=lambda: "Oggi è X.").invoke(start("che ora è?"))
+    assert len(seen) == 2 and all(call[0].content == "s\n\nOggi è X." for call in seen)
+    assert all("Oggi è X." not in str(m.content) for m in out["messages"])
+
+
+def test_today_line_follows_the_clock():
+    seen, Recording = today_recorder()
+    days = iter(["Oggi è A.", "Oggi è B."])
+    graph = build_graph(Recording(messages=iter([AIMessage("1"), AIMessage("2")])), [clock], 5,
+                        today=lambda: next(days))
+    graph.invoke(start("uno"))
+    graph.invoke(start("due"))
+    assert seen[0][0].content.endswith("A.") and seen[1][0].content.endswith("B.")
+
+
+def test_without_today_unchanged():
+    seen, Recording = today_recorder()
+    build_graph(Recording(messages=iter([AIMessage("ok")])), [clock], 5).invoke(start("ciao"))
+    assert seen[0][0].content == "s"
 
 
 def test_summarizer_runs_once_with_reviewer_retry():

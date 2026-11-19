@@ -96,3 +96,9 @@ def test_review_lines():
 def test_instructions_accept_explained_impossibility():
     # Prova reale: senza questa frase il revisore bocciava 3 volte una conversione spiegata come impossibile
     assert "spiega perché una parte della domanda non si può soddisfare" in REVIEWER_INSTRUCTIONS
+
+
+def test_build_reviewer_with_today():
+    model = FakeModel()
+    build_reviewer(model, today=lambda: "Oggi è X.")("domanda", "risposta")
+    assert model.invoked[1] == HumanMessage("Oggi è X.\n\n" + review_request("domanda", "risposta"))
