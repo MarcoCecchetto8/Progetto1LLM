@@ -41,6 +41,8 @@ Nome e posto della funzione che compone la riga (accanto a `with_summary` o nel 
 - La descrizione di `add_note` dice di passare le date relative così come sono (es. `due_date="venerdì"`) senza calcolarle; nel messaggio di sistema la frase «ricavala tu con `get_current_time` e `add_days`» diventa la stessa indicazione. La riga della data di oggi resta.
 - La risposta dello strumento riporta già la data calcolata («scadenza 2026-11-20 (fra 1 giorno)»).
 
+**Aggiunta (2026-11-19, dopo la misura):** con il calcolo nel programma «venerdì» 3/3 e «lunedì» 3/3, ma «domani» 0/3: il modello (che ragiona in inglese) passa `due_date="tomorrow"`, lo strumento lo rifiuta e il modello non riprova. Si accettano anche le forme inglesi equivalenti: `today`, `tomorrow`, `day after tomorrow`, `monday` … `sunday`, anche con `next` davanti (`next friday`), con le stesse regole (prossimo giorno, mai oggi). Approvato dall'utente.
+
 **Fuori.** «fra 3 giorni», «il 5 dicembre», «la settimana prossima»: il modello le converte in `AAAA-MM-GG` o usa `add_days`.
 
 **Verifica.** Test senza modello con orologio finto: ogni giorno della settimana da ogni giorno, oggi/domani/dopodomani, forme senza accento e con «prossimo», maiuscole e spazi, forme non valide, passaggio di fine mese e di fine anno; misura con lfm2 sulle 4 domande (3 ripetizioni) e prova reale.
