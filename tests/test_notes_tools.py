@@ -259,9 +259,10 @@ def asked(question, answer, *tools, history=()):
 
 SAVE_REQUESTS = ["Salva una nota: comprare il pane", "Annota che domani ho il dentista",
                  "Segnati che venerdì devo chiamare Luca", "Aggiungi una nota: pagare la bolletta",
-                 "Ricordami di innaffiare le piante", "Crea un promemoria per la riunione di lunedì",
-                 "Nota: comprare le uova", "Scrivi una nota: riportare il libro",
-                 "Per favore, salvami un promemoria: x"]
+                 "Ricordami di innaffiare le piante", "Ricordami di consegnare il report venerdì",
+                 "ricordami di comprarlo", "Ricordami di chiamare Luca", "Ricordami di dirgli grazie",
+                 "Scrivi una nota: riportare il libro", "Per favore, salvami un promemoria: x",
+                 "Crea una nota.", "Salva un promemoria"]
 DELETE_REQUESTS = ["Elimina la nota 1", "Cancella la nota 2", "Rimuovi il promemoria 3", "elimina le note 4 e 5"]
 OTHER_TOPICS = ["Ricordami come mi chiamo", "Ricordami cosa abbiamo detto", "Cos'è una nota a piè di pagina?",
                 "Come si cancella un file in Python?", "Come elimino un elemento da una lista in Python?",
@@ -275,7 +276,25 @@ OTHER_TOPICS = ["Ricordami come mi chiamo", "Ricordami cosa abbiamo detto", "Cos
                 "Annota che cos'è un type hint", "Segna che il gol è valido", "Aggiungi note al codice",
                 "Crea un promemoria in Python", "Crea una nota musicale in Python con pygame",
                 "Scrivi note per una presentazione sul machine learning",
-                "Crea note di studio per l'esame di fisica", "Nota: questa funzione è lenta, perché?",
+                "Crea note di studio per l'esame di fisica",
+                # I1: «ricordami di» senza infinito
+                "Ricordami di nuovo come funziona il GIL", "ricordami di nuovo, cos'è una closure",
+                "Ricordami di nuovo cosa fa yield", "Ricordami di quali librerie abbiamo parlato",
+                "Ricordami di quanti byte è un int", "Ricordami di quante versioni esistono",
+                "Ricordami di cos'è un decoratore", "Ricordami di qual è la differenza",
+                # I2: «Nota:» / «Promemoria:» non sono richieste
+                "Nota: sto usando Windows. Come installo Python", "Nota: uso Python 3.12. Spiegami i type hint",
+                "Ehi, nota: ho cambiato idea, spiegami i generatori",
+                "Promemoria: cos'è un promemoria in informatica", "Nota: comprare le uova",
+                # I4: «per/che/su» dopo nota/promemoria (avviso mancato accettato per la prima)
+                "Crea un promemoria per la riunione di lunedì",
+                "Crea un promemoria per Android in Kotlin", "Crea un promemoria che suoni ogni ora con cron",
+                "Per favore, crea un promemoria che spieghi git", "Scrivi una nota su come funziona git rebase",
+                "Scrivi una nota per il README del mio progetto", "Scrivimi un promemoria su come si usa pip",
+                "Salva una nota su disco in Java", "Salva una nota per me in un file JSON con Python",
+                "Crea una nota per ogni tasto del pianoforte in Python",
+                # M2
+                "Annota che differenza c'è tra == e is", "Annota che tipo restituisce questa funzione", "Nota: questa funzione è lenta, perché?",
                 "Salva una nota: x?", "Elimina la nota 3?",
                 "Salva una nota di testo in Python con open()", "Crea un promemoria di Python per l'esame"]
 
@@ -420,6 +439,11 @@ def test_both_claims_warn_in_order():
     "Ti ricordo di consegnare il report venerdì.",
     "Hai 2 note salvate.",
     "Ecco le note salvate finora: nessuna.",
+    "Il file è stato creato con open() in modalità 'w'.",
+    "L'oggetto è stato creato dal costruttore __init__.",
+    "La colonna è stata aggiunta alla tabella con ALTER TABLE.",
+    "Il branch è stato creato con git checkout -b.",
+    "Gli elementi sono stati aggiunti con append().",
 ])
 def test_no_claim_no_warning(answer):
     assert check_note_claims(turn(answer)) == []
@@ -428,6 +452,7 @@ def test_no_claim_no_warning(answer):
 @pytest.mark.parametrize("answer", [
     "Nota salvata.", "Ok, nota salvata!", "Fatto: promemoria registrato.", "Nota 6 salvata: «x».",
     "Perfetto, la nota è stata aggiunta.", "Ho creato un promemoria per lunedì.", "La nota è stata creata.",
+    "La nota è stata aggiunta.", "La nota 6 è stata creata.",
 ])
 def test_short_and_passive_save_claims_warn(answer):
     assert check_note_claims(turn(answer)) == [SAVE_WARNING]
@@ -472,3 +497,7 @@ def test_save_with_prefix_warns(question):
 
 def test_delete_without_number_not_a_request():
     assert check_note_claims(asked("Elimina la nota di ieri", "Ok.")) == []
+
+
+def test_false_claim_still_warns_for_nota_colon_question():
+    assert check_note_claims(asked("Nota: comprare le uova", "Ho salvato la tua nota: comprare le uova.")) == [SAVE_WARNING]

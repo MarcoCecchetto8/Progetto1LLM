@@ -29,13 +29,14 @@ DELETE_WARNING = "⚠ Attenzione: nessuna nota è stata eliminata (lo strumento 
 # Desinenza libera perché il participio concorda con il pronome ("l'ho salvata"); "aggiunto" e "creato"
 # contano solo se seguono nota/promemoria, altrimenti "ho aggiunto 5 giorni" (add_days) darebbe un falso avviso.
 # La frase breve ("Nota salvata.") conta solo se apre la frase (inizio del testo o dopo . ! ? :), con al
-# massimo un "ok/fatto/..." davanti: nel mezzo ("Hai 2 note salvate", "La nota salvata ieri") è un aggettivo.
+# massimo due "ok/fatto/..." davanti: nel mezzo ("Hai 2 note salvate", "La nota salvata ieri") è un aggettivo.
 _FRASE = r"(?:^|[.!?:]\s*)(?:(?:ok|fatto|perfetto|bene)\s*[,!:]?\s*){0,2}(?:la\s+)?"
 _NOTA_N = r"(?:nota|promemoria)\s+(?:(?:n\.?\s*)?\d+\s+)?"
 _SAVE_CLAIM = re.compile(
     r"\bho\s+(?:gia\s+)?(salvat|memorizzat|annotat|registrat)[aoie]\b"
     r"|\bho\s+(?:gia\s+)?(?:aggiunt|creat)[aoie]\s+(?:\w+\s+){0,2}?(?:nota|note|promemoria)\b"
-    r"|\b(?:e'?|sono)\s+stat[aoie]\s+(salvat|memorizzat|annotat|registrat|aggiunt|creat)[aoie]\b"
+    r"|\b(?:e'?|sono)\s+stat[aoie]\s+(salvat|memorizzat|annotat|registrat)[aoie]\b"
+    r"|\b(?:nota|note|promemoria)\s+(?:(?:n\.?\s*)?\d+\s+)?(?:e'?|sono)\s+stat[aoie]\s+(?:aggiunt|creat)[aoie]\b"
     r"|" + _FRASE + _NOTA_N + r"(salvat|memorizzat|annotat|registrat|aggiunt|creat)[aoie]\b"
 )
 _DELETE_CLAIM = re.compile(
@@ -52,10 +53,9 @@ _PREFISSO = r"(?:(?:per favore|ok|ehi)\s*,?\s*)?"
 _SAVE_REQUEST = re.compile(
     r"^\s*" + _PREFISSO + r"(?:"
     r"(?:salva|salvami|annota|annotami|segna|segnati|segnami|scrivi|scrivimi|aggiungi|crea)\s+"
-    r"(?:(?:una|la|un|il)\s+)?(?:nota|promemoria)(?:\s*:|\s+(?:per|che|su)\b|\s*[.!]?\s*$)"
-    r"|(?:annota|annotati|segnati|segnami)\s+che\b(?!\s*(?:cos|cosa|ore)\b)"
-    r"|ricordami\s+di\b(?!\s*(?:cosa|che|come|quando|perche|chi|quale|quanto|dove|se)\b)"
-    r"|(?:nota|promemoria)\s*:)"
+    r"(?:(?:una|la|un|il)\s+)?(?:nota|promemoria)(?:\s*:|\s*[.!]?\s*$)"
+    r"|(?:annota|annotati|segnati|segnami)\s+che\b(?!\s*(?:cos|cosa|ore|tipo|differenza|significa)\b)"
+    r"|ricordami\s+di\s+\w+(?:[aei]re|[aei]r(?:lo|la|li|le|mi|ti|ci|vi|gli|ne))\b)"
 )
 _DELETE_REQUEST = re.compile(
     r"(?:^\s*" + _PREFISSO + r"|\b(?:e|ed|poi)\s+|,\s*)"
