@@ -1,6 +1,6 @@
 # Note persistenti con FastAPI — specifica
 
-Data: 2026-11-09 · Stato: approvata dall'utente il 2026-11-09 · **Revisione 2026-11-11** (sezione 5.4, controllo dei falsi successi, dopo la prova reale): approvata dall'utente il 2026-11-11 · **Revisione 2026-11-15** (5.4: solo avviso, niente nuovo tentativo): scelta dell'utente · **Revisione 2026-11-18** (sezione 5.5: frasi brevi e avviso legato alla richiesta, dopo la prova reale dell'agente come servizio): approvata dall'utente il 2026-11-18, comprese le due scelte di Claude
+Data: 2026-11-09 · Stato: approvata dall'utente il 2026-11-09 · **Revisione 2026-11-11** (sezione 5.4, controllo dei falsi successi, dopo la prova reale): approvata dall'utente il 2026-11-11 · **Revisione 2026-11-15** (5.4: solo avviso, niente nuovo tentativo): scelta dell'utente · **Revisione 2026-11-18** (sezione 5.5: frasi brevi e avviso legato alla richiesta, dopo la prova reale dell'agente come servizio): approvata dall'utente il 2026-11-18, comprese le due scelte di Claude · **Revisione 2026-11-20** (sezione 5.7: dichiarazioni con l'ausiliare legate alla nota): approvata dall'utente
 
 Riferimenti: lezione 5 del corso, slide 16 (scelta del confine), 19 e 21 (variante FastAPI + wrapper HTTP), 6 (controllo dei permessi da parte dell'applicazione), 26 («Note persistenti: un tool che produce effetti») e 31 (evidenze). Specifiche precedenti `2026-11-02-strumenti-mcp-design.md` e `2026-11-09-catalogo-linguaggi-design.md`, valide per tutto ciò che qui non cambia.
 
@@ -163,6 +163,16 @@ Dichiarazione senza conferma = **falso successo**. Le frasi negative che conteng
 ### 5.6 Date relative nella scadenza (revisione 2026-11-19)
 
 `due_date` di `add_note` accetta anche oggi, domani, dopodomani e i giorni della settimana, calcolati dal programma: vedi `2026-11-19-data-nel-prompt-design.md`, revisione 2026-11-19.
+
+### 5.7 Dichiarazioni con l'ausiliare legate alla nota (revisione 2026-11-20)
+
+**Perché.** Le forme con l'ausiliare della 5.4 («ho salvato», «ho eliminato», «ho cancellato», «è stato salvato», «sono state eliminate») non guardano di che cosa si parla: nelle risposte di programmazione danno l'avviso anche quando l'utente parla d'altro («Ho cancellato il file temporaneo nell'esempio.», «Il file è stato salvato con open().», «Le modifiche sono state salvate.», «Il record è stato eliminato dal database.»), contro la regola dell'utente della 5.5 («se parlo d'altro, mai avvisi»). Nelle risposte vere raccolte (lfm2 e gemma, 2026-11-16…19) ogni dichiarazione sulle note, vera o falsa, contiene «nota» o «promemoria» nella stessa frase.
+
+**Che cosa cambia.** Una dichiarazione con l'ausiliare (attiva o passiva, salvataggio o eliminazione) conta solo se nella **stessa frase** (delimitata da `.`, `!`, `?`, a capo) compare `nota`, `note` o `promemoria`. Restano come oggi: le forme con il pronome («l'ho salvata», «l'ho eliminata»), le frasi brevi a inizio frase della 5.5 («Nota salvata.») e i passivi `aggiunt/creat` già legati alla nota; la regola della richiesta esplicita non cambia.
+
+**Limite accettato.** «Ho salvato "comprare il latte".» senza la parola «nota» non è più una dichiarazione; se l'utente aveva chiesto esplicitamente di salvare, l'avviso arriva comunque dalla regola della richiesta.
+
+**Verifica.** Misura senza modello prima del piano: regola attuale e prototipo su tutte le risposte vere registrate e su risposte di programmazione; obiettivo zero avvisi sulle risposte d'altro e nessuna dichiarazione falsa registrata persa. Test con le frasi sopra (negativi) e con le dichiarazioni vere e false raccolte (positivi).
 
 ## 6. Docker
 
