@@ -586,3 +586,13 @@ def test_note_sentence_and_file_sentence():
 
 def test_abbreviation_keeps_the_sentence():
     assert check_note_claims(turn("La nota n. 3 è stata eliminata.")) == [DELETE_WARNING]
+
+
+@pytest.mark.parametrize("answer, expected", [
+    ("Fatto. Nota 6 eliminata.", [DELETE_WARNING]),
+    ("Ok! Nota salvata.", [SAVE_WARNING]),
+    ("Ecco fatto. Nota salvata.", [SAVE_WARNING]),
+    ("1. Nota salvata", [SAVE_WARNING]),
+])
+def test_short_sentence_after_previous_sentence(answer, expected):
+    assert check_note_claims(turn(answer)) == expected

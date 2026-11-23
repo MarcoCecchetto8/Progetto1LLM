@@ -215,7 +215,7 @@ def _note_sentences(text: str) -> list[str]:
     # Protegge i punti di «n. 3» e dei numeri decimali, poi divide in frasi.
     text = re.sub(r"\bn\.(?=\s*\d)", "n@@", text)
     text = re.sub(r"(?<=\d)\.(?=\d)", "@@", text)
-    return [part.replace("@@", ".") for part in re.split(r"[.!?\n]+", text) if part.strip()]
+    return [part.replace("@@", ".").strip() for part in re.split(r"[.!?\n]+", text) if part.strip()]
 
 
 def check_note_claims(messages: list[AnyMessage]) -> list[str]:
