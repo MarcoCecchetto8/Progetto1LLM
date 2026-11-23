@@ -40,8 +40,8 @@ _SAVE_CLAIM = re.compile(
     r"|" + _FRASE + _NOTA_N + r"(salvat|memorizzat|annotat|registrat|aggiunt|creat)[aoie]\b"
 )
 # Le espressioni contano solo nelle frasi che parlano della nota («Ho cancellato il file» non è una nota):
-# la frase deve contenere nota/note/promemoria oppure la forma con il pronome («l'ho salvata»).
-_NOTE_WORD = re.compile(r"\b(?:nota|note|promemoria)\b|\bl['’ ]\s*ho\s+(?:gia\s+)?\w+[aoie]\b")
+# la frase deve contenere nota/note/promemoria, anche per le forme con il pronome («l'ho salvata»).
+_NOTE_WORD = re.compile(r"\b(?:nota|note|promemoria)\b")
 _DELETE_CLAIM = re.compile(
     r"\bho\s+(?:gia\s+)?(eliminat|cancellat|rimoss)[aoie]\b"
     r"|\b(?:e'?|sono)\s+stat[aoie]\s+(eliminat|cancellat|rimoss)[aoie]\b"

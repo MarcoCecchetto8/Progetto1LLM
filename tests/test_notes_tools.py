@@ -477,8 +477,17 @@ def test_delete_claim_without_tool_warns(answer):
     assert check_note_claims(turn(answer)) == [DELETE_WARNING]
 
 
-def test_delete_clitic_claim_warns():
-    assert check_note_claims(turn("Fatto! L'ho eliminata.")) == [DELETE_WARNING]
+def test_delete_clitic_claim_alone_does_not_warn():
+    assert check_note_claims(turn("Fatto! L'ho eliminata.")) == []
+
+
+def test_delete_clitic_claim_with_request_warns():
+    assert check_note_claims(asked("Elimina la nota 3", "Fatto! L'ho eliminata.")) == [DELETE_WARNING]
+
+
+def test_pronoun_form_about_a_file_never_warns():
+    answer = "Ho salvato la stringa \"Contenuto di esempio\" in un file temporaneo e poi l'ho eliminato."
+    assert check_note_claims(turn(answer)) == []
 
 
 def test_delete_cancelled_confirms():
