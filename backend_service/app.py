@@ -1,6 +1,7 @@
 """API HTTP del back-end: chat salvate, stato di database e agente."""
 
 import logging
+import time
 
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
@@ -9,8 +10,17 @@ from fastapi.responses import JSONResponse, Response
 
 from assistant.agent_http import AgentHTTPClient, AgentRequestError, AgentUnavailable
 from backend_service.errors import AGENT_DOWN, DB_DOWN, BackendError, chat_not_found
-from backend_service.schemas import ChatDetail, ChatSummary, CreateChat, ErrorBody
+from backend_service.schemas import (
+    ChatDetail,
+    ChatSummary,
+    ConfirmRequest,
+    CreateChat,
+    ErrorBody,
+    SendMessage,
+    TurnResult,
+)
 from backend_service.store import ChatStore, StoreUnavailable
+from backend_service.turns import ChatTurns, agent_error
 
 logger = logging.getLogger("backend_service")
 
@@ -42,7 +52,44 @@ def create_app(store: ChatStore, agent: AgentHTTPClient) -> FastAPI:
         logger.warning("[backend] database non raggiungibile: %s", exc)
         return _error(503, "database_non_raggiungibile", DB_DOWN)
 
+    @app.exception_handler(Exception)
+    def unexpected_error_handler(request: Request, exc: Exception):
+        logger.warning("[backend] errore imprevisto: %s", exc, exc_info=(type(exc), exc, exc.__traceback__))
+        return _error(500, "errore_imprevisto", f"Errore imprevisto: {exc}. Riprova.")
+
+    turns = ChatTurns(store)
+    app.state.turns = turns
+
+    def run_turn(label: str, chat_id: int, prepare) -> dict:
+        started = time.monotonic()
+        outcome = "errore"
+        try:
+            with turns.busy(chat_id):
+                payload, question = prepare()
+                try:
+                    reply = agent.turn(payload)
+                except (AgentUnavailable, AgentRequestError) as error:
+                    raise agent_error(error) from error
+                result = turns.finish(chat_id, question, reply)
+                outcome = result["esito"]
+                return result
+        except BackendError as error:
+            outcome = error.code
+            raise
+        finally:
+            logger.info("[backend] %s chat %d: %s in %.1f s", label, chat_id, outcome, time.monotonic() - started)
+
     # Endpoint sincroni: FastAPI li esegue in un thread
+    @app.post("/chats/{chat_id}/messaggi", response_model=TurnResult, responses=ERRORS)
+    def send_message(chat_id: int, body: SendMessage):
+        """Invia una domanda all'agente; domanda e risposta si salvano insieme, a turno completato."""
+        return run_turn("invio", chat_id, lambda: turns.message_payload(chat_id, body.testo))
+
+    @app.post("/chats/{chat_id}/conferma", response_model=TurnResult, responses=ERRORS)
+    def confirm(chat_id: int, body: ConfirmRequest):
+        """Risponde alle conferme di eliminazione in attesa: `decisioni` ha come chiavi gli id delle note."""
+        return run_turn("conferma", chat_id, lambda: turns.confirm_payload(chat_id, body.decisioni))
+
     @app.post("/chats", status_code=201, response_model=ChatSummary, responses=ERRORS)
     def create_chat(body: CreateChat | None = None):
         """Crea una chat; il titolo è facoltativo."""
