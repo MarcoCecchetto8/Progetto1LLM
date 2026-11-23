@@ -6,7 +6,7 @@ import time
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from assistant.agent_http import AgentHTTPClient, AgentRequestError, AgentUnavailable
 from backend_service.errors import AGENT_DOWN, DB_DOWN, BackendError, chat_not_found
@@ -20,11 +20,13 @@ from backend_service.schemas import (
     TurnResult,
 )
 from backend_service.store import ChatStore, StoreUnavailable
+from backend_service.streaming import SSE_MEDIA_TYPE, stream_turn_events
 from backend_service.turns import ChatTurns, agent_error
 
 logger = logging.getLogger("backend_service")
 
 ERRORS = {code: {"model": ErrorBody} for code in (404, 409, 422, 500, 502, 503)}
+STREAM_RESPONSES = {**ERRORS, 200: {"content": {"text/event-stream": {}}}}
 
 
 class UTF8JSONResponse(JSONResponse):
@@ -89,6 +91,28 @@ def create_app(store: ChatStore, agent: AgentHTTPClient) -> FastAPI:
     def confirm(chat_id: int, body: ConfirmRequest):
         """Risponde alle conferme di eliminazione in attesa: `decisioni` ha come chiavi gli id delle note."""
         return run_turn("conferma", chat_id, lambda: turns.confirm_payload(chat_id, body.decisioni))
+
+    def open_stream(label: str, chat_id: int, prepare) -> StreamingResponse:
+        # Controlli e presa del turno prima dello stream: i loro errori sono normali risposte HTTP
+        turns.acquire(chat_id)
+        try:
+            payload, question = prepare()
+            events = stream_turn_events(turns, agent, chat_id, payload, question,
+                                        lambda: turns.release(chat_id), label)
+        except BaseException:
+            turns.release(chat_id)
+            raise
+        return StreamingResponse(events, media_type=SSE_MEDIA_TYPE, headers={"Cache-Control": "no-cache"})
+
+    @app.post("/chats/{chat_id}/messaggi/stream", responses=STREAM_RESPONSES)
+    def send_message_stream(chat_id: int, body: SendMessage):
+        """Come `/messaggi`, con gli eventi SSE dell'agente; l'evento `fine` ha il corpo di `/messaggi`."""
+        return open_stream("invio (stream)", chat_id, lambda: turns.message_payload(chat_id, body.testo))
+
+    @app.post("/chats/{chat_id}/conferma/stream", responses=STREAM_RESPONSES)
+    def confirm_stream(chat_id: int, body: ConfirmRequest):
+        """Come `/conferma`, con gli eventi SSE dell'agente."""
+        return open_stream("conferma (stream)", chat_id, lambda: turns.confirm_payload(chat_id, body.decisioni))
 
     @app.post("/chats", status_code=201, response_model=ChatSummary, responses=ERRORS)
     def create_chat(body: CreateChat | None = None):

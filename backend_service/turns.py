@@ -26,18 +26,25 @@ class ChatTurns:
         self._lock = threading.Lock()
         self._busy: set[int] = set()
 
-    @contextmanager
-    def busy(self, chat_id: int):
-        """Segna la chat come occupata; 409 se lo è già. Si libera sempre all'uscita."""
+    def acquire(self, chat_id: int) -> None:
+        """Segna la chat come occupata; 409 se lo è già."""
         with self._lock:
             if chat_id in self._busy:
                 raise BackendError(409, "turno_in_corso", BUSY)
             self._busy.add(chat_id)
+
+    def release(self, chat_id: int) -> None:
+        with self._lock:
+            self._busy.discard(chat_id)
+
+    @contextmanager
+    def busy(self, chat_id: int):
+        """Come `acquire`, e la chat si libera sempre all'uscita."""
+        self.acquire(chat_id)
         try:
             yield
         finally:
-            with self._lock:
-                self._busy.discard(chat_id)
+            self.release(chat_id)
 
     def _chat(self, chat_id: int) -> dict:
         chat = self._store.get_chat(chat_id)
