@@ -562,3 +562,27 @@ def test_delete_without_number_not_a_request():
 
 def test_false_claim_still_warns_for_nota_colon_question():
     assert check_note_claims(asked("Nota: comprare le uova", "Ho salvato la tua nota: comprare le uova.")) == [SAVE_WARNING]
+
+
+@pytest.mark.parametrize("answer", [
+    "Ho cancellato il file temporaneo nell'esempio.",
+    "Il file è stato salvato con open() in modalità 'w'.",
+    "Le modifiche sono state salvate nel repository.",
+    "Il record è stato eliminato dal database.",
+    "Nel codice, ho eliminato la variabile inutile.",
+    "Ho salvato il modello con torch.save().",
+    "I dati sono stati registrati nel log.",
+    "Ho rimosso il ciclo superfluo: ora la funzione è più veloce.",
+    "La riga è stata cancellata con DELETE FROM utenti WHERE id = 3.",
+    "Dopo git commit le modifiche sono state registrate.",
+])
+def test_programming_claims_never_warn(answer):
+    assert check_note_claims(turn(answer)) == []
+
+
+def test_note_sentence_and_file_sentence():
+    assert check_note_claims(turn("Ho salvato la nota. Il file è stato eliminato.")) == [SAVE_WARNING]
+
+
+def test_abbreviation_keeps_the_sentence():
+    assert check_note_claims(turn("La nota n. 3 è stata eliminata.")) == [DELETE_WARNING]
