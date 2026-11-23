@@ -477,8 +477,17 @@ def test_delete_claim_without_tool_warns(answer):
     assert check_note_claims(turn(answer)) == [DELETE_WARNING]
 
 
-def test_delete_clitic_claim_warns():
-    assert check_note_claims(turn("Fatto! L'ho eliminata.")) == [DELETE_WARNING]
+def test_delete_clitic_claim_alone_does_not_warn():
+    assert check_note_claims(turn("Fatto! L'ho eliminata.")) == []
+
+
+def test_delete_clitic_claim_with_request_warns():
+    assert check_note_claims(asked("Elimina la nota 3", "Fatto! L'ho eliminata.")) == [DELETE_WARNING]
+
+
+def test_pronoun_form_about_a_file_never_warns():
+    answer = "Ho salvato la stringa \"Contenuto di esempio\" in un file temporaneo e poi l'ho eliminato."
+    assert check_note_claims(turn(answer)) == []
 
 
 def test_delete_cancelled_confirms():
@@ -562,3 +571,37 @@ def test_delete_without_number_not_a_request():
 
 def test_false_claim_still_warns_for_nota_colon_question():
     assert check_note_claims(asked("Nota: comprare le uova", "Ho salvato la tua nota: comprare le uova.")) == [SAVE_WARNING]
+
+
+@pytest.mark.parametrize("answer", [
+    "Ho cancellato il file temporaneo nell'esempio.",
+    "Il file è stato salvato con open() in modalità 'w'.",
+    "Le modifiche sono state salvate nel repository.",
+    "Il record è stato eliminato dal database.",
+    "Nel codice, ho eliminato la variabile inutile.",
+    "Ho salvato il modello con torch.save().",
+    "I dati sono stati registrati nel log.",
+    "Ho rimosso il ciclo superfluo: ora la funzione è più veloce.",
+    "La riga è stata cancellata con DELETE FROM utenti WHERE id = 3.",
+    "Dopo git commit le modifiche sono state registrate.",
+])
+def test_programming_claims_never_warn(answer):
+    assert check_note_claims(turn(answer)) == []
+
+
+def test_note_sentence_and_file_sentence():
+    assert check_note_claims(turn("Ho salvato la nota. Il file è stato eliminato.")) == [SAVE_WARNING]
+
+
+def test_abbreviation_keeps_the_sentence():
+    assert check_note_claims(turn("La nota n. 3 è stata eliminata.")) == [DELETE_WARNING]
+
+
+@pytest.mark.parametrize("answer, expected", [
+    ("Fatto. Nota 6 eliminata.", [DELETE_WARNING]),
+    ("Ok! Nota salvata.", [SAVE_WARNING]),
+    ("Ecco fatto. Nota salvata.", [SAVE_WARNING]),
+    ("1. Nota salvata", [SAVE_WARNING]),
+])
+def test_short_sentence_after_previous_sentence(answer, expected):
+    assert check_note_claims(turn(answer)) == expected

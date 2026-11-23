@@ -39,6 +39,9 @@ _SAVE_CLAIM = re.compile(
     r"|\b(?:nota|note|promemoria)\s+(?:(?:n\.?\s*)?\d+\s+)?(?:e'?|sono)\s+stat[aoie]\s+(?:aggiunt|creat)[aoie]\b"
     r"|" + _FRASE + _NOTA_N + r"(salvat|memorizzat|annotat|registrat|aggiunt|creat)[aoie]\b"
 )
+# Le espressioni contano solo nelle frasi che parlano della nota («Ho cancellato il file» non è una nota):
+# la frase deve contenere nota/note/promemoria, anche per le forme con il pronome («l'ho salvata»).
+_NOTE_WORD = re.compile(r"\b(?:nota|note|promemoria)\b")
 _DELETE_CLAIM = re.compile(
     r"\bho\s+(?:gia\s+)?(eliminat|cancellat|rimoss)[aoie]\b"
     r"|\b(?:e'?|sono)\s+stat[aoie]\s+(eliminat|cancellat|rimoss)[aoie]\b"
@@ -208,6 +211,13 @@ def _normalize(text: str) -> str:
     return "".join(c for c in decomposed if not unicodedata.combining(c))
 
 
+def _note_sentences(text: str) -> list[str]:
+    # Protegge i punti di «n. 3» e dei numeri decimali, poi divide in frasi.
+    text = re.sub(r"\bn\.(?=\s*\d)", "n@@", text)
+    text = re.sub(r"(?<=\d)\.(?=\d)", "@@", text)
+    return [part.replace("@@", ".").strip() for part in re.split(r"[.!?\n]+", text) if part.strip()]
+
+
 def check_note_claims(messages: list[AnyMessage]) -> list[str]:
     """Avvisi per le risposte che dichiarano, o che l'utente aveva chiesto esplicitamente, un salvataggio
     o un'eliminazione mai confermati da uno strumento."""
@@ -228,9 +238,12 @@ def check_note_claims(messages: list[AnyMessage]) -> list[str]:
         save_asked = bool(_SAVE_REQUEST.search(q))
         delete_asked = bool(_DELETE_REQUEST.search(q))
     warnings = []
-    if (_SAVE_CLAIM.search(text) or save_asked) and "add_note" not in confirmed:
+    about_note = [s for s in _note_sentences(text) if _NOTE_WORD.search(s)]
+    save_claimed = any(_SAVE_CLAIM.search(s) for s in about_note)
+    delete_claimed = any(_DELETE_CLAIM.search(s) for s in about_note)
+    if (save_claimed or save_asked) and "add_note" not in confirmed:
         warnings.append(SAVE_WARNING)
-    if (_DELETE_CLAIM.search(text) or delete_asked) and "delete_note" not in confirmed:
+    if (delete_claimed or delete_asked) and "delete_note" not in confirmed:
         warnings.append(DELETE_WARNING)
     return warnings
 
