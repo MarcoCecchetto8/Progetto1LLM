@@ -12,7 +12,7 @@ from assistant.agent_http import AgentHTTPClient, AgentRequestError, AgentUnavai
 from backend_service.errors import AGENT_DOWN, DB_DOWN, BackendError
 from backend_service.schemas import TurnResult
 from backend_service.store import StoreUnavailable
-from backend_service.turns import ChatTurns, agent_error
+from backend_service.turns import ChatTurns, agent_error, invalid_reply
 
 logger = logging.getLogger("backend_service")
 
@@ -60,10 +60,15 @@ def _worker(turns: ChatTurns, agent: AgentHTTPClient, chat_id: int, payload: dic
             release: Callable[[], None], events: queue.Queue, cancelled: threading.Event, label: str) -> None:
     started = time.monotonic()
     outcome = "errore"
+    logger.info("[backend] %s chat %d: inizio", label, chat_id)
     try:
         outcome = _read_agent(turns, agent, chat_id, payload, question, events, cancelled)
     except (AgentUnavailable, AgentRequestError) as error:
         failure = agent_error(error)
+        outcome = failure.code
+        events.put(_error(failure.code, failure.message))
+    except json.JSONDecodeError as error:
+        failure = invalid_reply(error)
         outcome = failure.code
         events.put(_error(failure.code, failure.message))
     except BackendError as error:

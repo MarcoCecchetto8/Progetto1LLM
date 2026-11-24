@@ -161,3 +161,42 @@ def test_main_exits_without_database_url(monkeypatch, capsys):
         main()
     assert info.value.code == 1
     assert "DATABASE_URL" in capsys.readouterr().err
+
+
+def test_main_database_rejects_login_shows_cause(monkeypatch, capsys):
+    import psycopg
+
+    from backend_service import __main__ as entry
+    from backend_service.store import StoreUnavailable
+
+    class Rejected(psycopg.OperationalError):
+        sqlstate = "28P01"
+
+    def fake_store(url):
+        raise StoreUnavailable("x") from Rejected('password authentication failed for user "lab"\nseconda riga')
+
+    monkeypatch.setattr(entry, "PostgresChatStore", fake_store)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://lab:segretissima@127.0.0.1:5432/lab")
+    monkeypatch.setattr(sys, "argv", ["backend_service"])
+    with pytest.raises(SystemExit) as info:
+        entry.main()
+    assert info.value.code == 1
+    err = capsys.readouterr().err
+    assert 'Dettaglio: password authentication failed for user "lab"' in err
+    assert "seconda riga" not in err
+    assert "pgdata" in err
+    assert "segretissima" not in err
+
+
+def test_status_agent_body_not_a_dict():
+    client, _ = make_client(lambda request: httpx.Response(200, json=["boh"]))
+    response = client.get("/stato")
+    assert response.status_code == 503
+    assert response.json()["agente"]["raggiungibile"] is False
+
+
+def test_send_message_with_nul_is_422():
+    client, _ = make_client()
+    chat = client.post("/chats").json()
+    response = client.post(f"/chats/{chat['id']}/messaggi", json={"testo": "ciao" + chr(0)})
+    assert response.status_code == 422

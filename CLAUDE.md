@@ -28,10 +28,10 @@ Un'applicazione da terminale in Python che conversa con un modello locale e:
 
 - organizza il flusso in un grafo LangGraph esplicito (stato, nodi, instradamento riconoscibili);
 - usa un modello servito da LM Studio, che resta sul computer host;
-- conserva la cronologia della conversazione per la durata della sessione (la CLI non persiste; solo le chat del back-end sono salvate in PostgreSQL);
+- conserva la cronologia della conversazione per la durata della sessione (nessuna persistenza nella CLI);
 - offre strumenti esposti da un server MCP (FastMCP, stdio) che l'assistente scopre dal catalogo; il modello li richiede tramite tool calling e il programma li esegue davvero (orologio con fuso orario esplicito, poi gli altri strumenti concordati);
 - ha l'agente come servizio HTTP (`agent_service/`, API con streaming SSE): la CLI è un client e non parla più direttamente con server MCP e note;
-- ha un back-end HTTP (`backend_service/`) che salva le chat in PostgreSQL e chiama l'agente via HTTP; la CLI non lo usa e conserva la cronologia solo per la sessione (le chat del back-end sono invece persistenti);
+- ha un back-end HTTP (`backend_service/`) che salva le chat in PostgreSQL e chiama l'agente via HTTP; la CLI non lo usa;
 - si avvia anche con Docker Compose (servizi `db`, `notes`, `agent`, `app`).
 
 ## Confini

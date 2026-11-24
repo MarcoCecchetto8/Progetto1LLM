@@ -265,3 +265,29 @@ def test_integration_with_real_agent_api():
     second = send(client, cid, "E adesso?")  # l'agente accetta la cronologia salvata
     assert second.status_code == 200, second.text
     assert second.json()["risposta"]["contenuto"] == "Ancora le 14:32."
+
+
+def test_agent_422_invalid_request_is_502(caplog):
+    error = httpx.Response(422, json={"codice": "richiesta_non_valida", "messaggio": "Corpo errato."})
+    client, _, _, cid, _ = make(error)
+    with caplog.at_level("WARNING", logger="backend_service"):
+        response = send(client, cid)
+    assert response.status_code == 502
+    assert response.json()["codice"] == "risposta_agente_non_valida"
+    assert "Corpo errato." in caplog.text
+
+
+def test_agent_reply_not_json_is_502():
+    client, _, _, cid, _ = make(httpx.Response(200, content=b"non json"))
+    response = send(client, cid)
+    assert response.status_code == 502
+    assert response.json()["codice"] == "risposta_agente_non_valida"
+    assert client.get(f"/chats/{cid}").json()["messaggi"] == []
+    assert client.get(f"/chats/{cid}").status_code == 200
+
+
+def test_turn_start_is_logged(caplog):
+    client, _, _, cid, _ = make(completed())
+    with caplog.at_level("INFO", logger="backend_service"):
+        send(client, cid)
+    assert f"[backend] invio chat {cid}: inizio" in caplog.text

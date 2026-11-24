@@ -1,5 +1,6 @@
 """API HTTP del back-end: chat salvate, stato di database e agente."""
 
+import json
 import logging
 import time
 
@@ -21,7 +22,7 @@ from backend_service.schemas import (
 )
 from backend_service.store import ChatStore, StoreUnavailable
 from backend_service.streaming import SSE_MEDIA_TYPE, stream_turn_events
-from backend_service.turns import ChatTurns, agent_error
+from backend_service.turns import ChatTurns, agent_error, invalid_reply
 
 logger = logging.getLogger("backend_service")
 
@@ -65,6 +66,7 @@ def create_app(store: ChatStore, agent: AgentHTTPClient) -> FastAPI:
     def run_turn(label: str, chat_id: int, prepare) -> dict:
         started = time.monotonic()
         outcome = "errore"
+        logger.info("[backend] %s chat %d: inizio", label, chat_id)
         try:
             with turns.busy(chat_id):
                 payload, question = prepare()
@@ -72,6 +74,8 @@ def create_app(store: ChatStore, agent: AgentHTTPClient) -> FastAPI:
                     reply = agent.turn(payload)
                 except (AgentUnavailable, AgentRequestError) as error:
                     raise agent_error(error) from error
+                except json.JSONDecodeError as error:
+                    raise invalid_reply(error) from error
                 result = turns.finish(chat_id, question, reply)
                 outcome = result["esito"]
                 return result
@@ -154,6 +158,8 @@ def create_app(store: ChatStore, agent: AgentHTTPClient) -> FastAPI:
         agent_part = {"raggiungibile": False, "messaggio": AGENT_DOWN, "dettagli": None}
         try:
             details = agent.status()
+            if not isinstance(details, dict):
+                raise AgentRequestError("risposta_agente_non_valida", "L'agente ha risposto in un formato non comprensibile.")
             parts = [v for v in details.values() if isinstance(v, dict) and "raggiungibile" in v]
             ok = all(v["raggiungibile"] is True for v in parts)
             agent_part = {"raggiungibile": ok, "messaggio": "ok" if ok else "L'agente risponde ma una sua parte no.",

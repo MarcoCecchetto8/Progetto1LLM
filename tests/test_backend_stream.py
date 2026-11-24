@@ -149,9 +149,9 @@ def test_stream_agent_unreachable():
 
 
 def test_stream_agent_http_error():
-    client, _, _, cid = make(httpx.Response(422, json={"codice": "richiesta_non_valida", "messaggio": "No."}))
+    client, _, _, cid = make(httpx.Response(504, json={"codice": "modello_timeout", "messaggio": "No."}))
     events = events_of(stream_send(client, cid))
-    assert events == [("errore", {"codice": "richiesta_non_valida", "messaggio": "No."})]
+    assert events == [("errore", {"codice": "modello_timeout", "messaggio": "No."})]
 
 
 def test_stream_prechecks_are_http_errors():
@@ -326,3 +326,25 @@ def test_unexpected_error_becomes_event():
     assert items[0].startswith("event: errore\n")
     assert '"codice": "errore_imprevisto"' in items[0]
     assert released.wait(WAIT)
+
+
+def test_stream_agent_reply_not_json_is_error_event():
+    bad = httpx.Response(200, content=b"event: fine\ndata: {non json\n\n",
+                         headers={"content-type": streaming.SSE_MEDIA_TYPE})
+    client, store, _, cid = make(bad)
+    events = events_of(stream_send(client, cid))
+    assert [(n, d["codice"]) for n, d in events] == [("errore", "risposta_agente_non_valida")]
+    assert store.get_messages(cid) == []
+
+
+def test_stream_agent_422_invalid_request_is_502_code():
+    client, _, _, cid = make(httpx.Response(422, json={"codice": "richiesta_non_valida", "messaggio": "No."}))
+    events = events_of(stream_send(client, cid))
+    assert [(n, d["codice"]) for n, d in events] == [("errore", "risposta_agente_non_valida")]
+
+
+def test_stream_start_is_logged(caplog):
+    client, _, _, cid = make(sse_response(("fine", COMPLETED)))
+    with caplog.at_level("INFO", logger="backend_service"):
+        events_of(stream_send(client, cid))
+    assert f"[backend] invio (stream) chat {cid}: inizio" in caplog.text

@@ -51,6 +51,8 @@ class SendMessage(BaseModel):
     def _not_empty(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("Il testo del messaggio è vuoto.")
+        if "\x00" in value:
+            raise ValueError("Il testo contiene il carattere nullo, che il database non può salvare.")
         return value
 
 

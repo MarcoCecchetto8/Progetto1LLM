@@ -101,4 +101,14 @@ class ChatTurns:
 def agent_error(error: AgentUnavailable | AgentRequestError) -> BackendError:
     if isinstance(error, AgentUnavailable):
         return BackendError(503, "agente_non_raggiungibile", AGENT_DOWN)
+    if error.status == 422 and error.code == "richiesta_non_valida":
+        # Il corpo lo ha costruito il back-end: se l'agente non lo accetta la colpa è nostra, non dell'utente
+        logger.warning("[backend] l'agente ha rifiutato la richiesta del back-end (422): %s", error.message)
+        return BackendError(502, "risposta_agente_non_valida", INVALID_REPLY)
     return BackendError(error.status or 502, error.code, error.message)
+
+
+def invalid_reply(error: Exception) -> BackendError:
+    """Risposta dell'agente che non è JSON valido."""
+    logger.warning("[backend] risposta dell'agente non valida: %s", error)
+    return BackendError(502, "risposta_agente_non_valida", INVALID_REPLY)

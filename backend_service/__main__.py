@@ -21,6 +21,21 @@ def _without_password(url: str) -> str:
     return re.sub(r"(://[^:/@\s]*):[^@\s]*@", r"\1@", url)
 
 
+_SQLSTATE_HINTS = {
+    "28P01": " Le variabili POSTGRES_* di .env valgono solo alla prima creazione del volume pgdata.",
+    "3D000": " Le variabili POSTGRES_* di .env valgono solo alla prima creazione del volume pgdata.",
+}
+
+
+def _detail(error: Exception) -> str:
+    """Causa originale di psycopg (prima riga: nomina utente e indirizzo, mai la password) e, se noto, un suggerimento."""
+    cause = error.__cause__ if isinstance(error.__cause__, psycopg.Error) else error
+    lines = str(cause).strip().splitlines()
+    text = f" Dettaglio: {lines[0].strip()}" if lines and lines[0].strip() else ""
+    sqlstate = getattr(cause, "sqlstate", None)
+    return text + _SQLSTATE_HINTS.get(sqlstate, "")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m backend_service", description="Back-end HTTP delle chat.")
     parser.add_argument("--host", default="127.0.0.1")
@@ -40,9 +55,9 @@ def main() -> None:
         raise SystemExit(1)
     try:
         store = PostgresChatStore(url)
-    except (StoreUnavailable, psycopg.Error):
+    except (StoreUnavailable, psycopg.Error) as error:
         print(f"Il database non risponde all'indirizzo {_without_password(url)}: "
-              "avvia PostgreSQL con docker compose up -d db.", file=sys.stderr)
+              f"avvia PostgreSQL con docker compose up -d db.{_detail(error)}", file=sys.stderr)
         raise SystemExit(1) from None
 
     agent = AgentHTTPClient(os.environ.get("BACKEND_AGENT_URL", "").strip() or DEFAULT_AGENT_URL)
