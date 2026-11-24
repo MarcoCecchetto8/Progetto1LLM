@@ -248,19 +248,7 @@ def test_saved_when_client_leaves_after_fine(monkeypatch):
     assert [m["contenuto"] for m in store.get_messages(cid)] == ["Che ore sono?", "Sono le 14:32."]
 
 
-def test_cancel_before_fine_saves_nothing():
-    store, turns, cid = setup_direct()
-    gate, closed, released = threading.Event(), threading.Event(), threading.Event()
-
-    def agent_stream():
-        try:
-            yield "risposta", {"testo": "Sono"}
-            gate.wait(WAIT)
-            yield "fine", COMPLETED
-        except GeneratorExit:
-            closed.set()
-            raise
-
+def leave_after_first_event(turns, cid, agent_stream, released):
     async def leave_early():
         gen = stream_turn_events(turns, FakeAgent(agent_stream), cid, {}, "Che ore sono?", released.set)
         first = await gen.__anext__()
@@ -270,6 +258,39 @@ def test_cancel_before_fine_saves_nothing():
         await gen.aclose()
 
     asyncio.run(leave_early())
+
+
+def test_fine_after_cancel_is_saved():
+    # Il client se ne va mentre l'agente tace; l'agente completa comunque il turno: il fine si salva
+    store, turns, cid = setup_direct()
+    gate, released = threading.Event(), threading.Event()
+
+    def agent_stream():
+        yield "risposta", {"testo": "Sono"}
+        gate.wait(WAIT)
+        yield "fine", COMPLETED
+
+    leave_after_first_event(turns, cid, agent_stream, released)
+    gate.set()
+    assert released.wait(WAIT)
+    assert [m["contenuto"] for m in store.get_messages(cid)] == ["Che ore sono?", "Sono le 14:32."]
+
+
+def test_cancel_before_fine_saves_nothing():
+    store, turns, cid = setup_direct()
+    gate, closed, released = threading.Event(), threading.Event(), threading.Event()
+
+    def agent_stream():
+        try:
+            yield "risposta", {"testo": "Sono"}
+            gate.wait(WAIT)
+            yield "riga", {"testo": "[revisore] ok"}  # primo evento dopo l'annullamento: si chiude qui
+            yield "fine", COMPLETED
+        except GeneratorExit:
+            closed.set()
+            raise
+
+    leave_after_first_event(turns, cid, agent_stream, released)
     gate.set()
     assert released.wait(WAIT)
     assert closed.wait(WAIT)

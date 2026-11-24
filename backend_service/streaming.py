@@ -34,13 +34,17 @@ def _read_agent(turns: ChatTurns, agent: AgentHTTPClient, chat_id: int, payload:
     """Inoltra gli eventi dell'agente; al `fine` salva qui, nel thread, anche se il client se n'è andato."""
     stream = agent.stream_turn(payload)
     try:
+        # Limite strutturale: il thread è fermo dentro l'iteratore dell'agente e vede l'annullamento solo tra
+        # un evento e l'altro; nelle fasi silenziose (router, modello prima del primo token, revisore) il turno
+        # non si può interrompere prima, e l'agente può arrivare al `fine` con le sue azioni già fatte.
         for name, data in stream:
-            if cancelled.is_set():
-                return "interrotto"  # uscire dal for chiude lo stream verso l'agente, che ferma il turno
             if name == "fine":
+                # Si salva anche se il client se n'è andato: le azioni del turno sono già avvenute
                 result = turns.finish(chat_id, question, data)
                 events.put(("fine", TurnResult.model_validate(result).model_dump(mode="json")))
                 return result["esito"]
+            if cancelled.is_set():
+                return "interrotto"  # uscire dal for chiude lo stream verso l'agente, che ferma il turno
             events.put((name, data))
             if name == "errore":
                 return data.get("codice", "errore") if isinstance(data, dict) else "errore"
