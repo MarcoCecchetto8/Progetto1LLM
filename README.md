@@ -419,7 +419,7 @@ $env:TEST_DATABASE_URL = "postgresql://lab:cambiami@127.0.0.1:5432/lab"
 python -m pytest tests/test_chat_store.py
 ```
 
-Esito al 2026-11-24: 903 test superati e 1 saltato (con `TEST_DATABASE_URL` su un PostgreSQL temporaneo; il test saltato è quello valido solo in memoria). Alcuni test avviano davvero un server MCP di prova in stdio (`tests/mcp_test_server.py`): ogni avvio richiede alcuni secondi.
+Esito al 2026-11-24: 903 test superati e 1 saltato (con `TEST_DATABASE_URL` su un PostgreSQL temporaneo; il test saltato vale solo per PostgreSQL e non ha senso sull'archivio in memoria). Alcuni test avviano davvero un server MCP di prova in stdio (`tests/mcp_test_server.py`): ogni avvio richiede alcuni secondi.
 
 ## Verifica diretta del server MCP
 
