@@ -199,7 +199,7 @@ Entrambi gli esempi sono stati eseguiti il 2026-11-18 con Windows PowerShell 5.1
 
 Un servizio HTTP (FastAPI, porta 8002) che salva le chat in PostgreSQL e per ogni domanda chiama l'agente (`agent_service`, solo via HTTP: non importa grafo, LangChain né client MCP). Serve al front-end dello step 8; per ora si prova da PowerShell o da `/docs`. La CLI non lo usa e conserva la cronologia solo per la sessione.
 
-**Prerequisiti.** Nel `.env` (copiandole da `.env.example`) servono `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` (per il container `db`) e `DATABASE_URL` (per il back-end in locale, per esempio `postgresql://lab:cambiami@127.0.0.1:5432/lab`: utente, password e database devono coincidere con i `POSTGRES_*`). Facoltativa `BACKEND_AGENT_URL` (indirizzo dell'agente, predefinito `http://127.0.0.1:8001`; distinta da `AGENT_SERVICE_URL` della CLI). `TEST_DATABASE_URL` serve solo ai test con PostgreSQL vero (vedi «Test»). Prima di `docker compose up -d db` le variabili vanno aggiunte al proprio `.env`.
+**Prerequisiti.** Nel `.env` (copiandole da `.env.example`) servono `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` (per il container `db`) e `DATABASE_URL` (per il back-end in locale, per esempio `postgresql://lab:cambiami@127.0.0.1:5433/lab`: utente, password e database devono coincidere con i `POSTGRES_*`). Facoltativa `BACKEND_AGENT_URL` (indirizzo dell'agente, predefinito `http://127.0.0.1:8001`; distinta da `AGENT_SERVICE_URL` della CLI). `TEST_DATABASE_URL` serve solo ai test con PostgreSQL vero (vedi «Test»). Prima di `docker compose up -d db` le variabili vanno aggiunte al proprio `.env`.
 
 **Avvio** in tre terminali PowerShell, con il venv attivo in ciascuno:
 
@@ -272,7 +272,7 @@ Gli eventi sono quelli dell'agente (`ragionamento`, `risposta`, `strumento`, `es
 - Un turno alla volta per chat (una seconda richiesta sulla stessa chat dà 409); chat diverse possono inviare insieme, ma l'agente serializza i turni.
 - Un solo processo del back-end: il segno «turno in corso» è in memoria e non vale tra processi.
 - Alcuni messaggi dell'agente nominano la CLI («usa 'clear'», «riavvia l'assistente»): sono inoltrati invariati; adattarli è lasciato allo step 8.
-- Nessun container del back-end e nessuna modifica ad `agent` e `app` in Compose fino allo step 9. Il servizio `db` pubblica la porta solo su `127.0.0.1:5432`.
+- Nessun container del back-end e nessuna modifica ad `agent` e `app` in Compose fino allo step 9. Il servizio `db` pubblica la porta solo su `127.0.0.1:5433` (non 5432, per non scontrarsi con un PostgreSQL installato su Windows, che di solito occupa la 5432).
 - Nessuna autenticazione.
 
 ## Che cosa si vede durante un turno
@@ -415,7 +415,7 @@ python -m pytest
 I test dell'archivio delle chat contro PostgreSQL vero sono saltati se non è impostata `TEST_DATABASE_URL` (usano uno schema temporaneo, non toccano le tabelle del back-end). Per attivarli serve un PostgreSQL acceso, per esempio quello di `docker compose up -d db`:
 
 ```powershell
-$env:TEST_DATABASE_URL = "postgresql://lab:cambiami@127.0.0.1:5432/lab"
+$env:TEST_DATABASE_URL = "postgresql://lab:cambiami@127.0.0.1:5433/lab"
 python -m pytest tests/test_chat_store.py
 ```
 

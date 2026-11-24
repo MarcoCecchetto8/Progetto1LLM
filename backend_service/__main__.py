@@ -51,7 +51,7 @@ def main() -> None:
     url = os.environ.get("DATABASE_URL", "").strip()
     if not url:
         print("Manca DATABASE_URL: copia .env.example in .env e impostala "
-              "(per esempio postgresql://lab:cambiami@127.0.0.1:5432/lab).", file=sys.stderr)
+              "(per esempio postgresql://lab:cambiami@127.0.0.1:5433/lab).", file=sys.stderr)
         raise SystemExit(1)
     try:
         store = PostgresChatStore(url)
