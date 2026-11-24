@@ -155,7 +155,7 @@ def test_main_exits_without_database_url(monkeypatch, capsys):
     from backend_service.__main__ import main
 
     monkeypatch.delenv("DATABASE_URL", raising=False)
-    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setattr("backend_service.__main__.load_dotenv", lambda *a, **k: False)
     monkeypatch.setattr(sys, "argv", ["backend_service"])
     with pytest.raises(SystemExit) as info:
         main()
