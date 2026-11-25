@@ -125,9 +125,30 @@ def explain_multiplication(text: str) -> str:
     return _PER_BETWEEN_NUMBERS.sub(r"\1 × ", text)
 
 
-def with_explained_math(messages: list[AnyMessage]) -> list[AnyMessage]:
+_RELATIVE_DAYS = re.compile(r"(?:fra|tra)\s+(\d{1,4})\s+giorni|(\d{1,4})\s+giorni\s+fa", re.IGNORECASE)
+_ISO_IN_LINE = re.compile(r"\((\d{4}-\d{2}-\d{2})\)")
+
+
+def explain_relative_days(text: str, line: str) -> str:
+    """«fra 10 giorni» / «100 giorni fa»: aggiunge la data già calcolata (il modello piccolo sbaglia i conti)."""
+    found = _ISO_IN_LINE.search(line or "")
+    if not found:
+        return text
+    today = datetime.date.fromisoformat(found.group(1))
+    notes = []
+    for match in _RELATIVE_DAYS.finditer(text):
+        if match.group(1):
+            days, label = int(match.group(1)), f"fra {match.group(1)} giorni"
+        else:
+            days, label = -int(match.group(2)), f"{match.group(2)} giorni fa"
+        day = today + datetime.timedelta(days=days)
+        notes.append(f"{label} = {day.isoformat()}, {_GIORNI[day.weekday()]}")
+    return f"{text} (calcolato dal programma: {'; '.join(notes)})" if notes else text
+
+
+def with_explained_question(messages: list[AnyMessage], line: str) -> list[AnyMessage]:
     """Copia per la chiamata al modello: solo le domande dell'utente, la cronologia resta com'era."""
-    return [m.model_copy(update={"content": explain_multiplication(m.content)})
+    return [m.model_copy(update={"content": explain_relative_days(explain_multiplication(m.content), line)})
             if isinstance(m, HumanMessage) and isinstance(m.content, str) else m for m in messages]
 
 
@@ -184,9 +205,9 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
     def model_node(state: State) -> dict:
         steps = state["steps"] + 1
         logger.debug("[grafo] nodo model: passaggio %d/%d", steps, max_steps)
-        response = model_with_tools.invoke(
-            with_summary(with_today(with_explained_math(state["messages"]), today() if today else ""),
-                         state.get("summary", "")))
+        line = today() if today else ""
+        messages = with_today(with_explained_question(state["messages"], line), line)
+        response = model_with_tools.invoke(with_summary(messages, state.get("summary", "")))
         if REASONING_KEY in response.additional_kwargs:
             # Il ragionamento si mostra in streaming ma non entra nella cronologia
             extra = {k: v for k, v in response.additional_kwargs.items() if k != REASONING_KEY}
