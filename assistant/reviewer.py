@@ -34,7 +34,9 @@ _LINES = {
 
 class Review(BaseModel):
     coerente: bool = Field(description="True se la risposta copre tutte le parti della domanda e resta in tema.")
-    motivo: str = Field(description="Frase breve in italiano: che cosa manca o che cosa è fuori tema.")
+    # maxLength solo nello schema (meno token da generare), come nel router: nessuna validazione che possa fallire
+    motivo: str = Field(description="Frase breve in italiano: che cosa manca o che cosa è fuori tema.",
+                        json_schema_extra={"maxLength": 160})
 
 
 def review_request(question: str, answer: str, summary: str = "", recent: str = "", tools: str = "") -> str:

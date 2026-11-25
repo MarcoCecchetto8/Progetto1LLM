@@ -87,6 +87,15 @@ def test_route_schema_enum():
     assert schema["properties"]["categoria"]["enum"] == ["conversazione", "fuori_ambito"]
 
 
+def test_route_reason_is_short_in_schema_only():
+    # Il limite va al modello nello schema (meno token da generare); la validazione in Python
+    # non lo impone, così un server che lo ignora non fa fallire il router
+    schema = Route.model_json_schema()
+    assert schema["properties"]["motivo"]["maxLength"] == 100
+    assert list(schema["properties"]) == ["categoria", "motivo"]  # la decisione prima del motivo
+    assert Route(categoria="conversazione", motivo="x" * 300).motivo == "x" * 300
+
+
 def test_router_context_never_starts_with_assistant():
     # Alcuni template di chat (Gemma 2/3, Mistral) rifiutano un assistente subito dopo il sistema
     turns = []

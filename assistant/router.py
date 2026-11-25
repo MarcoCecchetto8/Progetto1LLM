@@ -29,7 +29,10 @@ class Route(BaseModel):
     categoria: Literal["conversazione", "fuori_ambito"] = Field(
         description="'conversazione' se la domanda rientra nell'ambito, 'fuori_ambito' altrimenti."
     )
-    motivo: str = Field(description="Frase breve in italiano che spiega la scelta.")
+    # maxLength solo nello schema: il modello genera meno token (il router costava ~100 token a turno),
+    # ma la validazione non lo impone, così un server che lo ignora non fa fallire il router
+    motivo: str = Field(description="Frase breve in italiano che spiega la scelta.",
+                        json_schema_extra={"maxLength": 100})
 
 
 def router_prompt(scope: str, summary: str = "") -> str:
