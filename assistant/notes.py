@@ -133,6 +133,9 @@ def build_confirmation_check(client: httpx.Client,
 _WEEKDAYS = ["lunedi", "martedi", "mercoledi", "giovedi", "venerdi", "sabato", "domenica"]  # come date.weekday()
 _WEEKDAYS_EN = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 _ISO_DATE =re.compile(r"\d{4}-\d{2}-\d{2}")
+# Ora in fondo alla scadenza: «alle 18:30», «ore 9», «at 9», oppure «18:30» / «18.30» (un numero da solo no)
+_HOUR = r"(?:[01]?\d|2[0-3])"
+_TIME = re.compile(rf"(?:^|[\s,]+)(?:(?:alle ore|alle|ore|at)\s*{_HOUR}(?:[:.][0-5]\d)?|{_HOUR}[:.][0-5]\d)$")
 
 
 def resolve_due_date(value: str | None, today: date) -> str | None:
@@ -140,6 +143,12 @@ def resolve_due_date(value: str | None, today: date) -> str | None:
     if value is None or not value.strip():
         return None
     word = _normalize(value).strip()
+    # Le note non hanno un'ora: «18:30» vale oggi, «domani alle 9» vale domani (l'ora resta nel testo)
+    time = _TIME.search(word)
+    if time:
+        word = word[:time.start()].strip(" ,")
+        if not word:
+            return today.isoformat()
     if _ISO_DATE.fullmatch(word):
         return word
     # Il modello a volte ragiona in inglese: accetto anche le forme equivalenti
@@ -162,7 +171,9 @@ def build_note_tools(client: httpx.Client, today: Callable[[], date]) -> list[Ba
 
         text: testo della nota. due_date: scadenza opzionale, AAAA-MM-GG oppure oggi, domani, dopodomani o un
         giorno della settimana: per le date relative passa la parola così com'è (es. due_date="venerdì"),
-        il programma calcola la data; se l'utente non indica una scadenza, omettila."""
+        il programma calcola la data; un'ora è ammessa (es. due_date="oggi alle 18:30", da sola vale oggi):
+        la scadenza tiene solo il giorno, quindi scrivi l'ora anche nel testo. Se l'utente non indica una
+        scadenza, omettila."""
         due = resolve_due_date(due_date, today())
         note = _call(client, "POST", "/notes", json={"text": text, "due_date": due}).json()
         return f"Nota {note['id']} salvata: «{note['text']}» · {due_phrase(note['due_date'], today())}."

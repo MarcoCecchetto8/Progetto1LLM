@@ -605,3 +605,21 @@ def test_abbreviation_keeps_the_sentence():
 ])
 def test_short_sentence_after_previous_sentence(answer, expected):
     assert check_note_claims(turn(answer)) == expected
+
+
+@pytest.mark.parametrize("value, expected", [
+    # Solo un'ora: la scadenza è oggi (l'ora resta nel testo della nota)
+    ("18:30", "2026-11-09"), ("alle 18:30", "2026-11-09"), ("ore 9", "2026-11-09"), ("18.30", "2026-11-09"),
+    # Giorno con ora: conta il giorno
+    ("oggi alle 18:30", "2026-11-09"), ("domani alle 9", "2026-11-10"), ("domani ore 9:15", "2026-11-10"),
+    ("venerdì alle 10", "2026-11-13"), ("tomorrow at 9", "2026-11-10"), ("2026-12-01 18:30", "2026-12-01"),
+    ("oggi, 18:30", "2026-11-09"),
+])
+def test_resolve_due_date_with_time(value, expected):
+    assert resolve_due_date(value, TODAY) == expected
+
+
+@pytest.mark.parametrize("value", ["25:00", "alle", "18", "domani alle sera"])
+def test_resolve_due_date_invalid_time(value):
+    with pytest.raises(ToolException, match="oggi, domani, dopodomani"):
+        resolve_due_date(value, TODAY)
