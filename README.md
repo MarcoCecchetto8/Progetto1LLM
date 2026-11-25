@@ -299,15 +299,15 @@ python -m backend_service
 python -m frontend_service
 ```
 
-**Tempi di risposta (misurati il 2026-11-25 su questo portatile: i7-1355U, grafica integrata Iris Xe, `liquid/lfm2-24b-a2b` con runtime Vulkan).** Ogni turno fa tre chiamate al modello (router, agente, revisore) e il tempo va quasi tutto nella lettura dei prompt: 25–45 token al secondo, mentre la generazione è di circa 15 token al secondo. Con le cache di LM Studio calde un turno semplice richiede circa 40 s (router ~11 s, agente ~10 s, revisore ~15 s). Il **primo** turno dopo il caricamento del modello legge da zero il prompt dell'agente (circa 2.700 token, strumenti compresi): circa 70 s in più. Se il modello era stato scaricato per inattività (caricamento automatico con TTL di 60 minuti), si aggiunge circa un minuto di ricaricamento. Back-end, agente e pagina pesano pochi millisecondi. Prima di una presentazione:
+**Tempi di risposta (misurati il 2026-11-25 su questo portatile: i7-1355U, grafica integrata Iris Xe, `liquid/lfm2-24b-a2b`).** Ogni turno fa tre chiamate al modello (router, agente, revisore; due per l'agente quando usa uno strumento) e il tempo va quasi tutto nella lettura dei prompt. Sulla grafica integrata (runtime Vulkan, flash attention non supportata) la lettura va a 36–45 token al secondo; **con il modello solo su CPU va a 56–68 token al secondo**, con generazione quasi uguale (13–15 token al secondo). Misure su CPU: primo turno con strumento a freddo 83 s (prima oltre 2 minuti), turno con strumento a cache calda circa 35 s (router ~7 s, agente ~8 s, revisore ~12 s). Router e revisore hanno un motivo breve (`maxLength` nello schema JSON: circa 45 token generati invece di 100). Se il modello viene scaricato per inattività (caricamento automatico con TTL di 60 minuti) si aggiunge circa un minuto. Back-end, agente e pagina pesano pochi millisecondi. Prima di una presentazione:
 
 ```powershell
-# modello sempre carico (senza --ttl non viene scaricato per inattività)
+# modello solo su CPU e sempre carico (senza --ttl non viene scaricato per inattività)
 & "$env:USERPROFILE\.lmstudio\bin\lms.exe" unload --all
-& "$env:USERPROFILE\.lmstudio\bin\lms.exe" load liquid/lfm2-24b-a2b --context-length 8192 -y
+& "$env:USERPROFILE\.lmstudio\bin\lms.exe" load liquid/lfm2-24b-a2b --gpu off --context-length 8192 --parallel 4 -y
 ```
 
-poi, con tutto acceso, si manda una domanda di prova dalla pagina e si aspetta la risposta: le domande successive partono con le cache calde. Per risposte più rapide si può spegnere il revisore con `MAX_REVIEWS=0` nel `.env` (circa 15 s in meno a turno, ma la riga «Revisore» non compare più) e riavviare l'agente.
+poi, con tutto acceso, si manda una domanda di prova dalla pagina e si aspetta la risposta: le domande successive partono con le cache calde. In LM Studio (impostazioni del modello, «CPU Thread Pool Size») il modello usa 4 thread su 12: alzarli può accelerare ancora la lettura dei prompt (non misurato). Per risposte più rapide si può spegnere il revisore con `MAX_REVIEWS=0` nel `.env` (circa 12 s in meno a turno, ma la riga «Revisore» non compare più) e riavviare l'agente.
 
 Poi si apre http://127.0.0.1:8003 nel browser. Il front-end parte su `127.0.0.1:8003` (opzioni `--host`, `--port`, `--quiet`) e si ferma con Ctrl+C. Se `FRONTEND_BACKEND_URL` non inizia con `http://` o `https://`, esce con codice 1 e un messaggio su stderr («FRONTEND_BACKEND_URL non valida: ...»).
 
@@ -821,8 +821,8 @@ Prove da fare nel browser (http://127.0.0.1:8003) con database, agente, back-end
 | `[preferenze] contenuto non valido (...): uso italiano, sintetico, <fuso>` | il file non è un oggetto JSON valido: correggerlo e riavviare |
 | il riassunto è lento o scatta troppo spesso | ogni riassunto è una chiamata in più al modello: alzare `SUMMARY_THRESHOLD` |
 | `[riassunto] non riuscito (...): cronologia invariata` | il riassunto non è riuscito (errore di LM Studio o testo vuoto): la cronologia resta invariata e il turno prosegue |
-| la pagina aspetta 40 s o più prima di rispondere (anche 2–3 minuti la prima volta) | è la velocità del modello su questo portatile, non un errore: vedi «Tempi di risposta» nella sezione «Front-end» (modello sempre carico, domanda di prova prima della demo, eventualmente `MAX_REVIEWS=0`); il contatore accanto allo stato mostra i secondi trascorsi |
-| il revisore rimanda indietro risposte corrette, o il turno è lento | il revisore è un modello piccolo e ogni giudizio costa circa 23 s: ridurre `MAX_REVIEWS` (anche a `0`) |
+| la pagina aspetta 35 s o più prima di rispondere (oltre un minuto la prima volta) | è la velocità del modello su questo portatile, non un errore: vedi «Tempi di risposta» nella sezione «Front-end» (modello solo su CPU e sempre carico, domanda di prova prima della demo, eventualmente `MAX_REVIEWS=0`); il contatore accanto allo stato mostra i secondi trascorsi |
+| il revisore rimanda indietro risposte corrette, o il turno è lento | il revisore è un modello piccolo e ogni giudizio costa circa 12 s su questo portatile: ridurre `MAX_REVIEWS` (anche a `0`) |
 | `... non valida` o `... mancante` all'avvio | variabile del `.env` assente o con valore non valido: il messaggio indica quale |
 | `LM Studio non raggiungibile o risposta non valida su .../models` all'avvio | server di LM Studio spento o su un'altra porta: avviarlo e controllare `LMSTUDIO_BASE_URL` |
 | `Modello '...' non trovato. Modelli disponibili: ...` | `LMSTUDIO_MODEL` non corrisponde a un id di `GET /v1/models`: copiarne uno dall'elenco |
