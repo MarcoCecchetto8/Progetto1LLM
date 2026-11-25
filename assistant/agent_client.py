@@ -1,6 +1,5 @@
-"""Client HTTP del servizio agente (SSE compreso) e avvio automatico del servizio in locale."""
+"""Client HTTP del servizio agente per la CLI (prompt compresi) e avvio automatico del servizio in locale."""
 
-import json
 import os
 import signal
 import socket
@@ -8,96 +7,28 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Mapping
 
 import httpx
 
+from assistant.agent_http import (UNAVAILABLE, AgentHTTPClient, AgentRequestError, AgentUnavailable,  # noqa: F401
+                                  error_from, parse_sse)  # noqa: F401
 from assistant.mcp_client import MCPConnectionError, MCPPromptError, PromptArgument, PromptInfo
 
-UNAVAILABLE = "L'agente non risponde: esci e riavvia l'assistente."
 REFUSED_PREFIX = "Il server ha rifiutato il prompt: "
 START_TIMEOUT = 60.0
 STOP_TIMEOUT = 10.0
 API_ROLES = {"utente": "user", "assistente": "assistant"}
 
 
-class AgentUnavailable(Exception):
-    """Servizio agente non raggiungibile o non avviabile."""
-
-
-class AgentRequestError(Exception):
-    """Errore restituito dal servizio agente: codice e messaggio in italiano."""
-
-    def __init__(self, code: str, message: str):
-        super().__init__(message)
-        self.code = code
-        self.message = message
-
-
-def parse_sse(lines: Iterable[str]) -> Iterator[tuple[str, dict]]:
-    """Eventi `event:`/`data:` chiusi da una riga vuota; l'ultimo vale anche senza la riga vuota finale."""
-    name, data = None, []
-    for raw in lines:
-        line = raw.rstrip("\r\n")
-        if not line:
-            if name is not None:
-                yield name, json.loads("\n".join(data))
-            name, data = None, []
-        elif line.startswith("event:"):
-            name = line[len("event:"):].strip()
-        elif line.startswith("data:"):
-            value = line[len("data:"):]
-            data.append(value[1:] if value.startswith(" ") else value)
-    if name is not None:
-        yield name, json.loads("\n".join(data))
-
-
-def _sse_lines(chunks: Iterable[str]) -> Iterator[str]:
-    """Righe divise solo su a capo: iter_lines di httpx spezza anche su U+2028, U+0085 ecc., che nel JSON sono testo."""
-    buffer = ""
-    for chunk in chunks:
-        buffer += chunk
-        while "\n" in buffer:
-            line, buffer = buffer.split("\n", 1)
-            yield line.removesuffix("\r")
-    if buffer:
-        yield buffer
-
-
-def _error_from(response: httpx.Response) -> AgentRequestError:
-    try:
-        body = response.json()
-    except ValueError:
-        body = None
-    if isinstance(body, dict) and "codice" in body:
-        return AgentRequestError(body["codice"], body.get("messaggio", ""))
-    return AgentRequestError("richiesta_non_valida", f"Richiesta rifiutata dall'agente (HTTP {response.status_code}).")
-
-
-class AgentClient:
-    def __init__(self, base_url: str, transport: httpx.BaseTransport | None = None):
-        # Lettura senza limite: un turno con router, modello e revisore può durare minuti senza inviare byte
-        self._http = httpx.Client(base_url=base_url, timeout=httpx.Timeout(10.0, read=None), transport=transport)
-
-    def _request(self, method: str, url: str, **kw) -> httpx.Response:
-        try:
-            return self._http.request(method, url, **kw)
-        except httpx.TransportError as error:
-            raise AgentUnavailable(UNAVAILABLE) from error
-
+class AgentClient(AgentHTTPClient):
     def _prompt_error(self, response: httpx.Response) -> Exception:
-        error = _error_from(response)
+        error = error_from(response)
         if error.code == "prompt_rifiutato":
             return MCPPromptError(error.message.removeprefix(REFUSED_PREFIX))
         if error.code == "strumenti_non_raggiungibili":
             return MCPConnectionError(error.message)
         return error
-
-    def status(self) -> dict:
-        response = self._request("GET", "/stato")
-        if response.status_code not in (200, 503):
-            raise _error_from(response)
-        return response.json()
 
     def prompts(self) -> list[PromptInfo]:
         response = self._request("GET", "/prompts")
@@ -113,19 +44,6 @@ class AgentClient:
         if response.status_code != 200:
             raise self._prompt_error(response)
         return [(API_ROLES.get(m["ruolo"], "user"), m["contenuto"]) for m in response.json()["messaggi"]]
-
-    def stream_turn(self, payload: dict) -> Iterator[tuple[str, dict]]:
-        try:
-            with self._http.stream("POST", "/chat/stream", json=payload) as response:
-                if response.status_code != 200:
-                    response.read()
-                    raise _error_from(response)
-                yield from parse_sse(_sse_lines(response.iter_text()))
-        except httpx.TransportError as error:
-            raise AgentUnavailable(UNAVAILABLE) from error
-
-    def close(self) -> None:
-        self._http.close()
 
 
 def _port_in_use(port: int) -> bool:

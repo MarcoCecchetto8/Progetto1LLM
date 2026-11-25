@@ -195,6 +195,86 @@ Entrambi gli esempi sono stati eseguiti il 2026-11-18 con Windows PowerShell 5.1
 - Nessuna riconnessione automatica: se il server MCP o il servizio delle note si fermano, il turno dà `strumenti_non_raggiungibili` o `note_non_raggiungibili` e `/stato` risponde 503. Si riavvia l'agente: in locale basta uscire dall'assistente e riavviarlo, con Docker `docker compose restart agent`.
 - Nessuna autenticazione: le porte sono pubblicate solo su `127.0.0.1`.
 
+## Back-end delle chat
+
+Un servizio HTTP (FastAPI, porta 8002) che salva le chat in PostgreSQL e per ogni domanda chiama l'agente (`agent_service`, solo via HTTP: non importa grafo, LangChain né client MCP). Serve al front-end dello step 8; per ora si prova da PowerShell o da `/docs`. La CLI non lo usa e conserva la cronologia solo per la sessione.
+
+**Prerequisiti.** Nel `.env` (copiandole da `.env.example`) servono `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` (per il container `db`) e `DATABASE_URL` (per il back-end in locale, per esempio `postgresql://lab:cambiami@127.0.0.1:5433/lab`: utente, password e database devono coincidere con i `POSTGRES_*`). Facoltativa `BACKEND_AGENT_URL` (indirizzo dell'agente, predefinito `http://127.0.0.1:8001`; distinta da `AGENT_SERVICE_URL` della CLI). `TEST_DATABASE_URL` serve solo ai test con PostgreSQL vero (vedi «Test»). Prima di `docker compose up -d db` le variabili vanno aggiunte al proprio `.env`.
+
+**Avvio** in tre terminali PowerShell, con il venv attivo in ciascuno:
+
+```powershell
+docker compose up -d db
+python -m agent_service
+python -m backend_service
+```
+
+Il back-end parte su `http://127.0.0.1:8002` (opzioni `--host`, `--port`, `--quiet`), si collega al database e crea le tabelle se mancano. Se il database non risponde, o manca `DATABASE_URL`, esce con codice 1 e un messaggio su stderr. L'agente non serve all'avvio e il back-end non lo avvia da solo (a differenza della CLI): senza agente elenca e legge le chat, l'invio dà 503. Si ferma con Ctrl+C. La documentazione interattiva è su http://127.0.0.1:8002/docs.
+
+| Metodo e percorso | Che cosa fa |
+|---|---|
+| `POST /chats` | crea una chat (201); corpo facoltativo `{"titolo": "..."}`, altrimenti «Nuova chat» |
+| `GET /chats` | elenca le chat, prima quella con l'attività più recente |
+| `GET /chats/{id}` | legge una chat con `messaggi` e `conferme` in attesa |
+| `DELETE /chats/{id}` | elimina chat e messaggi (204) |
+| `POST /chats/{id}/messaggi` | invia `{"testo": "..."}`; risposta unica in JSON |
+| `POST /chats/{id}/messaggi/stream` | lo stesso in streaming SSE |
+| `POST /chats/{id}/conferma` | decisioni sulle eliminazioni in attesa, `{"decisioni": {"3": true}}` |
+| `POST /chats/{id}/conferma/stream` | lo stesso in streaming SSE |
+| `GET /stato` | stato di database e agente; 200 se rispondono entrambi, 503 altrimenti (stesso corpo) |
+| `GET /docs`, `GET /openapi.json` | documentazione interattiva e schema |
+
+Il titolo «Nuova chat» diventa, al primo turno completato, la prima domanda ridotta a una riga e troncata a 60 caratteri.
+
+**Esempi da PowerShell** (con database e agente accesi; per la risposta serve anche LM Studio):
+
+```powershell
+$chat = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8002/chats
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8002/chats/$($chat.id)/messaggi" -ContentType 'application/json; charset=utf-8' -Body '{"testo": "Che ore sono?"}'
+Invoke-RestMethod "http://127.0.0.1:8002/chats/$($chat.id)"
+Invoke-RestMethod http://127.0.0.1:8002/stato
+```
+
+Lo streaming si guarda con `curl.exe` (con `-N` gli eventi compaiono man mano):
+
+```powershell
+curl.exe -N -X POST http://127.0.0.1:8002/chats/1/messaggi/stream -H "Content-Type: application/json" -d '{\"testo\": \"Che ore sono?\"}'
+```
+
+Gli eventi sono quelli dell'agente (`ragionamento`, `risposta`, `strumento`, `esito_strumento`, `riga`, `errore`) più un `fine` del back-end, con lo stesso corpo di `POST /chats/{id}/messaggi` (senza cronologia né stato sospeso). Le righe `: ` vuote sono keepalive. Con Windows PowerShell 5.1 i caratteri non ASCII scritti direttamente in `-Body` possono arrivare storpiati; le risposte del back-end invece dichiarano `charset=utf-8` e si leggono bene.
+
+**Con l'agente spento.** `POST .../messaggi` risponde 503 `agente_non_raggiungibile` («L'agente non risponde: controlla che sia avviato (python -m agent_service) e riprova.») e **non salva nulla**, né la domanda né la risposta: la chat resta com'era e si può riprovare. Con lo streaming l'errore arriva come evento `errore`. `GET /stato` risponde 503 con `agente.raggiungibile: false`.
+
+**Salvataggio a fine turno.** Il back-end non salva la domanda prima di chiamare l'agente: domanda e risposta (con gli strumenti usati) si salvano insieme, in una sola transazione, quando il turno è completato. È uno scostamento consapevole dall'ordine della slide: così una domanda non resta mai senza risposta e la cronologia dell'agente resta coerente con i messaggi mostrati. La cronologia e il riassunto restituiti dall'agente sostituiscono quelli salvati e si rimandano al turno successivo.
+
+**Interruzione dello streaming.** Se il client si disconnette prima che l'agente abbia mandato `fine`, il back-end chiude lo stream verso l'agente e non salva nulla. Se `fine` è già arrivato, salva comunque: le azioni del turno (una nota creata o eliminata) sono già avvenute. Nelle fasi silenziose (router, revisore, modello prima del primo token) il turno non si può fermare subito: il back-end se ne accorge solo all'evento successivo dell'agente, e se l'agente porta comunque a termine il turno, questo viene salvato.
+
+**Conferma delle eliminazioni.** Se il modello chiede `delete_note`, l'invio risponde `esito: conferma_richiesta` con `conferme` (`id_nota` e `domanda` per ciascuna nota); il back-end tiene lo stato sospeso dell'agente senza esporlo, e nessun messaggio è ancora salvato. Finché la conferma è in attesa, un nuovo messaggio dà 409 `conferma_in_attesa`. Si risponde con `POST /chats/{id}/conferma` e `{"decisioni": {"3": true}}` (`true` elimina): le decisioni devono coprire esattamente le note in attesa, altrimenti 422 `decisioni_non_valide`; senza conferma in attesa 409 `nessuna_conferma`. A conferma risolta il turno si salva con la domanda originale; un errore lascia la conferma in attesa, così si può ripetere. `GET /chats/{id}` mostra le `conferme` in attesa.
+
+**Errori.** Corpo `{"codice": ..., "messaggio": ...}` in italiano; con lo streaming, dopo l'apertura, evento `errore` con gli stessi campi.
+
+| HTTP | `codice` | Quando |
+|---|---|---|
+| 404 | `chat_non_trovata` | la chat non esiste |
+| 409 | `turno_in_corso` | c'è già un turno in corso su quella chat |
+| 409 | `conferma_in_attesa` | prima va risolta la conferma in attesa |
+| 409 | `nessuna_conferma` | `conferma` senza conferme in attesa |
+| 422 | `decisioni_non_valide` | decisioni incomplete o in più |
+| 422 | (quello di FastAPI) | richiesta non valida (per esempio testo vuoto) |
+| 503 | `agente_non_raggiungibile` | l'agente è spento o ha chiuso la connessione |
+| 503 | `database_non_raggiungibile` | PostgreSQL non risponde durante il funzionamento |
+| 502 | `risposta_agente_non_valida` | risposta dell'agente non comprensibile |
+| come l'agente | come l'agente | errori dell'agente inoltrati invariati (`modello_non_raggiungibile`, `modello_timeout`, ...) |
+| 500 | `errore_imprevisto` | errore non previsto (traceback nei log) |
+
+**Limiti.**
+
+- Un turno alla volta per chat (una seconda richiesta sulla stessa chat dà 409); chat diverse possono inviare insieme, ma l'agente serializza i turni.
+- Un solo processo del back-end: il segno «turno in corso» è in memoria e non vale tra processi.
+- Alcuni messaggi dell'agente nominano la CLI («usa 'clear'», «riavvia l'assistente»): sono inoltrati invariati; adattarli è lasciato allo step 8.
+- Nessun container del back-end e nessuna modifica ad `agent` e `app` in Compose fino allo step 9. Il servizio `db` pubblica la porta solo su `127.0.0.1:5433` (non 5432, per non scontrarsi con un PostgreSQL installato su Windows, che di solito occupa la 5432).
+- Nessuna autenticazione.
+
 ## Che cosa si vede durante un turno
 
 La risposta arriva in streaming, mentre il modello la scrive:
@@ -332,7 +412,14 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-Esito al 2026-11-18: 641 test superati. Alcuni test avviano davvero un server MCP di prova in stdio (`tests/mcp_test_server.py`): ogni avvio richiede alcuni secondi.
+I test dell'archivio delle chat contro PostgreSQL vero sono saltati se non è impostata `TEST_DATABASE_URL` (usano uno schema temporaneo, non toccano le tabelle del back-end). Per attivarli serve un PostgreSQL acceso, per esempio quello di `docker compose up -d db`:
+
+```powershell
+$env:TEST_DATABASE_URL = "postgresql://lab:cambiami@127.0.0.1:5433/lab"
+python -m pytest tests/test_chat_store.py
+```
+
+Esito al 2026-11-24: 903 test superati e 1 saltato (con `TEST_DATABASE_URL` su un PostgreSQL temporaneo; il test saltato vale solo per PostgreSQL e non ha senso sull'archivio in memoria). Alcuni test avviano davvero un server MCP di prova in stdio (`tests/mcp_test_server.py`): ogni avvio richiede alcuni secondi.
 
 ## Verifica diretta del server MCP
 
@@ -623,6 +710,31 @@ Limiti osservati:
 
 - Il modello piccolo a volte dichiara «Nota salvata.» senza chiamare `add_note`. Il controllo dei falsi successi ora riconosce anche la frase secca «Nota salvata.» e la richiesta esplicita non eseguita (vedi «Regole del controllo»); il limite c'era prima dell'agente come servizio.
 - Una domanda mista («Spiegami la ricorsione… voglio una pompa») passa il router, perché una parte è in ambito: l'agente risponde alla parte in ambito e rifiuta l'altra. Per rifiutarle per intero basterebbe un esempio in `config/ambito.txt`.
+
+### Prova reale del back-end
+
+Esiti del 2026-11-24. La prova di avvio senza modello è stata fatta con un PostgreSQL 18.6 temporaneo (`docker run --rm -d`, immagine `postgres:18.6-alpine`, porta 55432) e un indirizzo dell'agente su cui non ascolta nessuno (`BACKEND_AGENT_URL=http://127.0.0.1:8011`), con `DATABASE_URL` nell'ambiente del processo; il `.env` non è stato toccato. Le prove con LM Studio sono del 2026-11-25 (modello `liquid/lfm2-24b-a2b`, database con `docker compose up -d db`, agente con `python -m agent_service` e back-end con `python -m backend_service` in locale, richieste con `Invoke-RestMethod` e `curl.exe` da Windows PowerShell 5.1).
+
+| Prova | Atteso | Esito |
+|---|---|---|
+| `python -m backend_service` con database acceso | parte su 8002 | ok: `Uvicorn running on http://127.0.0.1:8002` |
+| `POST /chats` e `GET /chats` | 201 con la chat, poi in elenco | ok (con `curl.exe` e con `Invoke-RestMethod`, Windows PowerShell 5.1) |
+| Invio `{"testo":"Che ore sono?"}` con l'agente spento | 503 `agente_non_raggiungibile`, nulla salvato | ok: 503 con il messaggio previsto; `GET /chats/1` con `messaggi: []` |
+| Lo stesso con lo streaming (`curl.exe -N`) | evento `errore` | ok: keepalive e poi `event: errore` con `agente_non_raggiungibile` |
+| `GET /stato` con l'agente spento | 503 | ok: database `raggiungibile: true`, agente `raggiungibile: false` |
+| `GET /docs` | 200 | ok (browser non provato) |
+| Arresto e riavvio del back-end | le chat sono ancora in elenco | ok: le tre chat create prima sono in elenco dopo il riavvio |
+| Avvio con database non raggiungibile (porta 1) o senza `DATABASE_URL` | codice 1 e messaggio chiaro, senza password | ok: «Il database non risponde all'indirizzo postgresql://lab@127.0.0.1:1/lab: avvia PostgreSQL con docker compose up -d db.» e «Manca DATABASE_URL: ...», codice 1 in entrambi i casi |
+| `docker compose up -d db` con il `.env` dell'utente (variabili `POSTGRES_*` e `DATABASE_URL` aggiunte), riavvio del back-end, poi `docker compose down` e `up -d db`: la chat c'è ancora | la chat resta (volume `pgdata`) | ok: dopo `down` e `up -d db` (container acceso da 55 s) tutte le chat e i messaggi, con strumenti e righe del revisore, sono ancora in elenco |
+| Con LM Studio: domanda con uno strumento (ora o calcolo), poi lettura della chat | risposta e messaggi salvati | ok: «Che ore sono?» → `get_current_time` con `Europe/Rome`, ora giusta, `[revisore] coerente`; i due messaggi in `GET /chats/1` |
+| Con LM Studio: eliminazione di una nota con conferma (`/conferma`) | `conferma_richiesta`, poi eliminazione e messaggi salvati | ok: nota 13 salvata con `add_note`; «Elimina la nota 13» → `conferma_richiesta` con la domanda della nota 13; `{"13": false}` → nota ancora presente; in una chat nuova `{"13": true}` → «La nota 13 è stata eliminata.», `delete_note` nei messaggi salvati, `GET /notes/13` 404 |
+| Con LM Studio: streaming con `curl.exe -N`, anche con Ctrl+C a metà | eventi man mano; con Ctrl+C prima di `fine` nulla salvato | ok: keepalive, `strumento` e `esito_strumento` (`Asia/Tokyo`), `risposta` a pezzi visti arrivare man mano, `riga` del revisore e `fine` con i messaggi salvati. Interruzione: connessione chiusa dal client dopo 15 s (`curl.exe -m 15`, al posto del Ctrl+C) → nessun messaggio salvato, e il turno successivo nella stessa chat è riuscito |
+| `DELETE /chats/{id}` | 204, poi 404 | ok: 204 per quattro chat, poi `GET` 404 «La chat 3 non esiste.» |
+
+Limiti osservati:
+
+- Il modello a volte non chiama `delete_note`. Una volta ha chiesto conferma a parole («Confermi l'eliminazione…?»): rispondendo «sì» ha chiamato lo strumento ed è arrivata la conferma vera. Un'altra volta, nella stessa chat, ha dichiarato l'eliminazione senza farla: il controllo dei falsi successi ha aggiunto l'avviso, ma il revisore l'ha giudicata coerente. In una chat nuova lo strumento è stato chiamato subito. Il limite è del modello e c'era già prima del back-end.
+- Incollare più comandi insieme in Windows PowerShell 5.1 può sembrare bloccare la finestra (righe `>>`, e un clic nella finestra attiva la selezione e mette in pausa l'output): i comandi partono lo stesso, e ogni nuovo Invio riesegue il blocco (quattro chat «Prova» in più). Meglio una riga alla volta.
 
 ## Diagnosi
 

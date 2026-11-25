@@ -9,3 +9,5 @@ langchain-mcp-adapters==0.3.2
 fastapi==0.162.2
 uvicorn==0.54.0
 httpx==0.28.1
+# Driver PostgreSQL sincrono, ruote binarie senza compilazione
+psycopg[binary]==3.3.9

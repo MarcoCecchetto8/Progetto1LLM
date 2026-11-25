@@ -1,4 +1,16 @@
 services:
+  db:
+    image: postgres:18.6-alpine
+    env_file: .env
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
   notes:
     build: .
     command: ["python", "-m", "notes_service", "--host", "0.0.0.0", "--port", "8000", "--db", "/app/data/notes.db"]
@@ -31,3 +43,5 @@ services:
       - agent
     stdin_open: true
     tty: true
+volumes:
+  pgdata:
