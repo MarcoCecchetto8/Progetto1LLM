@@ -87,6 +87,10 @@ browser ──HTTP──► frontend_service (8003): index.html, app.js, style.c
 - Chat senza messaggi: nell'elenco si mostra la data di `creata`.
 - Payload degli eventi SSE (inoltrati dall'agente così come sono): `strumento {nome, argomenti}`, `esito_strumento {nome, contenuto, errore}`, `risposta {testo}` (pezzo incrementale), `riga {testo}`, `ragionamento {testo}`, `fine` = corpo di `TurnResult`, `errore {codice, messaggio}`. Gli elementi di `strumenti` nei messaggi salvati sono `{nome, argomenti, esito, errore}`.
 
+**Misure della risposta** (richiesta dell'utente del 2026-11-25, dopo l'approvazione): sotto ogni risposta arrivata in streaming nella sessione, una riga discreta con **tempo totale** (dall'invio all'evento `fine`), **tempo al primo token** (dall'invio al primo evento `risposta`, che comprende router e strumenti) e **≈ token** (numero di eventi `risposta` ricevuti: con LM Studio di solito un pezzo per token, quindi un'approssimazione dichiarata). Si misurano nel browser e non si salvano: le risposte rilette dal back-end non le mostrano. Conteggio esatto dei token (uso riportato dal modello) fuori ambito: richiederebbe di modificare agente e back-end.
+
+**Direzione visiva** (scelta dell'utente con impeccable): «Sala dei reperti» (cartellini smaltati del Museo della Scienza e della Tecnologia di Milano) per palette e ordine, con gli strumenti mostrati come le schede magnetiche della Olivetti Programma 101. Il contratto di direzione sta in `.impeccable/surfaces/`.
+
 **Accessibilità e aspetto**: design con la skill impeccable (palette, tipografia, spaziature, stati vuoti, stato di attesa); contrasto sufficiente, focus visibile, pulsanti con etichetta, area messaggi `aria-live="polite"`; tema chiaro e scuro secondo il sistema. Nessun font o script esterno (funziona offline).
 
 ## 6. Test
