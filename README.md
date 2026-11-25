@@ -197,7 +197,7 @@ Entrambi gli esempi sono stati eseguiti il 2026-11-18 con Windows PowerShell 5.1
 
 ## Back-end delle chat
 
-Un servizio HTTP (FastAPI, porta 8002) che salva le chat in PostgreSQL e per ogni domanda chiama l'agente (`agent_service`, solo via HTTP: non importa grafo, LangChain né client MCP). Serve al front-end dello step 8; per ora si prova da PowerShell o da `/docs`. La CLI non lo usa e conserva la cronologia solo per la sessione.
+Un servizio HTTP (FastAPI, porta 8002) che salva le chat in PostgreSQL e per ogni domanda chiama l'agente (`agent_service`, solo via HTTP: non importa grafo, LangChain né client MCP). Lo usa il front-end web dello step 8 (vedi «Front-end»); si prova anche da PowerShell o da `/docs`. La CLI non lo usa e conserva la cronologia solo per la sessione.
 
 **Prerequisiti.** Nel `.env` (copiandole da `.env.example`) servono `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` (per il container `db`) e `DATABASE_URL` (per il back-end in locale, per esempio `postgresql://lab:cambiami@127.0.0.1:5433/lab`: utente, password e database devono coincidere con i `POSTGRES_*`). Facoltativa `BACKEND_AGENT_URL` (indirizzo dell'agente, predefinito `http://127.0.0.1:8001`; distinta da `AGENT_SERVICE_URL` della CLI). `TEST_DATABASE_URL` serve solo ai test con PostgreSQL vero (vedi «Test»). Prima di `docker compose up -d db` le variabili vanno aggiunte al proprio `.env`.
 
@@ -271,9 +271,56 @@ Gli eventi sono quelli dell'agente (`ragionamento`, `risposta`, `strumento`, `es
 
 - Un turno alla volta per chat (una seconda richiesta sulla stessa chat dà 409); chat diverse possono inviare insieme, ma l'agente serializza i turni.
 - Un solo processo del back-end: il segno «turno in corso» è in memoria e non vale tra processi.
-- Alcuni messaggi dell'agente nominano la CLI («usa 'clear'», «riavvia l'assistente»): sono inoltrati invariati; adattarli è lasciato allo step 8.
+- Alcuni messaggi dell'agente nominano la CLI («usa 'clear'», «riavvia l'assistente»): sono inoltrati invariati, anche al front-end.
 - Nessun container del back-end e nessuna modifica ad `agent` e `app` in Compose fino allo step 9. Il servizio `db` pubblica la porta solo su `127.0.0.1:5433` (non 5432, per non scontrarsi con un PostgreSQL installato su Windows, che di solito occupa la 5432).
 - Nessuna autenticazione.
+
+## Front-end
+
+Una pagina web di chat (HTML, CSS e JavaScript, senza framework né build) servita da un piccolo servizio FastAPI (`frontend_service/`, porta 8003). Il browser parla **solo con il back-end** (`http://127.0.0.1:8002`), mai con l'agente o con le note. Il servizio del front-end serve la pagina, i file statici e `/config.js`, che dice alla pagina l'indirizzo del back-end.
+
+**Prerequisiti.** Database, agente e back-end accesi (vedi «Back-end delle chat»); per le risposte serve anche LM Studio.
+
+**Avvio** in tre terminali PowerShell, con il venv attivo in ciascuno:
+
+```powershell
+# terminale 1
+docker compose up -d db
+python -m agent_service
+```
+
+```powershell
+# terminale 2
+python -m backend_service
+```
+
+```powershell
+# terminale 3
+python -m frontend_service
+```
+
+Poi si apre http://127.0.0.1:8003 nel browser. Il front-end parte su `127.0.0.1:8003` (opzioni `--host`, `--port`, `--quiet`) e si ferma con Ctrl+C. Se `FRONTEND_BACKEND_URL` non inizia con `http://` o `https://`, esce con codice 1 e un messaggio su stderr («FRONTEND_BACKEND_URL non valida: ...»).
+
+| Variabile | Dove | Default | Note |
+|---|---|---|---|
+| `FRONTEND_BACKEND_URL` | front-end | `http://127.0.0.1:8002` | indirizzo del back-end che la pagina chiama (via `/config.js`); la barra finale si toglie |
+| `BACKEND_CORS_ORIGINS` | back-end | `http://127.0.0.1:8003,http://localhost:8003` | origini del front-end ammesse dal back-end (CORS), separate da virgole; la pagina va aperta da una di queste |
+
+**Che cosa fa la pagina.**
+
+- Elenco delle chat (la più recente in alto), «Nuova chat» ed eliminazione con conferma del browser. «Nuova chat» non crea nulla subito: la chat nasce al primo invio.
+- Messaggi della chat aperta, con gli strumenti usati e le righe informative (per esempio quella del revisore). Invio invia, Maiuscolo+Invio va a capo.
+- Risposta in streaming: le parole compaiono man mano; durante l'attesa casella e «Invia» sono disattivati e c'è il pulsante «Interrompi» (non salva nulla, la domanda torna nella casella).
+- Conferma delle eliminazioni delle note dal browser («Elimina» / «Non eliminare»), anche riaprendo una chat con la conferma in attesa.
+- Errori in italiano, con il messaggio del back-end, senza bloccare la pagina; la domanda non inviata resta nella casella.
+- Su schermo stretto l'elenco delle chat diventa un pannello a scomparsa. Nessun font o script esterno.
+
+**Limiti.**
+
+- La logica JavaScript (lettura dello streaming, resa del testo, stati della pagina) non ha test automatici (niente Node): si prova nel browser. I test automatici coprono il servizio del front-end, il CORS del back-end e il contratto con `/openapi.json`.
+- Alcuni messaggi dell'agente nominano la CLI («usa 'clear'», «riavvia l'assistente»): la pagina li mostra così come sono.
+- Un errore 500 imprevisto del back-end arriva al browser senza intestazioni CORS, e la pagina lo mostra come «Il back-end non risponde…».
+- Il container del front-end e la sistemazione in Compose arrivano allo step 9. Nessuna autenticazione.
 
 ## Che cosa si vede durante un turno
 
@@ -736,10 +783,28 @@ Limiti osservati:
 - Il modello a volte non chiama `delete_note`. Una volta ha chiesto conferma a parole («Confermi l'eliminazione…?»): rispondendo «sì» ha chiamato lo strumento ed è arrivata la conferma vera. Un'altra volta, nella stessa chat, ha dichiarato l'eliminazione senza farla: il controllo dei falsi successi ha aggiunto l'avviso, ma il revisore l'ha giudicata coerente. In una chat nuova lo strumento è stato chiamato subito. Il limite è del modello e c'era già prima del back-end.
 - Incollare più comandi insieme in Windows PowerShell 5.1 può sembrare bloccare la finestra (righe `>>`, e un clic nella finestra attiva la selezione e mette in pausa l'output): i comandi partono lo stesso, e ogni nuovo Invio riesegue il blocco (quattro chat «Prova» in più). Meglio una riga alla volta.
 
+### Prova reale del front-end
+
+Prove da fare nel browser (http://127.0.0.1:8003) con database, agente, back-end, front-end e LM Studio accesi. Gli esiti si riempiono dopo la prova.
+
+| Prova | Atteso | Esito |
+|---|---|---|
+| Conversazione con uno strumento dal browser (per esempio «Che ore sono?») | la risposta compare, con la riga dello strumento usato | da fare |
+| Chat creata dall'interfaccia, poi arresto e riavvio del back-end e ricarica della pagina | la chat è ancora in elenco con i suoi messaggi | da fare |
+| Agente spento, invio di una domanda | messaggio di errore comprensibile, pagina utilizzabile, domanda ancora nella casella | da fare |
+| Risposta in streaming | il testo compare man mano, non tutto insieme | da fare |
+| Eliminazione di una nota: prima «Non eliminare», poi «Elimina» | con «Non eliminare» la nota resta; con «Elimina» viene eliminata | da fare |
+| Eliminazione di una chat | conferma del browser, poi la chat sparisce dall'elenco | da fare |
+| «Interrompi» durante una risposta | la risposta si ferma, nulla viene salvato, il turno successivo funziona | da fare |
+| Finestra stretta | l'elenco diventa un pannello che si apre con un pulsante, la chat resta usabile | da fare |
+
 ## Diagnosi
 
 | Sintomo | Causa probabile e rimedio |
 |---|---|
+| La pagina mostra «Il back-end non risponde all'indirizzo …» | il back-end è spento o l'indirizzo è sbagliato: avviare `python -m backend_service` e controllare `FRONTEND_BACKEND_URL` (poi riavviare il front-end) |
+| Errore CORS nella console del browser | la pagina è aperta da un'origine non elencata in `BACKEND_CORS_ORIGINS` (altra porta o altro host, per esempio con `--port` diverso): aprire http://127.0.0.1:8003 oppure aggiungere l'origine alla variabile e riavviare il back-end |
+| `FRONTEND_BACKEND_URL non valida: ...` all'avvio del front-end | l'indirizzo non inizia con `http://` o `https://`: correggerlo nel `.env` |
 | `[preferenze] resource non disponibile (...): uso italiano, sintetico, <fuso>` | (avviso mostrato anche in avvio normale) il file delle preferenze manca o non si legge: controllare `PREFERENCES_FILE` e `config/preferenze.json`; l'avvio prosegue con le riserve |
 | `[preferenze] <campo> '<valore>' non ammesso: uso '<riserva>'` o `<campo> mancante: uso '<riserva>'` | campo assente, valore fuori elenco (lingua, stile) o fuso inesistente: correggere il file e riavviare; gli altri campi valgono |
 | `[preferenze] contenuto non valido (...): uso italiano, sintetico, <fuso>` | il file non è un oggetto JSON valido: correggerlo e riavviare |
