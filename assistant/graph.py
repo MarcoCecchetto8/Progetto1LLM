@@ -3,13 +3,14 @@
 import datetime
 import json
 import logging
+import re
 from collections.abc import Callable
 from typing import Annotated, NotRequired, TypedDict
 
 import openai
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, AnyMessage, RemoveMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, RemoveMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool, ToolException
 from langgraph.graph import END, START, StateGraph
@@ -63,10 +64,14 @@ def system_prompt(preferences: Preferences) -> str:
     return preferences_block(preferences) + "\n\n" + (
         "Sei l'assistente del laboratorio. "
         "Quando l'utente ti saluta, presentati brevemente. "
+        "Ricorda quello che l'utente ti dice di sé in questa conversazione (per esempio il nome) e usalo "
+        "quando te lo chiede: è nella cronologia, non è un dato privato da negare. "
         "Per ora, date, conversioni e calcoli usa sempre gli strumenti: non inventare i risultati. "
         "Quando l'utente chiede l'ora o la data, usa lo strumento `get_current_time`. "
         "Per le conversioni di unità usa `convert_units`. "
         "Per qualsiasi calcolo, anche semplice, chiama sempre `calculate`. "
+        "In italiano «per» è la moltiplicazione e «diviso» la divisione: «37 per 19» è 37 * 19, "
+        "«37 diviso 19» è 37 / 19. "
         "Per un'equazione semplice riscrivila come espressione e chiama `calculate` con quella: "
         "per esempio per 2x = 28 chiama `calculate` con 28 / 2. "
         "Per giorni della settimana, festività e scadenze usa `date_info`, `find_holiday`, `add_days` e "
@@ -74,6 +79,7 @@ def system_prompt(preferences: Preferences) -> str:
         "per esempio che una festività è già passata. "
         "Per sapere quanti giorni mancano a una data o a una festività non contare tu i giorni: riporta il numero "
         "dato dagli strumenti (per esempio «fra N giorni») oppure chiama `days_between`. "
+        "Per sapere che data sarà fra N giorni (o che data era N giorni fa) chiama `add_days`: non calcolarla tu. "
         "Per qualsiasi domanda su un linguaggio di programmazione (chi l'ha creato, anno, paradigmi...) "
         "chiama sempre gli strumenti del catalogo prima di rispondere; non dire mai che un dato non c'è senza "
         "averlo cercato. Se l'utente indica un codice (es. XYZ), chiama subito `get_item` con quel codice. "
@@ -106,6 +112,23 @@ def today_line(day: datetime.date, timezone: str) -> str:
     # Nomi da tabelle e non da locale/strftime: il risultato non dipende dal sistema
     return (f"Oggi è {_GIORNI[day.weekday()]} {day.day} {_MESI[day.month - 1]} {day.year} "
             f"({day.isoformat()}), fuso orario {timezone}.")
+
+
+_NUMBER = r"\d+(?:[.,]\d+)?"
+_PER_BETWEEN_NUMBERS = re.compile(rf"({_NUMBER})\s+per\s+(?={_NUMBER})")
+
+
+def explain_multiplication(text: str) -> str:
+    """«37 per 19» → «37 × 19»: il modello piccolo legge «per» come divisione. Con «dividi/dividere» non si tocca."""
+    if re.search(r"\bdivid", text, re.IGNORECASE):
+        return text
+    return _PER_BETWEEN_NUMBERS.sub(r"\1 × ", text)
+
+
+def with_explained_math(messages: list[AnyMessage]) -> list[AnyMessage]:
+    """Copia per la chiamata al modello: solo le domande dell'utente, la cronologia resta com'era."""
+    return [m.model_copy(update={"content": explain_multiplication(m.content)})
+            if isinstance(m, HumanMessage) and isinstance(m.content, str) else m for m in messages]
 
 
 def with_today(messages: list[AnyMessage], line: str) -> list[AnyMessage]:
@@ -162,7 +185,8 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
         steps = state["steps"] + 1
         logger.debug("[grafo] nodo model: passaggio %d/%d", steps, max_steps)
         response = model_with_tools.invoke(
-            with_summary(with_today(state["messages"], today() if today else ""), state.get("summary", "")))
+            with_summary(with_today(with_explained_math(state["messages"]), today() if today else ""),
+                         state.get("summary", "")))
         if REASONING_KEY in response.additional_kwargs:
             # Il ragionamento si mostra in streaming ma non entra nella cronologia
             extra = {k: v for k, v in response.additional_kwargs.items() if k != REASONING_KEY}

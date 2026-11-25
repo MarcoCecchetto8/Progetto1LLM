@@ -11,7 +11,8 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 
-from assistant.graph import LIMIT_MESSAGE, build_graph, system_prompt, today_line, with_today
+from assistant.graph import (LIMIT_MESSAGE, build_graph, explain_multiplication, system_prompt, today_line,
+                            with_today)
 from assistant.llm import REASONING_KEY
 from assistant.mcp_client import MCPClient, MCPConnectionError
 from assistant.reviewer import Review, feedback_message, is_review_feedback
@@ -723,3 +724,51 @@ def test_tools_receive_decisions_in_configurable():
 def test_without_confirmation_check_no_confirmations_key():
     out = build_graph(fake(tool_call({}, "a"), AIMessage("ok")), [clock], 5).invoke(start("ora?"))
     assert "confirmations" not in out
+
+
+def test_system_prompt_explains_per_and_diviso():
+    # «37 per 19» veniva calcolato come 37 / 19
+    p = system_prompt(prefs())
+    assert "«per» è la moltiplicazione" in p and "37 * 19" in p
+
+
+def test_system_prompt_requires_add_days_for_future_dates():
+    # «che data sarà fra 45 giorni?» veniva calcolato a mente (e sbagliato)
+    p = system_prompt(prefs())
+    assert "fra N giorni" in p and "chiama `add_days`" in p
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("Quanto fa 37 per 19?", "Quanto fa 37 × 19?"),
+    ("Quanto fa 120 diviso 8 per 3?", "Quanto fa 120 diviso 8 × 3?"),
+    ("2,5 per 4 e 3.5 per 2", "2,5 × 4 e 3.5 × 2"),
+    ("Dividi 20 per 3", "Dividi 20 per 3"),            # «dividere X per Y»: qui «per» è la divisione
+    ("Il 15 per cento di 80", "Il 15 per cento di 80"),  # non seguito da un numero
+    ("Ricordami di chiamare Luca", "Ricordami di chiamare Luca"),
+])
+def test_explain_multiplication(text, expected):
+    assert explain_multiplication(text) == expected
+
+
+class RecordingFake(FakeToolModel):
+    received: list = []
+
+    def _stream(self, messages, stop=None, run_manager=None, **kwargs):
+        self.received.append(messages)
+        yield from super()._stream(messages, stop, run_manager, **kwargs)
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        self.received.append(messages)
+        return super()._generate(messages, stop, run_manager, **kwargs)
+
+
+def test_model_sees_multiplication_but_history_keeps_user_text():
+    model = RecordingFake(messages=iter([AIMessage("703")]), received=[])
+    graph = build_graph(model, [], 5)
+    out = graph.invoke({"messages": [SystemMessage("sys"), HumanMessage("Quanto fa 37 per 19?")], "steps": 0})
+    assert out["messages"][1].content == "Quanto fa 37 per 19?"  # la cronologia resta com'era
+    assert model.received[0][-1].content == "Quanto fa 37 × 19?"  # il modello vede la moltiplicazione
+
+
+def test_system_prompt_remembers_what_the_user_says():
+    assert "il nome" in system_prompt(prefs()) and "usalo" in system_prompt(prefs())

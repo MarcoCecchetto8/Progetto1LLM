@@ -16,6 +16,17 @@ STOP_WORDS = frozenset(
 )
 
 
+# Plurali e termini inglesi dei paradigmi: il modello cerca spesso «funzionali» o «functional»
+PARADIGM_ALIASES = {
+    "funzionali": "funzionale", "functional": "funzionale",
+    "procedurali": "procedurale", "procedural": "procedurale",
+    "imperativi": "imperativo", "imperative": "imperativo",
+    "dichiarativi": "dichiarativo", "declarative": "dichiarativo",
+    "logici": "logico", "logic": "logico", "logical": "logico",
+    "concorrenti": "concorrente", "concurrent": "concorrente", "concurrency": "concorrente",
+    "oggetto": "oggetti", "object": "oggetti", "objects": "oggetti", "oriented": "oggetti", "oop": "oggetti",
+}
+
 def _words(text: str) -> list[str]:
     # Senza accenti e maiuscole; "+" e "#" restano attaccati alla parola (C++, C#)
     text = unicodedata.normalize("NFKD", text)
@@ -47,7 +58,7 @@ def _index() -> list[tuple[dict, frozenset[str]]]:
 
 
 def search(query: str, max_results: int = DEFAULT_RESULTS) -> str:
-    words = {w for w in _words(query) if w not in STOP_WORDS}
+    words = {PARADIGM_ALIASES.get(w, w) for w in _words(query) if w not in STOP_WORDS}
     if not words:
         raise ValueError("La ricerca richiede almeno una parola chiave (es. funzionale, Haskell).")
     if not 1 <= max_results <= MAX_RESULTS:

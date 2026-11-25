@@ -9,6 +9,8 @@ Tutto il resto è 'fuori_ambito' (cucina, sport, geografia, storia, attualità..
 
 Esempi:
 - «Che ore sono a New York?» → conversazione (strumento orologio)
+- «E a Sarajevo?» (dopo una domanda sull'ora) → conversazione (seguito, anche per città piccole)
+- «In che anno?» (dopo una domanda su un linguaggio) → conversazione (seguito)
 - «Quanti giorni mancano a Natale?» → conversazione (strumento date)
 - «Ricordami di chiamare Luca domani» → conversazione (note)
 - «Cos'è il machine learning?» → conversazione (AI)

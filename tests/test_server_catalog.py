@@ -95,7 +95,7 @@ def test_search_no_match():
 
 
 def test_search_plural_suggests_singular():
-    out = search("funzionali")
+    out = search("rettili")
     assert out.startswith("Nessun linguaggio corrisponde a")
     assert "riprova al singolare" in out
 
@@ -137,3 +137,16 @@ def test_get_item_errors():
 def test_get_item_name_is_not_a_code(code):
     with pytest.raises(ValueError, match="usa search_catalog"):
         get_item(code)
+
+
+@pytest.mark.parametrize("query", ["funzionali", "functional", "linguaggi funzionali", "Functional programming"])
+def test_search_paradigm_plural_and_english(query):
+    # Il modello cercava «functional» o al plurale e non trovava nulla
+    out = search(query, 20)
+    assert "HS" in out and "LISP" in out
+
+
+@pytest.mark.parametrize("query, code", [("object oriented", "JAVA"), ("logic", "PROLOG"), ("concurrent", "GO"),
+                                         ("procedurali", "C"), ("dichiarativi", "SQL")])
+def test_search_other_paradigm_forms(query, code):
+    assert f"- {code}:" in search(query, 20)
