@@ -345,7 +345,8 @@ function metricsLine(metrics) {
   const line = make("p", "note-line metrics");
   line.append(make("b", "", seconds(metrics.total)), " in tutto");
   if (metrics.firstToken != null) line.append(" · primo token dopo ", make("b", "", seconds(metrics.firstToken)));
-  line.append(" · ", make("b", "", `≈ ${metrics.tokens}`), " token");
+  // i rifiuti del router sono un testo fisso, non generato a pezzi: niente token da contare
+  if (metrics.tokens) line.append(" · ", make("b", "", `≈ ${metrics.tokens}`), " token");
   line.title = "Misurate nel browser dall'invio; i token sono i pezzi di risposta arrivati in streaming.";
   return line;
 }
@@ -777,7 +778,7 @@ async function runTurn(path, body, view, text, usersBefore = null) {
   }
   if (detail) {
     const last = el.messages.querySelector(".msg-assistant:last-child");
-    if (last && metrics.tokens) addMetrics(last, metrics);
+    if (last) addMetrics(last, metrics);
     setTurnState("done");
   }
   await loadChats();

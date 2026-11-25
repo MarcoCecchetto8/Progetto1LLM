@@ -16,7 +16,7 @@ ROUTER_INSTRUCTIONS = (
     "decidi solo se l'ultima domanda dell'utente rientra nell'ambito.\n"
     "Non devi saper rispondere tu: anche se servono strumenti o dati in tempo reale, "
     "se l'argomento è in ambito la categoria è 'conversazione'.\n"
-    "Il motivo è una frase breve in italiano."
+    "Il motivo è una frase breve e completa in italiano, al massimo 12 parole."
 )
 
 REFUSAL = (
@@ -32,7 +32,7 @@ class Route(BaseModel):
     # maxLength solo nello schema: il modello genera meno token (il router costava ~100 token a turno),
     # ma la validazione non lo impone, così un server che lo ignora non fa fallire il router
     motivo: str = Field(description="Frase breve in italiano che spiega la scelta.",
-                        json_schema_extra={"maxLength": 100})
+                        json_schema_extra={"maxLength": 160})
 
 
 def router_prompt(scope: str, summary: str = "") -> str:
