@@ -28,6 +28,8 @@ const state = {
   controller: null,
   retry: null,
   pendingView: null, // turno sospeso in attesa di conferma: domanda e schede ancora a schermo
+  turnStarted: null, // istante d'inizio del turno in corso, per il contatore dei secondi
+  ticker: null,
 };
 
 // ── Errori e chiamate al back-end ──
@@ -283,9 +285,31 @@ const STATE_TEXT = {
 function setTurnState(name) {
   el.turnState.dataset.state = name;
   el.turnState.textContent = STATE_TEXT[name] || "";
+  if (state.turnStarted != null && el.turnState.textContent) {
+    // secondi trascorsi: aria-hidden, così il lettore di schermo non li annuncia a ogni scatto
+    const timer = make("span", "turn-timer");
+    timer.setAttribute("aria-hidden", "true");
+    el.turnState.append(timer);
+    tickTimer();
+  }
+}
+
+function tickTimer() {
+  const timer = el.turnState.querySelector(".turn-timer");
+  if (timer && state.turnStarted != null) {
+    timer.textContent = ` · ${Math.floor((performance.now() - state.turnStarted) / 1000)} s`;
+  }
 }
 
 function setBusy(busy) {
+  if (busy && state.ticker == null) {
+    state.turnStarted = performance.now();
+    state.ticker = setInterval(tickTimer, 1000);
+  } else if (!busy && state.ticker != null) {
+    clearInterval(state.ticker);
+    state.ticker = null;
+    state.turnStarted = null;
+  }
   state.busy = busy;
   el.send.hidden = busy;
   el.stop.hidden = !busy;
