@@ -478,12 +478,6 @@ svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width:
 .turn-timer { text-transform: none; letter-spacing: 0; font-variant-numeric: tabular-nums; }
 
 /* ── Risposta: bozza, timbro del revisore e menù dei dettagli ── */
-.answer.is-draft {
-  border-style: dashed;
-  background: transparent;
-  box-shadow: none;
-  color: var(--mute);
-}
 .stamp {
   display: inline-block;
   margin-top: 10px;
@@ -492,11 +486,6 @@ svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width:
   border-radius: 3px;
   font-size: 10.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
   color: var(--action-text);
-}
-.stamp[data-verdict="pending"] { color: var(--brass); border-style: dashed; }
-.stamp[data-verdict="pending"]::after {
-  content: ""; display: inline-block; width: 6px; height: 6px; margin-left: 6px;
-  border-radius: 50%; background: currentColor; animation: pulse 1.2s ease-in-out infinite;
 }
 .stamp[data-verdict="invalid"], .stamp[data-verdict="limit"] { color: var(--mute); }
 

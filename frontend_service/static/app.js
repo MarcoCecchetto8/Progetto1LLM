@@ -613,10 +613,17 @@ function updateTrace(view, status) {
   view.trace.label.textContent = traceLabel(view.tools, status, "");
 }
 
-// La risposta in arrivo è una bozza finché il turno non è concluso (e il revisore, se acceso, non l'ha letta).
-function showDraft(view) {
+// La risposta resta nascosta finché il revisore non l'approva: si vede solo che cosa sta succedendo.
+function setPending(view, text) {
+  view.answer.classList.add("answer-pending");
+  view.answer.replaceChildren(make("p", "", text));
+  view.answer.firstChild.append(make("span", "dots"));
+}
+
+// Mostra la risposta accumulata (dopo il verdetto del revisore, o subito se non c'è nulla da revisionare).
+function reveal(view) {
+  view.revealed = true;
   view.answer.classList.remove("answer-pending");
-  view.answer.classList.add("is-draft");
   view.answer.replaceChildren(renderText(view.draft));
   setStamp(view.answer, view.verdict);
 }
@@ -673,14 +680,13 @@ async function runTurn(path, body, view, text, usersBefore = null) {
         metrics.tokens += 1;
         view.draft += data.testo || "";
         view.verdict = null;
-        showDraft(view);
+        if (!view.writing) { view.writing = true; setPending(view, "Pico scrive la risposta"); }
         updateTrace(view, "risponde…");
         setTurnState("writing");
         clearTimeout(view.idle);
         view.idle = setTimeout(() => {
           if (view.done) return;
-          view.verdict = "pending";
-          setStamp(view.answer, "pending");
+          setPending(view, "Il revisore controlla la risposta");
           updateTrace(view, "in revisione…");
           setTurnState("review");
         }, REVIEW_AFTER_MS);
@@ -690,10 +696,8 @@ async function runTurn(path, body, view, text, usersBefore = null) {
           clearTimeout(view.idle);
           view.draft = "";
           view.verdict = null;
-          view.answer.classList.remove("is-draft");
-          view.answer.classList.add("answer-pending");
-          view.answer.replaceChildren(make("p", "", "Il revisore ha chiesto di rivedere la risposta"));
-          view.answer.firstChild.append(make("span", "dots"));
+          view.writing = false;
+          setPending(view, "Il revisore ha chiesto una nuova risposta");
           updateTrace(view, "riscrittura…");
           setTurnState("review");
         }
@@ -703,13 +707,14 @@ async function runTurn(path, body, view, text, usersBefore = null) {
           if (verdict) {
             clearTimeout(view.idle);
             view.verdict = verdict;
-            setStamp(view.answer, verdict);
+            reveal(view);
             updateTrace(view, TRACE_STATUS[verdict]);
           }
         } else if (line.trim()) {
           // rifiuto del router, limite di passaggi o avviso sulle note: fanno parte della risposta
           view.draft = view.draft ? `${view.draft}\n\n${line}` : line;
-          showDraft(view);
+          // rifiuto (nessuna revisione) o avviso arrivato dopo l'approvazione: si mostra subito
+          if (view.revealed || !metrics.tokens) reveal(view);
         }
       } else if (name === "fine") {
         outcome = data;
