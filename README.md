@@ -310,7 +310,8 @@ Poi si apre http://127.0.0.1:8003 nel browser. Il front-end parte su `127.0.0.1:
 
 - Elenco delle chat (la più recente in alto), «Nuova chat» ed eliminazione con conferma del browser. «Nuova chat» non crea nulla subito: la chat nasce al primo invio.
 - Messaggi della chat aperta, con gli strumenti usati e le righe informative (per esempio quella del revisore). Invio invia, Maiuscolo+Invio va a capo.
-- Risposta in streaming: le parole compaiono man mano; durante l'attesa casella e «Invia» sono disattivati e c'è il pulsante «Interrompi» (non salva nulla, la domanda torna nella casella).
+- Risposta in streaming: le parole compaiono man mano; durante l'attesa casella e «Invia» sono disattivati e c'è il pulsante «Interrompi». Dopo l'interruzione la pagina rilegge la chat: se Pico era già quasi alla fine la risposta può essere salvata comunque (vedi «Interruzione dello streaming»), altrimenti la domanda torna nella casella.
+- Sotto ogni risposta arrivata nella sessione una riga di misure: tempo totale, tempo al primo token (comprende router e strumenti) e «≈ token» (pezzi ricevuti in streaming, un'approssimazione). Si misurano nel browser e non si salvano.
 - Conferma delle eliminazioni delle note dal browser («Elimina» / «Non eliminare»), anche riaprendo una chat con la conferma in attesa.
 - Errori in italiano, con il messaggio del back-end, senza bloccare la pagina; la domanda non inviata resta nella casella.
 - Su schermo stretto l'elenco delle chat diventa un pannello a scomparsa. Nessun font o script esterno.
@@ -795,7 +796,7 @@ Prove da fare nel browser (http://127.0.0.1:8003) con database, agente, back-end
 | Risposta in streaming | il testo compare man mano, non tutto insieme | da fare |
 | Eliminazione di una nota: prima «Non eliminare», poi «Elimina» | con «Non eliminare» la nota resta; con «Elimina» viene eliminata | da fare |
 | Eliminazione di una chat | conferma del browser, poi la chat sparisce dall'elenco | da fare |
-| «Interrompi» durante una risposta | la risposta si ferma, nulla viene salvato, il turno successivo funziona | da fare |
+| «Interrompi» durante una risposta | la risposta si ferma; salvata solo se Pico era già alla fine; il turno successivo funziona | da fare |
 | Finestra stretta | l'elenco diventa un pannello che si apre con un pulsante, la chat resta usabile | da fare |
 
 ## Diagnosi

@@ -4,6 +4,10 @@
 const BACKEND = ((window.APP_CONFIG && window.APP_CONFIG.backendUrl) || "http://127.0.0.1:8002").replace(/\/+$/, "");
 const LAST_CHAT_KEY = "pico.ultimaChat";
 const REVIEW_RETRY = "[revisore] non coerente";
+// Errori arrivati come evento SSE: si trattano come le risposte HTTP con lo stesso codice.
+const STREAM_ERROR_STATUS = {
+  chat_non_trovata: 404, turno_in_corso: 409, conferma_in_attesa: 409, nessuna_conferma: 409,
+};
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -97,7 +101,8 @@ async function readSse(response, onEvent) {
   for (;;) {
     const { value, done } = await reader.read();
     if (done) break;
-    buffer = (buffer + decoder.decode(value, { stream: true })).replace(/\r\n?/g, "\n");
+    // un «\r» in fondo al pezzo può essere metà di un «\r\n»: si normalizza al pezzo dopo
+    buffer = (buffer + decoder.decode(value, { stream: true })).replace(/\r\n/g, "\n").replace(/\r(?=[\s\S])/g, "\n");
     let cut;
     while ((cut = buffer.indexOf("\n\n")) >= 0) {
       flush(buffer.slice(0, cut));
@@ -201,15 +206,34 @@ function toolCard(tool, number) {
   body.append(
     make("span", "tool-name", tool.nome),
     make("span", "tool-args", formatArgs(tool.argomenti)),
-    make("span", "tool-result", tool.esito == null ? "in esecuzione" : tool.esito),
+    make("span", "tool-result", tool.esito == null ? "in esecuzione" : resultText(tool.esito, tool.errore)),
   );
   card.append(num, body);
   return card;
 }
 
+function resultText(content, error) {
+  return error ? `errore: ${content}` : content;
+}
+
 function finishToolCard(card, content, error) {
   card.dataset.state = error ? "error" : "ok";
-  card.querySelector(".tool-result").textContent = content;
+  card.querySelector(".tool-result").textContent = resultText(content, error);
+}
+
+// Righe informative del turno («[revisore] coerente») mostrate come cartellino: «Revisore · coerente».
+function infoLine(text) {
+  const raw = String(text || "");
+  const match = raw.match(/^\[([^\]]+)\]\s*(.*)$/s);
+  const line = make("p", "review-note");
+  if (!match) {
+    line.textContent = raw;
+    return line;
+  }
+  const label = match[1].charAt(0).toUpperCase() + match[1].slice(1);
+  line.append(make("span", "review-label", label), make("span", "", match[2]));
+  if (/^non coerente/i.test(match[2])) line.classList.add("review-bad");
+  return line;
 }
 
 function toolCount() {
@@ -232,7 +256,7 @@ function assistantMessage(message) {
   const answer = make("div", "answer");
   answer.append(renderText(message.contenuto));
   item.append(answer);
-  for (const line of message.righe || []) item.append(make("p", "note-line", line));
+  for (const line of message.righe || []) item.append(infoLine(line));
   return item;
 }
 
@@ -315,7 +339,9 @@ function renderChatList() {
     if (chat.id === state.chatId) item.setAttribute("aria-current", "true");
     const open = make("button", "chat-open");
     open.type = "button";
-    open.append(make("span", "chat-title", chat.titolo), make("span", "chat-date", chatDate(chat)));
+    const meta = make("span", "chat-date");
+    meta.append(make("span", "chat-num", `n. ${chat.id}`), ` · ${chatDate(chat)}`);
+    open.append(make("span", "chat-title", chat.titolo), meta);
     open.addEventListener("click", () => openChat(chat.id));
     const remove = make("button", "chat-delete");
     remove.type = "button";
@@ -508,11 +534,11 @@ async function runTurn(path, body, view, text) {
           view.answer.firstChild.append(make("span", "dots"));
           setTurnState("review");
         }
-        view.item.append(make("p", "note-line", line));
+        view.item.append(infoLine(line));
       } else if (name === "fine") {
         outcome = data;
       } else if (name === "errore") {
-        throw new UiError(data.messaggio || "Errore durante la risposta.", null, data.codice || null);
+        throw new UiError(data.messaggio || "Errore durante la risposta.", STREAM_ERROR_STATUS[data.codice] || null, data.codice || null);
       }
       scrollToEnd();
     });
@@ -544,15 +570,20 @@ async function runTurn(path, body, view, text) {
   metrics.total = performance.now() - started;
   if (outcome.esito === "conferma_richiesta") {
     view.answer.remove();
+    for (const card of view.cards) {
+      if (card.dataset.state === "running") card.querySelector(".tool-result").textContent = "in attesa di conferma";
+    }
     showConfirm(outcome.conferme || []);
     setTurnState("confirm");
     state.pendingView = view;
     scrollToEnd();
     return;
   }
-  removeView(view);
-  if (state.pendingView) { removeView(state.pendingView); state.pendingView = null; }
+  // la vista provvisoria resta finché la chat salvata non è arrivata
+  const provisional = [view, state.pendingView].filter(Boolean);
+  state.pendingView = null;
   const detail = await openChat(chatId, { quiet: true });
+  if (!detail) for (const item of provisional) item.item.classList.add("is-stale");
   if (detail) {
     const last = el.messages.querySelector(".msg-assistant:last-child");
     if (last && metrics.tokens) last.append(metricsLine(metrics));
@@ -577,27 +608,34 @@ async function afterStop(chatId, text) {
   setTurnState("stopped");
   if (text && !saved && !el.question.value) el.question.value = text;
   updateSend();
-  showAlert(saved ? "Risposta interrotta, ma Pico aveva già finito: la risposta è salvata." : "Risposta interrotta: non è stato salvato nulla.", { tone: "info" });
+  showAlert(saved
+    ? "Risposta interrotta, ma Pico aveva già finito: la risposta è salvata."
+    : "Risposta interrotta. Se Pico era quasi alla fine, la risposta potrebbe comparire tra poco: riapri la chat per controllare.",
+  { tone: "info", retry: chatId != null ? () => openChat(chatId) : null });
 }
 
 async function sendQuestion(raw) {
   const text = raw.trim();
   if (!text || state.busy) return;
   hideAlert();
+  // occupato subito: un secondo Invio durante la creazione della chat non crea una chat doppia
+  setBusy(true);
+  el.question.value = "";
   if (state.chatId == null) {
     try {
       const chat = await api("POST", "/chats");
       state.chatId = chat.id;
       rememberChat(chat.id);
       el.title.textContent = chat.titolo;
-      await loadChats();
+      loadChats();
     } catch (error) {
+      setBusy(false);
+      el.question.value = text;
+      updateSend();
       showAlert(error.message);
       return;
     }
   }
-  el.question.value = "";
-  updateSend();
   const view = turnView(text);
   await runTurn(`/chats/${state.chatId}/messaggi/stream`, { testo: text }, view, text);
 }
@@ -608,6 +646,8 @@ async function sendConfirm() {
   const decisions = confirmDecisions();
   hideConfirm();
   const view = turnView(null);
+  // le schede sospese (es. delete_note) ricevono l'esito nel flusso della ripresa
+  if (state.pendingView) view.cards = state.pendingView.cards.filter((card) => card.dataset.state === "running");
   await runTurn(`/chats/${state.chatId}/conferma/stream`, { decisioni: decisions }, view, null);
 }
 
@@ -630,7 +670,7 @@ el.newChat.addEventListener("click", () => { hideAlert(); showEmpty(); closeMenu
 el.alertClose.addEventListener("click", hideAlert);
 el.alertRetry.addEventListener("click", () => { const retry = state.retry; hideAlert(); if (retry) retry(); });
 for (const example of document.querySelectorAll(".example")) {
-  example.addEventListener("click", () => sendQuestion(example.textContent));
+  example.addEventListener("click", () => sendQuestion(example.dataset.question));
 }
 el.menu.addEventListener("click", () => {
   const open = !el.body.classList.contains("menu-open");

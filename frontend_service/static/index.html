@@ -42,10 +42,10 @@
         <p class="welcome-text">Rispondo con strumenti veri, eseguiti qui sul computer: l'ora in ogni fuso orario, conversioni di unità, calcoli, date e festività, il catalogo dei linguaggi di programmazione e le tue note. Ogni strumento che uso compare nella conversazione, con i dati che gli ho passato e il suo esito.</p>
         <p class="welcome-label">Prova a chiedere</p>
         <ul class="examples">
-          <li><button type="button" class="example">Che ore sono a Tokyo?</button></li>
-          <li><button type="button" class="example">Quanti giorni mancano a Natale?</button></li>
-          <li><button type="button" class="example">Converti 5 miglia in chilometri</button></li>
-          <li><button type="button" class="example">Ricordami di comprare il pane domani</button></li>
+          <li><button type="button" class="example" data-question="Che ore sono a Tokyo?"><span class="example-text">Che ore sono a Tokyo?</span><span class="example-tool">get_current_time</span></button></li>
+          <li><button type="button" class="example" data-question="Quanti giorni mancano a Natale?"><span class="example-text">Quanti giorni mancano a Natale?</span><span class="example-tool">days_between</span></button></li>
+          <li><button type="button" class="example" data-question="Converti 5 miglia in chilometri"><span class="example-text">Converti 5 miglia in chilometri</span><span class="example-tool">convert_units</span></button></li>
+          <li><button type="button" class="example" data-question="Ricordami di comprare il pane domani"><span class="example-text">Ricordami di comprare il pane domani</span><span class="example-tool">add_note</span></button></li>
         </ul>
       </div>
       <ol class="messages" id="messages"></ol>
