@@ -319,9 +319,9 @@ Poi si apre http://127.0.0.1:8003 nel browser. Il front-end parte su `127.0.0.1:
 **Che cosa fa la pagina.**
 
 - Elenco delle chat (la più recente in alto), «Nuova chat» ed eliminazione con conferma del browser. «Nuova chat» non crea nulla subito: la chat nasce al primo invio.
-- Messaggi della chat aperta, con gli strumenti usati e le righe informative (per esempio quella del revisore). Invio invia, Maiuscolo+Invio va a capo.
+- Messaggi della chat aperta: nel messaggio di Pico c'è solo la risposta, con il timbro «✓ revisionata» quando il revisore l'ha approvata; sotto, un menù a tendina chiuso (la riga nomina lo strumento usato) con schede degli strumenti, righe del revisore, tempi e ragionamento (se il modello lo manda). Mentre arriva, la risposta è una bozza tratteggiata; se il turno resta aperto 1,5 s dopo l'ultimo pezzo compare «in revisione…». Invio invia, Maiuscolo+Invio va a capo.
 - Risposta in streaming: le parole compaiono man mano; durante l'attesa casella e «Invia» sono disattivati e c'è il pulsante «Interrompi». Dopo l'interruzione la pagina rilegge la chat: se Pico era già quasi alla fine la risposta può essere salvata comunque (vedi «Interruzione dello streaming»), altrimenti la domanda torna nella casella.
-- Sotto ogni risposta arrivata nella sessione una riga di misure: tempo totale, tempo al primo token (comprende router e strumenti) e «≈ token» (pezzi ricevuti in streaming, un'approssimazione). Si misurano nel browser e non si salvano.
+- Nel menù dei dettagli di ogni risposta arrivata nella sessione una riga di misure (i secondi anche nella riga chiusa): tempo totale, tempo al primo token (comprende router e strumenti) e «≈ token» (pezzi ricevuti in streaming, un'approssimazione). Si misurano nel browser e non si salvano.
 - Conferma delle eliminazioni delle note dal browser («Elimina» / «Non eliminare»), anche riaprendo una chat con la conferma in attesa.
 - Errori in italiano, con il messaggio del back-end, senza bloccare la pagina; la domanda non inviata resta nella casella.
 - Su schermo stretto l'elenco delle chat diventa un pannello a scomparsa. Nessun font o script esterno.

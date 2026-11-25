@@ -476,3 +476,55 @@ svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width:
 
 .is-stale { opacity: 0.6; }
 .turn-timer { text-transform: none; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+
+/* ── Risposta: bozza, timbro del revisore e menù dei dettagli ── */
+.answer.is-draft {
+  border-style: dashed;
+  background: transparent;
+  box-shadow: none;
+  color: var(--mute);
+}
+.stamp {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 1px 8px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--action-text);
+}
+.stamp[data-verdict="pending"] { color: var(--brass); border-style: dashed; }
+.stamp[data-verdict="pending"]::after {
+  content: ""; display: inline-block; width: 6px; height: 6px; margin-left: 6px;
+  border-radius: 50%; background: currentColor; animation: pulse 1.2s ease-in-out infinite;
+}
+.stamp[data-verdict="invalid"], .stamp[data-verdict="limit"] { color: var(--mute); }
+
+.trace { width: min(680px, 100%); }
+.trace-summary {
+  display: inline-flex; align-items: center; gap: 8px;
+  max-width: 100%;
+  padding: 4px 10px 4px 6px;
+  border-radius: 4px;
+  list-style: none;
+  cursor: pointer;
+  font: 12.5px/1.4 var(--mono);
+  color: var(--mute);
+  transition: background-color 160ms ease-out, color 160ms ease-out;
+}
+.trace-summary::-webkit-details-marker { display: none; }
+.trace-summary::before {
+  content: "";
+  flex: none;
+  border-style: solid; border-width: 4px 0 4px 6px;
+  border-color: transparent transparent transparent currentColor;
+  transition: transform 160ms ease-out;
+}
+.trace[open] > .trace-summary::before { transform: rotate(90deg); }
+.trace-summary:hover { background: var(--ground-deep); color: var(--ink); }
+.trace-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trace-body { display: grid; gap: 8px; margin-top: 8px; }
+.trace-body .tool { width: 100%; }
+.trace-body .metrics { padding-left: 4px; }
+.trace-reasoning { display: grid; gap: 4px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 4px; background: var(--card); }
+.trace-reasoning-text { margin: 0; white-space: pre-wrap; font-size: 13px; color: var(--mute); }

@@ -91,6 +91,8 @@ browser ──HTTP──► frontend_service (8003): index.html, app.js, style.c
 
 **Direzione visiva** (scelta dell'utente con impeccable): «Sala dei reperti» (cartellini smaltati del Museo della Scienza e della Tecnologia di Milano) per palette e ordine, con gli strumenti mostrati come le schede magnetiche della Olivetti Programma 101. Il contratto di direzione sta in `.impeccable/surfaces/`.
 
+**Revisione 2026-11-25 (scelte dell'utente dopo la prova reale):** nel messaggio di Pico c'è solo la risposta; schede degli strumenti, righe informative (revisore), misure e ragionamento stanno in un menù a tendina (`<details>`) chiuso, la cui riga nomina gli strumenti usati, lo stato e i secondi. La risposta in arrivo è una **bozza visibile** (bordo tratteggiato, testo attenuato); 1,5 s dopo l'ultimo pezzo, se il turno non è finito, compare «in revisione…»; con «[revisore] coerente» il timbro «✓ revisionata». Revisore con un solo giro (`MAX_REVIEWS=1`); `MAX_REVIEWS=0` lo spegne del tutto. Da rivalutare dopo la prova: bozza visibile oppure risposta nascosta fino all'approvazione.
+
 **Accessibilità e aspetto**: design con la skill impeccable (palette, tipografia, spaziature, stati vuoti, stato di attesa); contrasto sufficiente, focus visibile, pulsanti con etichetta, area messaggi `aria-live="polite"`; tema chiaro e scuro secondo il sistema. Nessun font o script esterno (funziona offline).
 
 ## 6. Test

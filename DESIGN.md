@@ -272,3 +272,7 @@ La scheda-reperto della Programma 101: banda grafite a tutta cornice, 4px, ombra
 - **Don't** nascondere gli strumenti dietro la risposta o ridurli a una riga grigia.
 - **Don't** usare bolle grigie e un accento blu: i messaggi dell'utente sono fogli verdi a 4px, le risposte cartellini smaltati.
 - **Don't** introdurre una seconda famiglia sans o ombre più profonde del cartellino.
+
+## Aggiornamento 2026-11-25: risposta pulita e menù dei dettagli
+
+Nel messaggio di Pico resta solo la risposta (cartellino smaltato) con il timbro del revisore (`.stamp`: «✓ revisionata» in verde azione, «in revisione…» in ottone tratteggiato). Le schede Programma 101, le righe del revisore, le misure e il ragionamento si spostano nel menù `.trace` (`<details>`), la cui riga chiusa in monospaziato nomina gli strumenti: la prova del meccanismo resta leggibile senza aprire il menù. La bozza in arrivo è `.answer.is-draft` (bordo tratteggiato, testo attenuato, senza ombra).

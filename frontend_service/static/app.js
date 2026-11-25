@@ -259,23 +259,86 @@ function userMessage(text) {
   return item;
 }
 
+// ── Messaggio di Pico: solo la risposta; strumenti, revisore, tempi e ragionamento nel menù «dettagli» ──
+
+const STAMP_TEXT = { ok: "✓ revisionata", invalid: "revisione non riuscita", limit: "revisionata · limite raggiunto",
+  pending: "in revisione…" };
+
+// Esito del revisore dalle righe salvate: conta l'ultima riga «[revisore] …».
+function reviewVerdict(lines) {
+  const last = [...(lines || [])].reverse().find((line) => line.startsWith("[revisore]"));
+  if (!last) return null;
+  if (last.startsWith("[revisore] coerente")) return "ok";
+  if (last.includes("verdetto non valido")) return "invalid";
+  if (last.includes("limite raggiunto")) return "limit";
+  return null;
+}
+
+function setStamp(answer, verdict) {
+  let stamp = answer.querySelector(".stamp");
+  if (!verdict) { if (stamp) stamp.remove(); return; }
+  if (!stamp) { stamp = make("span", "stamp"); answer.append(stamp); }
+  stamp.dataset.verdict = verdict;
+  stamp.textContent = STAMP_TEXT[verdict];
+}
+
+function traceShell() {
+  const details = make("details", "trace");
+  const summary = make("summary", "trace-summary");
+  const label = make("span", "trace-label");
+  summary.append(label);
+  const body = make("div", "trace-body");
+  details.append(summary, body);
+  return { details, label, body };
+}
+
+// Riga del menù chiuso: nomina gli strumenti, così si vede subito che Pico li ha usati davvero.
+function traceLabel(tools, status, seconds) {
+  const parts = [];
+  if (tools.length === 1) parts.push(tools[0]);
+  else if (tools.length > 1) parts.push(`${tools.length} strumenti`);
+  else parts.push("nessuno strumento");
+  if (status) parts.push(status);
+  if (seconds) parts.push(seconds);
+  return parts.join(" · ");
+}
+
+const TRACE_STATUS = { ok: "revisionata", invalid: "revisione non riuscita", limit: "revisione al limite" };
+
 function assistantMessage(message) {
   const item = make("li", "msg-assistant");
+  const answer = make("div", "answer");
+  answer.append(renderText(message.contenuto));
+  const verdict = reviewVerdict(message.righe);
+  setStamp(answer, verdict);
+  item.append(answer);
+  const trace = traceShell();
   let number = toolCount();
   for (const tool of message.strumenti || []) {
     number += 1;
-    item.append(toolCard(tool, number));
+    trace.body.append(toolCard(tool, number));
   }
-  const answer = make("div", "answer");
-  answer.append(renderText(message.contenuto));
-  item.append(answer);
   // rifiuto, limite di passaggi e avviso sulle note sono anche nel testo della risposta: non si ripetono
   const content = String(message.contenuto || "");
   for (const line of message.righe || []) {
     if (line.trim() && content.includes(line.trim())) continue;
-    item.append(infoLine(line));
+    trace.body.append(infoLine(line));
   }
+  trace.tools = (message.strumenti || []).map((tool) => tool.nome);
+  trace.status = TRACE_STATUS[verdict] || "";
+  trace.label.textContent = traceLabel(trace.tools, trace.status, "");
+  item.trace = trace;
+  if (trace.body.childElementCount) item.append(trace.details);
   return item;
+}
+
+// Misure del turno appena concluso: nel menù, e i secondi anche nella riga chiusa.
+function addMetrics(item, metrics) {
+  const trace = item.trace;
+  if (!trace) return;
+  trace.body.append(metricsLine(metrics));
+  trace.label.textContent = traceLabel(trace.tools, trace.status, seconds(metrics.total));
+  if (!trace.details.isConnected) item.append(trace.details);
 }
 
 function metricsLine(metrics) {
@@ -524,8 +587,12 @@ function confirmDecisions() {
 
 // ── Un turno in streaming ──
 
+// Dopo l'ultimo pezzo di risposta, se il turno non è finito, il revisore sta leggendo la bozza.
+const REVIEW_AFTER_MS = 1500;
+
 function turnView(text) {
-  const view = { user: null, item: make("li", "msg-assistant"), answer: null, cards: [], draft: "" };
+  const view = { user: null, item: make("li", "msg-assistant"), answer: null, trace: traceShell(), cards: [],
+    draft: "", tools: [], reasoning: null, idle: null, verdict: null, done: false };
   if (text) {
     view.user = userMessage(text);
     el.messages.append(view.user);
@@ -533,11 +600,40 @@ function turnView(text) {
   view.answer = make("div", "answer answer-pending");
   view.answer.append(make("p", "", "Pico sta pensando"));
   view.answer.firstChild.append(make("span", "dots"));
-  view.item.append(view.answer);
+  view.item.append(view.answer, view.trace.details);
+  view.item.trace = view.trace;
+  updateTrace(view, "in corso…");
   el.messages.append(view.item);
   el.welcome.hidden = true;
   scrollToEnd();
   return view;
+}
+
+function updateTrace(view, status) {
+  view.trace.label.textContent = traceLabel(view.tools, status, "");
+}
+
+// La risposta in arrivo è una bozza finché il turno non è concluso (e il revisore, se acceso, non l'ha letta).
+function showDraft(view) {
+  view.answer.classList.remove("answer-pending");
+  view.answer.classList.add("is-draft");
+  view.answer.replaceChildren(renderText(view.draft));
+  setStamp(view.answer, view.verdict);
+}
+
+function addReasoning(view, text) {
+  if (!view.reasoning) {
+    const block = make("div", "trace-reasoning");
+    view.reasoning = make("p", "trace-reasoning-text", "");
+    block.append(make("span", "review-label", "Ragionamento"), view.reasoning);
+    view.trace.body.prepend(block);
+  }
+  view.reasoning.textContent += text;
+}
+
+function finishView(view) {
+  view.done = true;
+  clearTimeout(view.idle);
 }
 
 function removeView(view) {
@@ -561,35 +657,59 @@ async function runTurn(path, body, view, text, usersBefore = null) {
       if (name === "strumento") {
         const card = toolCard({ nome: data.nome, argomenti: data.argomenti, esito: null }, toolCount() + 1);
         view.cards.push(card);
-        view.item.insertBefore(card, view.answer);
+        view.tools.push(data.nome);
+        view.trace.body.append(card);
+        updateTrace(view, "strumento in corso…");
         setTurnState("tool");
       } else if (name === "esito_strumento") {
         const card = view.cards.find((c) => c.dataset.state === "running");
         if (card) finishToolCard(card, data.contenuto, data.errore);
+        updateTrace(view, "in corso…");
         setTurnState("waiting");
+      } else if (name === "ragionamento") {
+        addReasoning(view, data.testo || "");
       } else if (name === "risposta") {
         if (metrics.firstToken == null) metrics.firstToken = performance.now() - started;
         metrics.tokens += 1;
         view.draft += data.testo || "";
-        view.answer.classList.remove("answer-pending");
-        view.answer.replaceChildren(renderText(view.draft));
+        view.verdict = null;
+        showDraft(view);
+        updateTrace(view, "risponde…");
         setTurnState("writing");
+        clearTimeout(view.idle);
+        view.idle = setTimeout(() => {
+          if (view.done) return;
+          view.verdict = "pending";
+          setStamp(view.answer, "pending");
+          updateTrace(view, "in revisione…");
+          setTurnState("review");
+        }, REVIEW_AFTER_MS);
       } else if (name === "riga") {
         const line = String(data.testo || "");
         if (line.startsWith(REVIEW_RETRY)) {
+          clearTimeout(view.idle);
           view.draft = "";
+          view.verdict = null;
+          view.answer.classList.remove("is-draft");
           view.answer.classList.add("answer-pending");
           view.answer.replaceChildren(make("p", "", "Il revisore ha chiesto di rivedere la risposta"));
           view.answer.firstChild.append(make("span", "dots"));
+          updateTrace(view, "riscrittura…");
           setTurnState("review");
         }
         if (line.startsWith("[")) {
-          view.item.append(infoLine(line));
+          view.trace.body.append(infoLine(line));
+          const verdict = reviewVerdict([line]);
+          if (verdict) {
+            clearTimeout(view.idle);
+            view.verdict = verdict;
+            setStamp(view.answer, verdict);
+            updateTrace(view, TRACE_STATUS[verdict]);
+          }
         } else if (line.trim()) {
           // rifiuto del router, limite di passaggi o avviso sulle note: fanno parte della risposta
           view.draft = view.draft ? `${view.draft}\n\n${line}` : line;
-          view.answer.classList.remove("answer-pending");
-          view.answer.replaceChildren(renderText(view.draft));
+          showDraft(view);
         }
       } else if (name === "fine") {
         outcome = data;
@@ -600,6 +720,7 @@ async function runTurn(path, body, view, text, usersBefore = null) {
     });
     if (!outcome) throw new UiError("La risposta si è interrotta prima della fine. Riprova.");
   } catch (error) {
+    finishView(view);
     state.controller = null;
     setBusy(false);
     removeView(view);
@@ -622,6 +743,7 @@ async function runTurn(path, body, view, text, usersBefore = null) {
     showAlert(error.message || String(error));
     return;
   }
+  finishView(view);
   state.controller = null;
   setBusy(false);
   metrics.total = performance.now() - started;
@@ -631,6 +753,7 @@ async function runTurn(path, body, view, text, usersBefore = null) {
     for (const card of view.cards) {
       if (card.dataset.state === "running") card.querySelector(".tool-result").textContent = "in attesa di conferma";
     }
+    updateTrace(view, "in attesa di conferma");
     showConfirm(outcome.conferme || []);
     setTurnState("confirm");
     state.pendingView = view;
@@ -649,7 +772,7 @@ async function runTurn(path, body, view, text, usersBefore = null) {
   }
   if (detail) {
     const last = el.messages.querySelector(".msg-assistant:last-child");
-    if (last && metrics.tokens) last.append(metricsLine(metrics));
+    if (last && metrics.tokens) addMetrics(last, metrics);
     setTurnState("done");
   }
   await loadChats();
