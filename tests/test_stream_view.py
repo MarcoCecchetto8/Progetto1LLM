@@ -165,7 +165,9 @@ def test_stream_turn_refusal_printed_once():
     ], {})
     stream_turn(graph, {}, view)
     text = "".join(out)
-    assert text == refusal + "\n"
+    # prima la decisione del router (riga del turno), poi il rifiuto una sola volta
+    assert text == "[router] fuori ambito\n" + refusal + "\n"
+    assert text.count(refusal) == 1
     assert "testo del router" not in text
 
 

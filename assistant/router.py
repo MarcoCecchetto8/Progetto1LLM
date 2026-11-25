@@ -70,3 +70,10 @@ def build_router(model: BaseChatModel, scope: str) -> Callable[[list[AnyMessage]
 
 def refusal_text(route: Route) -> str:
     return REFUSAL.format(motivo=route.motivo.strip() or "argomento fuori ambito")
+
+
+def router_line(category: str, reason: str) -> str:
+    """Riga della decisione del router per il turno (es. «[router] in ambito: domanda sull'ora»)."""
+    label = "in ambito" if category == "conversazione" else "fuori ambito"
+    reason = " ".join((reason or "").split())
+    return f"[router] {label}: {reason}" if reason else f"[router] {label}"
