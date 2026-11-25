@@ -11,6 +11,7 @@ import httpx
 
 from agent_service.app import Agent
 from agent_service.errors import NOTES_DOWN, TOOLS_DOWN, model_unreachable
+from agent_service.warmup import start_warm_up
 from assistant.config import Settings, load_scope
 from assistant.graph import build_graph, system_prompt, today_line
 from assistant.llm import LMStudioUnavailable, ModelNotFound, build_chat_model, list_models
@@ -108,8 +109,10 @@ def build_agent(settings: Settings, root: Path) -> tuple[Agent, Callable[[], Non
         today = lambda: datetime.now(zone).date()  # noqa: E731
         date_line = date_line_for(preferences.fuso_orario)
         chat_model = build_chat_model(settings)
-        graph = build_graph(chat_model, mcp_tools + build_note_tools(http, today), settings.max_steps,
-                            answer_check=check_note_claims, router=build_router(chat_model, scope),
+        tools = mcp_tools + build_note_tools(http, today)
+        router = build_router(chat_model, scope)
+        graph = build_graph(chat_model, tools, settings.max_steps,
+                            answer_check=check_note_claims, router=router,
                             reviewer=reviewer_for(settings.max_reviews,
                                                   lambda: build_reviewer(chat_model, today=date_line)),
                             max_reviews=settings.max_reviews,
@@ -129,5 +132,7 @@ def build_agent(settings: Settings, root: Path) -> tuple[Agent, Callable[[], Non
 
         agent = Agent(graph=graph, system=system_prompt(preferences), settings=settings,
                       list_prompts=client.list_prompts, get_prompt=client.get_prompt, status=status)
+        # In sottofondo: la prima domanda trova già in cache l'inizio dei prompt di agente e router
+        start_warm_up(chat_model, tools, agent.system, date_line, router=router)
         close = stack.pop_all().close
     return agent, close
