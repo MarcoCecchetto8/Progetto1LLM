@@ -713,7 +713,7 @@ Limiti osservati:
 
 ### Prova reale del back-end
 
-Esiti del 2026-11-24. La prova di avvio senza modello è stata fatta con un PostgreSQL 18.6 temporaneo (`docker run --rm -d`, immagine `postgres:18.6-alpine`, porta 55432) e un indirizzo dell'agente su cui non ascolta nessuno (`BACKEND_AGENT_URL=http://127.0.0.1:8011`), con `DATABASE_URL` nell'ambiente del processo; il `.env` non è stato toccato. Le prove con LM Studio restano da fare.
+Esiti del 2026-11-24. La prova di avvio senza modello è stata fatta con un PostgreSQL 18.6 temporaneo (`docker run --rm -d`, immagine `postgres:18.6-alpine`, porta 55432) e un indirizzo dell'agente su cui non ascolta nessuno (`BACKEND_AGENT_URL=http://127.0.0.1:8011`), con `DATABASE_URL` nell'ambiente del processo; il `.env` non è stato toccato. Le prove con LM Studio sono del 2026-11-25 (modello `liquid/lfm2-24b-a2b`, database con `docker compose up -d db`, agente con `python -m agent_service` e back-end con `python -m backend_service` in locale, richieste con `Invoke-RestMethod` e `curl.exe` da Windows PowerShell 5.1).
 
 | Prova | Atteso | Esito |
 |---|---|---|
@@ -725,10 +725,16 @@ Esiti del 2026-11-24. La prova di avvio senza modello è stata fatta con un Post
 | `GET /docs` | 200 | ok (browser non provato) |
 | Arresto e riavvio del back-end | le chat sono ancora in elenco | ok: le tre chat create prima sono in elenco dopo il riavvio |
 | Avvio con database non raggiungibile (porta 1) o senza `DATABASE_URL` | codice 1 e messaggio chiaro, senza password | ok: «Il database non risponde all'indirizzo postgresql://lab@127.0.0.1:1/lab: avvia PostgreSQL con docker compose up -d db.» e «Manca DATABASE_URL: ...», codice 1 in entrambi i casi |
-| `docker compose up -d db` con il `.env` dell'utente (variabili `POSTGRES_*` e `DATABASE_URL` aggiunte), riavvio del back-end, poi `docker compose down` e `up -d db`: la chat c'è ancora | la chat resta (volume `pgdata`) | da fare |
-| Con LM Studio: domanda con uno strumento (ora o calcolo), poi lettura della chat | risposta e messaggi salvati | da fare |
-| Con LM Studio: eliminazione di una nota con conferma (`/conferma`) | `conferma_richiesta`, poi eliminazione e messaggi salvati | da fare |
-| Con LM Studio: streaming con `curl.exe -N`, anche con Ctrl+C a metà | eventi man mano; con Ctrl+C prima di `fine` nulla salvato | da fare |
+| `docker compose up -d db` con il `.env` dell'utente (variabili `POSTGRES_*` e `DATABASE_URL` aggiunte), riavvio del back-end, poi `docker compose down` e `up -d db`: la chat c'è ancora | la chat resta (volume `pgdata`) | ok: dopo `down` e `up -d db` (container acceso da 55 s) tutte le chat e i messaggi, con strumenti e righe del revisore, sono ancora in elenco |
+| Con LM Studio: domanda con uno strumento (ora o calcolo), poi lettura della chat | risposta e messaggi salvati | ok: «Che ore sono?» → `get_current_time` con `Europe/Rome`, ora giusta, `[revisore] coerente`; i due messaggi in `GET /chats/1` |
+| Con LM Studio: eliminazione di una nota con conferma (`/conferma`) | `conferma_richiesta`, poi eliminazione e messaggi salvati | ok: nota 13 salvata con `add_note`; «Elimina la nota 13» → `conferma_richiesta` con la domanda della nota 13; `{"13": false}` → nota ancora presente; in una chat nuova `{"13": true}` → «La nota 13 è stata eliminata.», `delete_note` nei messaggi salvati, `GET /notes/13` 404 |
+| Con LM Studio: streaming con `curl.exe -N`, anche con Ctrl+C a metà | eventi man mano; con Ctrl+C prima di `fine` nulla salvato | ok: keepalive, `strumento` e `esito_strumento` (`Asia/Tokyo`), `risposta` a pezzi visti arrivare man mano, `riga` del revisore e `fine` con i messaggi salvati. Interruzione: connessione chiusa dal client dopo 15 s (`curl.exe -m 15`, al posto del Ctrl+C) → nessun messaggio salvato, e il turno successivo nella stessa chat è riuscito |
+| `DELETE /chats/{id}` | 204, poi 404 | ok: 204 per quattro chat, poi `GET` 404 «La chat 3 non esiste.» |
+
+Limiti osservati:
+
+- Il modello a volte non chiama `delete_note`. Una volta ha chiesto conferma a parole («Confermi l'eliminazione…?»): rispondendo «sì» ha chiamato lo strumento ed è arrivata la conferma vera. Un'altra volta, nella stessa chat, ha dichiarato l'eliminazione senza farla: il controllo dei falsi successi ha aggiunto l'avviso, ma il revisore l'ha giudicata coerente. In una chat nuova lo strumento è stato chiamato subito. Il limite è del modello e c'era già prima del back-end.
+- Incollare più comandi insieme in Windows PowerShell 5.1 può sembrare bloccare la finestra (righe `>>`, e un clic nella finestra attiva la selezione e mette in pausa l'output): i comandi partono lo stesso, e ogni nuovo Invio riesegue il blocco (quattro chat «Prova» in più). Meglio una riga alla volta.
 
 ## Diagnosi
 
