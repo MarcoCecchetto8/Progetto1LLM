@@ -210,18 +210,16 @@ function make(tag, className, text) {
   return node;
 }
 
-function toolCard(tool, number) {
+function toolCard(tool) {
   const card = make("div", "tool");
   card.dataset.state = tool.esito == null ? "running" : (tool.errore ? "error" : "ok");
-  const num = make("div", "tool-num");
-  num.append("Scheda", make("b", "", String(number)));
   const body = make("div", "tool-body");
   body.append(
     make("span", "tool-name", tool.nome),
     make("span", "tool-args", formatArgs(tool.argomenti)),
     make("span", "tool-result", tool.esito == null ? "in esecuzione" : resultText(tool.esito, tool.errore)),
   );
-  card.append(num, body);
+  card.append(body);
   return card;
 }
 
@@ -247,10 +245,6 @@ function infoLine(text) {
   line.append(make("span", "review-label", label), make("span", "", match[2]));
   if (/^non coerente/i.test(match[2])) line.classList.add("review-bad");
   return line;
-}
-
-function toolCount() {
-  return el.messages.querySelectorAll(".tool").length;
 }
 
 function userMessage(text) {
@@ -313,11 +307,7 @@ function assistantMessage(message) {
   setStamp(answer, verdict);
   item.append(answer);
   const trace = traceShell();
-  let number = toolCount();
-  for (const tool of message.strumenti || []) {
-    number += 1;
-    trace.body.append(toolCard(tool, number));
-  }
+  for (const tool of message.strumenti || []) trace.body.append(toolCard(tool));
   // rifiuto, limite di passaggi e avviso sulle note sono anche nel testo della risposta: non si ripetono
   const content = String(message.contenuto || "");
   for (const line of message.righe || []) {
@@ -329,10 +319,28 @@ function assistantMessage(message) {
   trace.label.textContent = traceLabel(trace.tools, trace.status, "");
   item.trace = trace;
   if (trace.body.childElementCount) item.append(trace.details);
+  const saved = readMetrics()[message.id];
+  if (saved) addMetrics(item, saved);
   return item;
 }
 
 // Misure del turno appena concluso: nel menù, e i secondi anche nella riga chiusa.
+// Misure per id della risposta, nel browser: restano su tutte le risposte, anche ricaricando la pagina.
+const METRICS_KEY = "pico.misure";
+const METRICS_LIMIT = 300;
+
+function readMetrics() {
+  try { return JSON.parse(localStorage.getItem(METRICS_KEY) || "{}") || {}; } catch (_) { return {}; }
+}
+
+function storeMetrics(id, metrics) {
+  const all = readMetrics();
+  all[id] = { total: metrics.total, firstToken: metrics.firstToken, tokens: metrics.tokens };
+  const ids = Object.keys(all).map(Number).sort((a, b) => a - b);
+  for (const old of ids.slice(0, Math.max(0, ids.length - METRICS_LIMIT))) delete all[old];
+  try { localStorage.setItem(METRICS_KEY, JSON.stringify(all)); } catch (_) { /* archivio del browser pieno o non disponibile */ }
+}
+
 function addMetrics(item, metrics) {
   const trace = item.trace;
   if (!trace) return;
@@ -663,7 +671,7 @@ async function runTurn(path, body, view, text, usersBefore = null) {
     const response = await request("POST", path, body, controller.signal);
     await readSse(response, (name, data) => {
       if (name === "strumento") {
-        const card = toolCard({ nome: data.nome, argomenti: data.argomenti, esito: null }, toolCount() + 1);
+        const card = toolCard({ nome: data.nome, argomenti: data.argomenti, esito: null });
         view.cards.push(card);
         view.tools.push(data.nome);
         view.trace.body.append(card);
@@ -769,6 +777,8 @@ async function runTurn(path, body, view, text, usersBefore = null) {
     return;
   }
   // la vista provvisoria resta finché la chat salvata non è arrivata
+  const answerId = outcome.risposta ? outcome.risposta.id : null;
+  if (answerId != null) storeMetrics(answerId, metrics);
   const provisional = [view, state.pendingView].filter(Boolean);
   state.pendingView = null;
   const detail = await openChat(chatId, { quiet: true });
@@ -777,8 +787,9 @@ async function runTurn(path, body, view, text, usersBefore = null) {
     setTurnState("error");
   }
   if (detail) {
+    // le misure sono già state salvate per id e disegnate da renderChat; senza id solo sull'ultima
     const last = el.messages.querySelector(".msg-assistant:last-child");
-    if (last) addMetrics(last, metrics);
+    if (last && answerId == null) addMetrics(last, metrics);
     setTurnState("done");
   }
   await loadChats();
