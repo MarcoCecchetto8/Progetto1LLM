@@ -790,3 +790,15 @@ def test_explain_relative_days(text, expected):
 
 def test_explain_relative_days_without_date_line():
     assert explain_relative_days("fra 10 giorni", "") == "fra 10 giorni"
+
+
+def test_system_prompt_forbids_inventing_real_time_data():
+    # «Che tempo fa a Roma?» → «la temperatura è di 14°C»: nessuno strumento per il meteo
+    p = system_prompt(prefs())
+    assert "meteo" in p and "non inventarli" in p
+
+
+def test_system_prompt_counts_days_to_the_next_holiday():
+    # «quanti giorni mancano all'Epifania» contava i giorni dall'Epifania passata
+    p = system_prompt(prefs())
+    assert "`find_holiday` senza anno" in p and "la prossima" in p

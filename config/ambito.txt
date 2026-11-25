@@ -5,7 +5,7 @@ Ambito (categoria 'conversazione'):
 - informatica, programmazione, intelligenza artificiale;
 - saluti, ringraziamenti, domande sull'assistente e su cosa sa fare;
 - domande che continuano un discorso in ambito (es. «e a Tokyo?» dopo una domanda sull'ora).
-Tutto il resto è 'fuori_ambito' (cucina, sport, geografia, storia, attualità...).
+Tutto il resto è 'fuori_ambito' (cucina, sport, geografia, storia, attualità, meteo...).
 
 Esempi:
 - «Che ore sono a New York?» → conversazione (strumento orologio)
@@ -20,5 +20,7 @@ Esempi:
 - «Di cosa abbiamo parlato?» → conversazione (domanda sulla conversazione)
 - «Riassumi la conversazione fin qui» → conversazione (domanda sulla conversazione)
 - «Come si fa il tiramisù?» → fuori_ambito (cucina)
+- «Che tempo fa a Roma?» → fuori_ambito (meteo: nessuno strumento)
+- «Domani piove a Milano?» → fuori_ambito (meteo: nessuno strumento)
 - «Qual è la capitale dell'Australia?» → fuori_ambito (geografia)
 - «Chi ha vinto Sanremo?» → fuori_ambito (attualità)

@@ -101,3 +101,15 @@ def test_add_days_out_of_range(days, start):
 def test_date_info_year_out_of_range():
     with pytest.raises(ValueError, match="1900"):
         date_info("1800-01-01", TODAY)
+
+
+def test_find_holiday_current_year_already_passed_also_gives_the_next():
+    # Il modello chiedeva l'Epifania con year=2026 a novembre e contava i giorni trascorsi
+    text = find_holiday("Epifania", 2026, date(2026, 11, 25))
+    assert "È già passata." in text
+    assert "La prossima è il" in text and "fra 42 giorni" in text
+
+
+def test_find_holiday_explicit_other_year_unchanged():
+    text = find_holiday("Epifania", 2025, date(2026, 11, 25))
+    assert "La prossima" not in text
