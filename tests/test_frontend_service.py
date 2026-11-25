@@ -45,6 +45,13 @@ def test_static_files_served():
     assert css.headers["content-type"].startswith("text/css")
 
 
+def test_page_and_static_files_are_revalidated():
+    # Dopo un aggiornamento il browser non deve riusare app.js o style.css vecchi dalla cache
+    client = TestClient(create_app("http://127.0.0.1:8002"))
+    for path in ("/", "/static/app.js", "/static/style.css"):
+        assert client.get(path).headers.get("cache-control") == "no-cache", path
+
+
 def test_config_js_contains_backend_url():
     response = TestClient(create_app("http://127.0.0.1:8002")).get("/config.js")
     assert response.status_code == 200
