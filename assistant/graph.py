@@ -93,7 +93,7 @@ def system_prompt(preferences: Preferences) -> str:
         "giorno della settimana (es. «venerdì»), non chiedergli la data e non calcolarla: passala così com'è "
         "in `due_date` (es. due_date=\"venerdì\"). Per vedere le note usa `list_notes`. Per eliminare una nota usa `delete_note` "
         "con l'ID esatto preso da `list_notes`; se non è chiaro quale nota intende l'utente, chiediglielo; "
-        "prima di eliminare il programma chiederà conferma all'utente. Non dire mai che una nota è stata "
+        "prima di eliminare il programma chiederà conferma all'utente: non chiederla tu, chiama subito `delete_note`. Non dire mai che una nota è stata "
         "eliminata se lo strumento non lo conferma. "
         "Se uno strumento restituisce un errore, correggi gli argomenti oppure spiega l'errore all'utente. "
         f"Se l'utente non indica un fuso orario usa `{preferences.fuso_orario}`; "

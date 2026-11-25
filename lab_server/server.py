@@ -115,6 +115,8 @@ def create_server(default_timezone: str, now: Callable[[], datetime] = utc_now,
     def days_between(end: str, start: str | None = None) -> str:
         """Numero di giorni fra due date AAAA-MM-GG (es. quanti giorni mancano a una scadenza).
 
+        Non serve per «che data era N giorni fa» o «che data sarà fra N giorni»: per quello usa add_days.
+
         start: data di partenza; se omessa si parte da oggi.
         """
         return run(f"days_between({end}, {start})", lambda: dates.days_between(end, start, today()))

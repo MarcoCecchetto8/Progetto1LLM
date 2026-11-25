@@ -138,6 +138,24 @@ _HOUR = r"(?:[01]?\d|2[0-3])"
 _TIME = re.compile(rf"(?:^|[\s,]+)(?:(?:alle ore|alle|ore|at)\s*{_HOUR}(?:[:.][0-5]\d)?|{_HOUR}[:.][0-5]\d)$")
 
 
+def note_time(value: str | None) -> str | None:
+    """L'ora indicata nella scadenza («oggi alle 18:30» → «18:30», «domani alle 9» → «9»), se c'è."""
+    if not value:
+        return None
+    match = _TIME.search(_normalize(value).strip())
+    if not match:
+        return None
+    hour = re.search(r"(\d{1,2})(?:[:.](\d{2}))?$", match.group(0))
+    return f"{hour.group(1)}:{hour.group(2)}" if hour.group(2) else hour.group(1)
+
+
+def with_time(text: str, time: str | None) -> str:
+    """Le note non hanno un campo ora: se l'ora non è già nel testo, la aggiunge in fondo."""
+    if not time or re.search(rf"\b{time.split(':')[0]}(?:[:.]\d{{2}})?\b", text):
+        return text
+    return f"{text} (alle {time})"
+
+
 def resolve_due_date(value: str | None, today: date) -> str | None:
     """Traduce una scadenza relativa in AAAA-MM-GG; una data ISO passa invariata (la valida il servizio)."""
     if value is None or not value.strip():
@@ -175,6 +193,7 @@ def build_note_tools(client: httpx.Client, today: Callable[[], date]) -> list[Ba
         la scadenza tiene solo il giorno, quindi scrivi l'ora anche nel testo. Se l'utente non indica una
         scadenza, omettila."""
         due = resolve_due_date(due_date, today())
+        text = with_time(text, note_time(due_date))
         note = _call(client, "POST", "/notes", json={"text": text, "due_date": due}).json()
         return f"Nota {note['id']} salvata: «{note['text']}» · {due_phrase(note['due_date'], today())}."
 
@@ -195,7 +214,8 @@ def build_note_tools(client: httpx.Client, today: Callable[[], date]) -> list[Ba
 
     @tool
     def delete_note(note_id: int, config: RunnableConfig) -> str:
-        """Elimina una nota dato il suo ID (visibile con list_notes). Prima chiede conferma all'utente."""
+        """Elimina una nota dato il suo ID (visibile con list_notes). La conferma all'utente la chiede il programma:
+        non chiederla tu, chiama subito questo strumento."""
         try:
             note = _call(client, "GET", f"/notes/{note_id}").json()
         except ToolException as e:

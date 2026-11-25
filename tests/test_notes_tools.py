@@ -623,3 +623,20 @@ def test_resolve_due_date_with_time(value, expected):
 def test_resolve_due_date_invalid_time(value):
     with pytest.raises(ToolException, match="oggi, domani, dopodomani"):
         resolve_due_date(value, TODAY)
+
+
+@pytest.mark.parametrize("text, due, saved", [
+    ("Il kebab arriverà a casa", "oggi alle 18:30", "Il kebab arriverà a casa (alle 18:30)"),
+    ("Chiamare Luca", "domani alle 9", "Chiamare Luca (alle 9)"),
+    ("Colloquio alle 10", "venerdì alle 10", "Colloquio alle 10"),   # l'ora c'è già: non si ripete
+    ("Consegnare il report", "venerdì", "Consegnare il report"),     # nessuna ora
+])
+def test_add_note_keeps_the_time_in_the_text(client, text, due, saved):
+    # Le note non hanno un campo ora: se il modello la mette solo nella scadenza, finisce nel testo
+    out = make_tools(client)["add_note"].invoke({"text": text, "due_date": due})
+    assert f"«{saved}»" in out
+
+
+def test_delete_note_description_says_not_to_ask_confirmation_yourself():
+    tool = make_tools(None)["delete_note"]
+    assert "non chiederla tu" in tool.description
