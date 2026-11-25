@@ -99,9 +99,22 @@ def test_frontend_calls_exist_in_backend_openapi():
         assert method in paths[path], (method, path)
 
 
+def app_js_paths(text: str) -> set[str]:
+    """Percorsi letterali interi ("/..." o `/...`) usati in app.js, con ${...} sostituito da {chat_id}."""
+    found = re.findall(r"""["`](/[^"`\s]*)["`]""", text)
+    return {re.sub(r"\$\{[^}]+\}", "{chat_id}", path) for path in found}
+
+
 def test_app_js_uses_only_known_paths():
-    text = APP_JS.read_text(encoding="utf-8")
     known = {path for _, path in FRONTEND_CALLS}
-    pattern = re.compile(r"""["`](/chats(?:/\$\{[^}]+\})?(?:/messaggi/stream|/conferma/stream)?)""")
-    for found in pattern.findall(text):
-        assert re.sub(r"\$\{[^}]+\}", "{chat_id}", found) in known, found
+    used = app_js_paths(APP_JS.read_text(encoding="utf-8"))
+    assert used, "nessun percorso trovato in app.js"
+    assert used <= known, used - known
+
+
+def test_app_js_paths_check_rejects_unknown_paths():
+    # Il controllo non deve accorciare un percorso sconosciuto fino a un prefisso noto
+    known = {path for _, path in FRONTEND_CALLS}
+    for bad in ('api("GET", "/chats/export")', "request(`/chats/${id}/rinomina`)", 'api("GET", "/stato")',
+                "`/chats/${id}/messaggi`"):
+        assert not app_js_paths(bad) <= known, bad

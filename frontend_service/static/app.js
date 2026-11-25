@@ -52,7 +52,11 @@ async function errorFromResponse(response) {
   if (data && typeof data.messaggio === "string" && data.messaggio) {
     return new UiError(data.messaggio, response.status, data.codice || null);
   }
-  if (response.status === 422) return new UiError("Richiesta non valida.", 422);
+  if (response.status === 422) {
+    // errori di validazione di FastAPI: {"detail": [{"msg": "..."}]}, già in italiano nel back-end
+    const detail = data && Array.isArray(data.detail) && data.detail[0] && data.detail[0].msg;
+    return new UiError(typeof detail === "string" && detail ? detail : "Richiesta non valida.", 422);
+  }
   return new UiError(`Risposta inattesa dal back-end (codice ${response.status}).`, response.status);
 }
 
@@ -101,7 +105,14 @@ async function readSse(response, onEvent) {
     onEvent(name, payload);
   };
   for (;;) {
-    const { value, done } = await reader.read();
+    let chunk;
+    try {
+      chunk = await reader.read();
+    } catch (error) {
+      if (error && error.name === "AbortError") throw error;
+      throw new UiError("La connessione con il back-end si è interrotta durante la risposta. Riprova.");
+    }
+    const { value, done } = chunk;
     if (done) break;
     // un «\r» in fondo al pezzo può essere metà di un «\r\n»: si normalizza al pezzo dopo
     buffer = (buffer + decoder.decode(value, { stream: true })).replace(/\r\n/g, "\n").replace(/\r(?=[\s\S])/g, "\n");
@@ -258,7 +269,12 @@ function assistantMessage(message) {
   const answer = make("div", "answer");
   answer.append(renderText(message.contenuto));
   item.append(answer);
-  for (const line of message.righe || []) item.append(infoLine(line));
+  // rifiuto, limite di passaggi e avviso sulle note sono anche nel testo della risposta: non si ripetono
+  const content = String(message.contenuto || "");
+  for (const line of message.righe || []) {
+    if (line.trim() && content.includes(line.trim())) continue;
+    item.append(infoLine(line));
+  }
   return item;
 }
 
@@ -312,7 +328,8 @@ function setBusy(busy) {
   }
   state.busy = busy;
   el.send.hidden = busy;
-  el.stop.hidden = !busy;
+  // «Interrompi» solo quando c'è un flusso da fermare (non durante la creazione della chat)
+  el.stop.hidden = !(busy && state.controller);
   el.question.readOnly = busy;
   el.newChat.disabled = busy;
   el.thread.setAttribute("aria-busy", String(busy));
@@ -334,6 +351,11 @@ function showAlert(message, { retry = null, tone = "error" } = {}) {
 function hideAlert() {
   el.alert.hidden = true;
   state.retry = null;
+}
+
+// Toglie solo gli avvisi informativi (es. «Attendi la fine della risposta…»), non gli errori.
+function hideInfoAlert() {
+  if (!el.alert.hidden && el.alert.dataset.tone === "info") hideAlert();
 }
 
 function rememberChat(id) {
@@ -393,6 +415,7 @@ async function loadChats() {
 
 function showEmpty() {
   state.chatId = null;
+  state.pendingView = null;
   rememberChat(null);
   el.title.textContent = "Nuova chat";
   el.messages.replaceChildren();
@@ -403,6 +426,7 @@ function showEmpty() {
 }
 
 function renderChat(detail) {
+  state.pendingView = null; // le schede sospese a schermo vengono sostituite dalla chat salvata
   el.title.textContent = detail.titolo;
   el.messages.replaceChildren();
   for (const message of detail.messaggi) {
@@ -521,7 +545,8 @@ function removeView(view) {
   view.item.remove();
 }
 
-async function runTurn(path, body, view, text) {
+// usersBefore: domande salvate già a schermo prima del turno, per capire dopo «Interrompi» se questa è stata salvata
+async function runTurn(path, body, view, text, usersBefore = null) {
   const chatId = state.chatId;
   const controller = new AbortController();
   state.controller = controller;
@@ -558,7 +583,14 @@ async function runTurn(path, body, view, text) {
           view.answer.firstChild.append(make("span", "dots"));
           setTurnState("review");
         }
-        view.item.append(infoLine(line));
+        if (line.startsWith("[")) {
+          view.item.append(infoLine(line));
+        } else if (line.trim()) {
+          // rifiuto del router, limite di passaggi o avviso sulle note: fanno parte della risposta
+          view.draft = view.draft ? `${view.draft}\n\n${line}` : line;
+          view.answer.classList.remove("answer-pending");
+          view.answer.replaceChildren(renderText(view.draft));
+        }
       } else if (name === "fine") {
         outcome = data;
       } else if (name === "errore") {
@@ -571,9 +603,10 @@ async function runTurn(path, body, view, text) {
     state.controller = null;
     setBusy(false);
     removeView(view);
+    el.welcome.hidden = el.messages.childElementCount > 0;
     if (error && error.name === "AbortError") {
       setTurnState("stopped");
-      await afterStop(chatId, text);
+      await afterStop(chatId, text, usersBefore);
       return;
     }
     setTurnState("error");
@@ -592,6 +625,7 @@ async function runTurn(path, body, view, text) {
   state.controller = null;
   setBusy(false);
   metrics.total = performance.now() - started;
+  hideInfoAlert();
   if (outcome.esito === "conferma_richiesta") {
     view.answer.remove();
     for (const card of view.cards) {
@@ -600,6 +634,8 @@ async function runTurn(path, body, view, text) {
     showConfirm(outcome.conferme || []);
     setTurnState("confirm");
     state.pendingView = view;
+    const choice = el.confirmList.querySelector("input:checked");
+    if (choice) choice.focus();
     scrollToEnd();
     return;
   }
@@ -607,7 +643,10 @@ async function runTurn(path, body, view, text) {
   const provisional = [view, state.pendingView].filter(Boolean);
   state.pendingView = null;
   const detail = await openChat(chatId, { quiet: true });
-  if (!detail) for (const item of provisional) item.item.classList.add("is-stale");
+  if (!detail) {
+    for (const item of provisional) item.item.classList.add("is-stale");
+    setTurnState("error");
+  }
   if (detail) {
     const last = el.messages.querySelector(".msg-assistant:last-child");
     if (last && metrics.tokens) last.append(metricsLine(metrics));
@@ -618,14 +657,15 @@ async function runTurn(path, body, view, text) {
 }
 
 // Dopo «Interrompi» il back-end può aver salvato comunque: si rilegge la chat.
-async function afterStop(chatId, text) {
+async function afterStop(chatId, text, usersBefore) {
   if (state.pendingView) { removeView(state.pendingView); state.pendingView = null; }
   let saved = false;
   if (chatId != null) {
     const detail = await openChat(chatId, { quiet: true });
-    if (detail && text) {
+    if (detail && text && usersBefore != null) {
+      // salvata solo se c'è una domanda in più di prima e l'ultima è proprio questa
       const users = detail.messaggi.filter((m) => m.ruolo === "utente");
-      saved = users.length > 0 && users[users.length - 1].contenuto === text.trim();
+      saved = users.length > usersBefore && users[users.length - 1].contenuto === text.trim();
     }
     await loadChats();
   }
@@ -638,13 +678,14 @@ async function afterStop(chatId, text) {
   { tone: "info", retry: chatId != null ? () => openChat(chatId) : null });
 }
 
-async function sendQuestion(raw) {
+// fromBox: la domanda viene dalla casella (con un esempio la bozza scritta nella casella non si tocca)
+async function sendQuestion(raw, { fromBox = true } = {}) {
   const text = raw.trim();
   if (!text || state.busy) return;
   hideAlert();
   // occupato subito: un secondo Invio durante la creazione della chat non crea una chat doppia
   setBusy(true);
-  el.question.value = "";
+  if (fromBox) el.question.value = "";
   if (state.chatId == null) {
     try {
       const chat = await api("POST", "/chats");
@@ -654,21 +695,24 @@ async function sendQuestion(raw) {
       loadChats();
     } catch (error) {
       setBusy(false);
-      el.question.value = text;
+      if (fromBox) el.question.value = text;
       updateSend();
       showAlert(error.message);
       return;
     }
   }
+  const usersBefore = el.messages.querySelectorAll(".msg-user").length;
   const view = turnView(text);
-  await runTurn(`/chats/${state.chatId}/messaggi/stream`, { testo: text }, view, text);
+  await runTurn(`/chats/${state.chatId}/messaggi/stream`, { testo: text }, view, text, usersBefore);
 }
 
 async function sendConfirm() {
   if (state.busy || state.chatId == null) return;
   hideAlert();
   const decisions = confirmDecisions();
+  const hadFocus = el.confirm.contains(document.activeElement);
   hideConfirm();
+  if (hadFocus) el.question.focus();
   const view = turnView(null);
   // le schede sospese (es. delete_note) ricevono l'esito nel flusso della ripresa
   if (state.pendingView) view.cards = state.pendingView.cards.filter((card) => card.dataset.state === "running");
@@ -694,7 +738,7 @@ el.newChat.addEventListener("click", () => { hideAlert(); showEmpty(); closeMenu
 el.alertClose.addEventListener("click", hideAlert);
 el.alertRetry.addEventListener("click", () => { const retry = state.retry; hideAlert(); if (retry) retry(); });
 for (const example of document.querySelectorAll(".example")) {
-  example.addEventListener("click", () => sendQuestion(example.dataset.question));
+  example.addEventListener("click", () => sendQuestion(example.dataset.question, { fromBox: false }));
 }
 el.menu.addEventListener("click", () => {
   const open = !el.body.classList.contains("menu-open");
