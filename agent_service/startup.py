@@ -61,6 +61,11 @@ def date_line_for(zone_name: str, now: Callable[[ZoneInfo], datetime] = datetime
     return lambda: today_line(now(zone).date(), zone_name)
 
 
+def reviewer_for(max_reviews: int, build: Callable[[], object]):
+    """Revisore solo con MAX_REVIEWS > 0: con 0 il turno non spende la chiamata al modello per il giudizio."""
+    return build() if max_reviews > 0 else None
+
+
 def build_agent(settings: Settings, root: Path) -> tuple[Agent, Callable[[], None]]:
     """Costruisce l'agente; restituisce anche la funzione che chiude servizio note, client HTTP e client MCP.
 
@@ -105,11 +110,16 @@ def build_agent(settings: Settings, root: Path) -> tuple[Agent, Callable[[], Non
         chat_model = build_chat_model(settings)
         graph = build_graph(chat_model, mcp_tools + build_note_tools(http, today), settings.max_steps,
                             answer_check=check_note_claims, router=build_router(chat_model, scope),
-                            reviewer=build_reviewer(chat_model, today=date_line), max_reviews=settings.max_reviews,
+                            reviewer=reviewer_for(settings.max_reviews,
+                                                  lambda: build_reviewer(chat_model, today=date_line)),
+                            max_reviews=settings.max_reviews,
                             summarizer=build_summarizer(chat_model), summary_threshold=settings.summary_threshold,
                             summary_keep_turns=settings.summary_keep_turns,
                             confirmation_check=build_confirmation_check(http, today), today=date_line)
-        logger.info("[revisore] limite: %d revisioni", settings.max_reviews)
+        if settings.max_reviews > 0:
+            logger.info("[revisore] limite: %d revisioni", settings.max_reviews)
+        else:
+            logger.info("[revisore] spento (MAX_REVIEWS=0)")
         logger.info("[riassunto] soglia: %d token stimati, turni conservati: %d",
                     settings.summary_threshold, settings.summary_keep_turns)
 
