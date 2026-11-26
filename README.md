@@ -820,7 +820,7 @@ Prove da fare nel browser (http://127.0.0.1:8003) con database, agente, back-end
 | «Che note ci sono?» | `list_notes` nel menù, note per numero crescente | ok (2026-11-26); prima della modifica il modello a volte ricopiava l'elenco a memoria (note dimenticate, «la 14 è stata eliminata» falso, segnalato dall'avviso) |
 | Nuova nota dopo un'eliminazione | riprende il numero libero più piccolo | ok (2026-11-26): dopo la compattazione 5…28 → 1…9, nuova nota 10; eliminata la 3, la nota successiva ha preso il 3; «Ricordami di comprare il caffè domani» salvata con `add_note` |
 | Eliminazione di una nota: prima «Non eliminare», poi «Elimina» | con «Non eliminare» la nota resta; con «Elimina» viene eliminata | ok (2026-11-26): traccia «Conferma · nota N: non eliminata / eliminata» |
-| Eliminazione di una chat | finestra di conferma a tema («Annulla» / «Elimina chat»), poi la chat sparisce dall'elenco | ok con la conferma del browser (2026-11-26); giudicata brutta → sostituita con la finestra a tema: da provare |
+| Eliminazione di una chat | finestra di conferma a tema («Annulla» / «Elimina chat»), poi la chat sparisce dall'elenco | ok (2026-11-26): prima con la conferma del browser, giudicata brutta e sostituita con la finestra a tema; Annulla, Esc, clic fuori ed «Elimina chat» provati |
 | «Interrompi» durante una risposta | la risposta si ferma; salvata solo se Pico era già alla fine; il turno successivo funziona | ok (2026-11-26): nota «Risposta interrotta», domanda successiva senza avvisi |
 | Finestra stretta | sotto gli 860 px l'elenco diventa un pannello che si apre con ☰, la chat resta usabile | ok (2026-11-26, screenshot a 700 px); a metà schermo su 1920 px (circa 960 px) la disposizione resta quella larga |
 
