@@ -463,7 +463,28 @@ function rememberedChat() {
 function closeMenu() {
   el.body.classList.remove("menu-open");
   el.scrim.hidden = true;
-  el.menu.setAttribute("aria-expanded", "false");
+  syncMenuButton();
+}
+
+// ── Barra laterale: fino a 1000 px pannello aperto da ☰, oltre richiudibile con la scelta ricordata ──
+const NARROW = window.matchMedia("(max-width: 1000px)");
+const RAIL_KEY = "pico.barra";
+
+function railClosedSaved() {
+  try { return localStorage.getItem(RAIL_KEY) === "chiusa"; } catch (_) { return false; }
+}
+
+function saveRail(closed) {
+  try { localStorage.setItem(RAIL_KEY, closed ? "chiusa" : "aperta"); } catch (_) { /* archivio del browser non disponibile */ }
+}
+
+// aria-expanded e testo del pulsante seguono ciò che si vede: pannello aperto (stretta) o barra aperta (larga)
+function syncMenuButton() {
+  const visible = NARROW.matches ? el.body.classList.contains("menu-open") : !el.body.classList.contains("rail-closed");
+  el.menu.setAttribute("aria-expanded", String(visible));
+  const label = el.menu.querySelector(".visually-hidden");
+  if (label) label.textContent = visible ? "Nascondi le chat" : "Mostra le chat";
+  el.menu.title = visible ? "Nascondi le chat" : "Mostra le chat";
 }
 
 // ── Elenco delle chat ──
@@ -943,12 +964,24 @@ for (const example of document.querySelectorAll(".example")) {
   example.addEventListener("click", () => sendQuestion(example.dataset.question, { fromBox: false }));
 }
 el.menu.addEventListener("click", () => {
-  const open = !el.body.classList.contains("menu-open");
-  el.body.classList.toggle("menu-open", open);
-  el.scrim.hidden = !open;
-  el.menu.setAttribute("aria-expanded", String(open));
+  if (NARROW.matches) {
+    // finestra stretta: pannello sopra la chat
+    const open = !el.body.classList.contains("menu-open");
+    el.body.classList.toggle("menu-open", open);
+    el.scrim.hidden = !open;
+  } else {
+    // finestra larga: barra chiusa o aperta, scelta ricordata
+    const closed = !el.body.classList.contains("rail-closed");
+    el.body.classList.toggle("rail-closed", closed);
+    saveRail(closed);
+  }
+  syncMenuButton();
 });
 el.scrim.addEventListener("click", closeMenu);
+// passando da stretta a larga (o viceversa) il pannello si chiude e vale di nuovo la scelta salvata
+NARROW.addEventListener("change", closeMenu);
+el.body.classList.toggle("rail-closed", railClosedSaved());
+syncMenuButton();
 
 async function start() {
   hideAlert();
