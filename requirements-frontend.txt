@@ -1,0 +1,4 @@
+# Dipendenze dell'immagine del front-end: stesse versioni di requirements.txt (controllate da tests/test_requirements.py)
+python-dotenv==1.2.4
+fastapi==0.162.2
+uvicorn==0.54.0
