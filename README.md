@@ -319,7 +319,8 @@ Poi si apre http://127.0.0.1:8003 nel browser. Il front-end parte su `127.0.0.1:
 **Che cosa fa la pagina.**
 
 - Elenco delle chat (la più recente in alto), «Nuova chat» ed eliminazione con conferma del browser. «Nuova chat» non crea nulla subito: la chat nasce al primo invio.
-- Messaggi della chat aperta: nel messaggio di Pico c'è solo la risposta, con il timbro «✓ revisionata» quando il revisore l'ha approvata; sotto, un menù a tendina chiuso (la riga nomina lo strumento usato) con schede degli strumenti, righe del revisore, tempi e ragionamento (se il modello lo manda). La risposta resta nascosta finché il revisore non l'approva: intanto si vedono «Pico scrive la risposta…» e poi «Il revisore controlla la risposta…» (se la boccia, «Il revisore ha chiesto una nuova risposta…»); senza revisore (`MAX_REVIEWS=0`) compare a fine turno. Invio invia, Maiuscolo+Invio va a capo.
+- Messaggi della chat aperta: nel messaggio di Pico c'è solo la risposta, con il timbro «✓ revisionata» quando il revisore l'ha approvata; sotto, un menù a tendina chiuso (la riga nomina lo strumento usato) con schede degli strumenti, righe del revisore, tempi e ragionamento (se il modello lo manda). La risposta arriva in streaming come **bozza**: il testo compare man mano, attenuato e con il timbro «in revisione…»; quando il revisore l'approva prende il colore normale e il timbro «✓ revisionata»; se la boccia, la bozza è sostituita da «Il revisore ha chiesto una nuova risposta…» e la nuova arriva di nuovo in streaming; senza revisore (`MAX_REVIEWS=0`) a fine turno il timbro sparisce.
+- **Scelta di streaming con il revisore (slide 18 della lezione 6)**: si mostra la bozza mentre viene scritta, non solo la risposta approvata. Lo streaming della sola risposta approvata non esiste: il revisore giudica il testo completo, quindi quando approva la risposta è già tutta scritta. Nascondere la bozza (provato il 25/11) lasciava la pagina ferma per 30–40 s; il timbro dice sempre se il testo è già stato approvato. Invio invia, Maiuscolo+Invio va a capo.
 - Risposta in streaming: le parole compaiono man mano; durante l'attesa casella e «Invia» sono disattivati e c'è il pulsante «Interrompi». Dopo l'interruzione la pagina rilegge la chat: se Pico era già quasi alla fine la risposta può essere salvata comunque (vedi «Interruzione dello streaming»), altrimenti la domanda torna nella casella.
 - Nel menù dei dettagli di ogni risposta arrivata nella sessione una riga di misure (i secondi anche nella riga chiusa): tempo totale, tempo al primo token (comprende router e strumenti) e «≈ token» (pezzi ricevuti in streaming, un'approssimazione). Si misurano nel browser e non si salvano.
 - Conferma delle eliminazioni delle note dal browser («Elimina» / «Non eliminare»), anche riaprendo una chat con la conferma in attesa.
@@ -520,6 +521,17 @@ Invoke-RestMethod -Method Delete http://127.0.0.1:8000/notes/1
 La `POST` restituisce `{"id":1,"text":"prova","due_date":"2026-11-13","created_at":"2026-11-09T16:06:38+00:00"}` (`created_at` è in UTC), la `GET` `{"total":1,"notes":[...]}` con quella nota, la `DELETE` la nota eliminata. Il servizio scrive su stderr una riga per ogni creazione (`nota creata id=1 testo=prova scadenza=2026-11-13`) ed eliminazione. `http://127.0.0.1:8000/docs` risponde 200. Si ferma con Ctrl+C.
 
 Con Docker (2026-11-09): `docker compose config`, `docker compose build` e `docker compose up -d notes` vanno a buon fine; `docker compose ps` mostra `notes` acceso con `127.0.0.1:8000->8000/tcp` (porta pubblicata solo su localhost). Dall'host le stesse tre chiamate funzionano e `data/notes.db` viene scritto attraverso la cartella montata (l'utente non root `appuser` del container riesce a scrivere). `docker compose down` ferma e rimuove il container.
+
+### Numeri delle note
+
+Una nota nuova prende il **numero libero più piccolo** (1 con l'archivio vuoto; dopo un'eliminazione il buco è ripreso dalla nota successiva) e l'elenco è **per numero crescente**, con la scadenza accanto. Una nota esistente non cambia mai numero. Per rinumerare una volta sola un archivio con numeri sparsi (servizio delle note spento, quindi anche agente e Docker `notes` spenti):
+
+```powershell
+Copy-Item data\notes.db data\notes.db.bak
+python -m notes_service.compact
+```
+
+Stampa le corrispondenze (`5 → 1`, …) oppure `Nessuna nota da rinumerare.`; `--db` indica un altro file. Nelle chat salvate prima della rinumerazione i numeri scritti sono quelli vecchi.
 
 ## Prova reale
 
@@ -803,7 +815,9 @@ Prove da fare nel browser (http://127.0.0.1:8003) con database, agente, back-end
 | Conversazione con uno strumento dal browser (per esempio «Che ore sono?») | la risposta compare, con la riga dello strumento usato | da fare |
 | Chat creata dall'interfaccia, poi arresto e riavvio del back-end e ricarica della pagina | la chat è ancora in elenco con i suoi messaggi | da fare |
 | Agente spento, invio di una domanda | messaggio di errore comprensibile, pagina utilizzabile, domanda ancora nella casella | da fare |
-| Risposta in streaming | il testo compare man mano, non tutto insieme | da fare |
+| Risposta in streaming | il testo compare man mano come bozza «in revisione…», poi «✓ revisionata» | da fare |
+| «Che note ci sono?» | `list_notes` nel menù, note per numero crescente | da fare |
+| Nuova nota dopo un'eliminazione | riprende il numero libero più piccolo | da fare |
 | Eliminazione di una nota: prima «Non eliminare», poi «Elimina» | con «Non eliminare» la nota resta; con «Elimina» viene eliminata | da fare |
 | Eliminazione di una chat | conferma del browser, poi la chat sparisce dall'elenco | da fare |
 | «Interrompi» durante una risposta | la risposta si ferma; salvata solo se Pico era già alla fine; il turno successivo funziona | da fare |
