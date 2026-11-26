@@ -21,7 +21,7 @@ Slide 16 della lezione 6: un solo comando (`docker compose up`) avvia l'intera a
 |---|---|---|---|---|
 | `db` | immagine `postgres:18.6-alpine` | — | `127.0.0.1:5433` (per le prove locali e i test con PostgreSQL vero) | volume `pgdata`, healthcheck come oggi |
 | `agent` | `agent_service/Dockerfile` | `assistant/`, `lab_server/`, `notes_service/`, `agent_service/`, `config/` | **nessuna** | `env_file: .env`; `LMSTUDIO_BASE_URL=http://host.docker.internal:1234/v1`; `NOTES_SERVICE_URL` non impostata (servizio delle note avviato dall'agente); monta `./data:/app/data` e `./config/preferenze.json` in sola lettura; `extra_hosts` come oggi |
-| `backend` | `backend_service/Dockerfile` | `assistant/__init__.py`, `assistant/agent_http.py`, `backend_service/` | `127.0.0.1:8002` | niente `env_file`: `DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}` (interpolata da Compose dal `.env`), `BACKEND_AGENT_URL=http://agent:8001`; `depends_on: db` con `condition: service_healthy` |
+| `backend` | `backend_service/Dockerfile` | `assistant/__init__.py`, `assistant/agent_http.py`, `backend_service/` | `127.0.0.1:8002` | niente `env_file`: `DATABASE_URL=postgresql://db:5432` con `PGUSER`, `PGPASSWORD`, `PGDATABASE` dalle `POSTGRES_*` del `.env` (libpq le legge dall'ambiente, la password non va codificata nell'URL; corretto dopo la revisione finale), `BACKEND_AGENT_URL=http://agent:8001`; `depends_on: db` con `condition: service_healthy` |
 | `frontend` | `frontend_service/Dockerfile` | `frontend_service/` (con `static/`) | `127.0.0.1:8003` | `FRONTEND_BACKEND_URL` predefinita `http://127.0.0.1:8002` (indirizzo visto dal browser, non dal container) |
 | `app` (CLI) | `agent_service/Dockerfile` | come l'agente | nessuna | `profiles: ["cli"]`: `docker compose up` non la avvia; `docker compose run --rm app` sì (`AGENT_SERVICE_URL=http://agent:8001`) |
 
@@ -33,7 +33,7 @@ Slide 16 della lezione 6: un solo comando (`docker compose up`) avvia l'intera a
 ## 5. Comportamento
 
 - `docker compose up -d --build` (o `docker compose build` e poi `docker compose up -d`): partono `db`, poi `backend` quando `db` è sano; `agent` e `frontend` subito. `docker compose ps` mostra i quattro servizi; l'agente senza porte.
-- Se LM Studio è spento l'agente esce all'avvio (comportamento di oggi): `docker compose ps` lo mostra fermo, `docker compose logs agent` dice perché; il front-end mostra l'errore «agente non raggiungibile» del back-end. Rimedio: accendere LM Studio e `docker compose up -d agent`.
+- Se LM Studio è spento l'agente parte lo stesso e resta acceso (comportamento di oggi: avviso `[modello] …`); il `/stato` del back-end risponde 503 e la pagina mostra l'errore del modello; basta accendere LM Studio. (Corretto dopo la revisione finale: la prima stesura diceva che l'agente esce.)
 - Le chat stanno nel volume `pgdata` (sopravvivono a `down`/`up`, non a `down -v`); le note in `data/notes.db` sull'host, condivise con l'avvio locale.
 - Avvio locale e Docker non vanno usati insieme: vogliono le stesse porte (8002, 8003; e 8000/8001 dell'avvio locale dentro e fuori). Il README lo dice.
 

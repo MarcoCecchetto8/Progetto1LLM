@@ -108,8 +108,9 @@ Poi la pagina è su http://127.0.0.1:8003. `docker compose ps` mostra i quattro 
 - Le chat restano nel volume `pgdata` anche dopo `docker compose down` e `docker compose up -d`; `docker compose down -v` cancella anche il volume, e con lui tutte le chat.
 - Le note stanno in `data/notes.db` sull'host, montata nel container dell'agente: sono le stesse dell'avvio locale. `config/preferenze.json` è montato in sola lettura.
 - Le immagini di back-end e front-end installano solo le proprie dipendenze (`requirements-backend.txt`, `requirements-frontend.txt`, stesse versioni di `requirements.txt`, controllate da `tests/test_requirements.py`).
+- Il back-end riceve utente, password e nome del database come `PGUSER`, `PGPASSWORD` e `PGDATABASE` (dalle `POSTGRES_*` del `.env`), non dentro `DATABASE_URL`: la password può contenere anche `@`, `/` o `%`.
 - Limite: l'agente riceve il `.env` intero, compresa la password del database che non usa.
-- Se LM Studio è spento, l'agente si ferma all'avvio (`docker compose ps` non lo mostra in esecuzione; il motivo è in `docker compose logs agent`) e la pagina mostra l'errore dell'agente non raggiungibile. Rimedio: accendere LM Studio e `docker compose up -d agent`.
+- Se LM Studio è spento l'agente parte lo stesso (nei log `[modello] …`) e resta in esecuzione: `GET /stato` del back-end risponde 503 con il modello non raggiungibile e la domanda dalla pagina dà l'errore del modello. Basta accendere LM Studio e riprovare, senza riavviare nulla.
 
 I log dell'agente (turni, strumenti, revisore) si leggono con `docker compose logs agent` (`-f` per seguirli); ogni strumento usato lascia una riga `[api] strumento <nome> <argomenti> → <esito>`. Se l'agente perde il collegamento con il server MCP o con le note non si riconnette da solo: `docker compose restart agent`.
 
@@ -545,7 +546,7 @@ Con Docker (2026-11-09): `docker compose config`, `docker compose build` e `dock
 
 ### Numeri delle note
 
-Una nota nuova prende il **numero libero più piccolo** (1 con l'archivio vuoto; dopo un'eliminazione il buco è ripreso dalla nota successiva) e l'elenco è **per numero crescente**, con la scadenza accanto. Una nota esistente non cambia mai numero. Per rinumerare una volta sola un archivio con numeri sparsi (servizio delle note spento, quindi anche agente e Docker `notes` spenti):
+Una nota nuova prende il **numero libero più piccolo** (1 con l'archivio vuoto; dopo un'eliminazione il buco è ripreso dalla nota successiva) e l'elenco è **per numero crescente**, con la scadenza accanto. Una nota esistente non cambia mai numero. Per rinumerare una volta sola un archivio con numeri sparsi (servizio delle note spento, quindi anche agente locale e container `agent` spenti):
 
 ```powershell
 Copy-Item data\notes.db data\notes.db.bak
@@ -861,16 +862,17 @@ Prova dell'utente dal browser, con LM Studio:
 
 | Prova | Atteso | Esito |
 |---|---|---|
-| Chat con uno strumento («Che ore sono a Tokyo?») | risposta con lo strumento; riga `[api] strumento get_current_time …` in `docker compose logs agent` | da fare |
-| Eliminazione di una nota con conferma («Non eliminare») | la nota resta | da fare |
-| `docker compose down`, poi `docker compose up -d` | le chat sono ancora presenti | da fare |
+| Chat con uno strumento («Che ore sono a Tokyo?») | risposta con lo strumento; riga `[api] strumento get_current_time …` in `docker compose logs agent` | ok (2026-11-26): `[api] strumento get_current_time {'timezone': 'Asia/Tokyo'} → Asia/Tokyo: 2026-11-26T21:48:08+09:00`, `[api] turno completato in 56.3 s`. La riga compare solo a fine turno: lanciando i log mentre Pico scrive si vede solo `[router] …` |
+| Eliminazione di una nota con conferma («Non eliminare») | la nota resta | ok (2026-11-26) |
+| `docker compose down`, poi `docker compose up -d` | le chat sono ancora presenti | ok (2026-11-26); `down` cancella anche i log dei container |
 
 ## Diagnosi
 
 | Sintomo | Causa probabile e rimedio |
 |---|---|
 | La pagina mostra «Il back-end non risponde all'indirizzo …» | il back-end è spento o l'indirizzo è sbagliato: avviare `python -m backend_service` e controllare `FRONTEND_BACKEND_URL` (poi riavviare il front-end) |
-| Errore CORS nella console del browser | la pagina è aperta da un'origine non elencata in `BACKEND_CORS_ORIGINS` (altra porta o altro host, per esempio con `--port` diverso): aprire http://127.0.0.1:8003 oppure aggiungere l'origine alla variabile e riavviare il back-end |
+| In PowerShell 5.1 `docker compose logs agent` mostra `ÔåÆ` al posto di `→` (o altre lettere strane al posto delle accentate) | è solo la visualizzazione: la console legge l'UTF-8 dei log con la codifica di Windows. Prima dei log, da provare: `[Console]::OutputEncoding = [Text.Encoding]::UTF8` |
+| Errore CORS nella console del browser | la pagina è aperta da un'origine non elencata in `BACKEND_CORS_ORIGINS` (altra porta o altro host, per esempio con `--port` diverso): aprire http://127.0.0.1:8003 oppure aggiungere l'origine alla variabile e riavviare il back-end. Con Docker Compose il back-end non legge il `.env`: l'origine va aggiunta come `BACKEND_CORS_ORIGINS` in `environment` del servizio `backend` in `compose.yaml` |
 | `FRONTEND_BACKEND_URL non valida: ...` all'avvio del front-end | l'indirizzo non inizia con `http://` o `https://`: correggerlo nel `.env` |
 | `[preferenze] resource non disponibile (...): uso italiano, sintetico, <fuso>` | (avviso mostrato anche in avvio normale) il file delle preferenze manca o non si legge: controllare `PREFERENCES_FILE` e `config/preferenze.json`; l'avvio prosegue con le riserve |
 | `[preferenze] <campo> '<valore>' non ammesso: uso '<riserva>'` o `<campo> mancante: uso '<riserva>'` | campo assente, valore fuori elenco (lingua, stile) o fuso inesistente: correggere il file e riavviare; gli altri campi valgono |
