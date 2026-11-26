@@ -641,17 +641,26 @@ function updateTrace(view, status) {
   view.trace.label.textContent = traceLabel(view.tools, status, "");
 }
 
-// La risposta resta nascosta finché il revisore non l'approva: si vede solo che cosa sta succedendo.
+// Stato al posto della risposta: prima del primo pezzo, o dopo che il revisore ha chiesto una nuova risposta.
 function setPending(view, text) {
+  view.answer.classList.remove("answer-draft");
   view.answer.classList.add("answer-pending");
   view.answer.replaceChildren(make("p", "", text));
   view.answer.firstChild.append(make("span", "dots"));
 }
 
-// Mostra la risposta accumulata (dopo il verdetto del revisore, o subito se non c'è nulla da revisionare).
+// Bozza in streaming (slide 18, scelta dell'utente): il testo si vede mentre arriva, attenuato e «in revisione…».
+function showDraft(view) {
+  view.answer.classList.remove("answer-pending");
+  view.answer.classList.add("answer-draft");
+  view.answer.replaceChildren(renderText(view.draft));
+  setStamp(view.answer, "pending");
+}
+
+// Risposta definitiva: dopo il verdetto del revisore, a fine turno senza revisore, o subito se non c'è nulla da revisionare.
 function reveal(view) {
   view.revealed = true;
-  view.answer.classList.remove("answer-pending");
+  view.answer.classList.remove("answer-pending", "answer-draft");
   view.answer.replaceChildren(renderText(view.draft));
   setStamp(view.answer, view.verdict);
 }
@@ -708,13 +717,14 @@ async function runTurn(path, body, view, text, usersBefore = null) {
         metrics.tokens += 1;
         view.draft += data.testo || "";
         view.verdict = null;
-        if (!view.writing) { view.writing = true; setPending(view, "Pico scrive la risposta"); }
+        view.writing = true;
+        showDraft(view);
         updateTrace(view, "risponde…");
         setTurnState("writing");
         clearTimeout(view.idle);
         view.idle = setTimeout(() => {
           if (view.done) return;
-          setPending(view, "Il revisore controlla la risposta");
+          // la bozza resta visibile: cambia solo lo stato
           updateTrace(view, "in revisione…");
           setTurnState("review");
         }, REVIEW_AFTER_MS);
@@ -743,6 +753,7 @@ async function runTurn(path, body, view, text, usersBefore = null) {
           view.draft = view.draft ? `${view.draft}\n\n${line}` : line;
           // rifiuto (nessuna revisione) o avviso arrivato dopo l'approvazione: si mostra subito
           if (view.revealed || !metrics.tokens) reveal(view);
+          else showDraft(view);
         }
       } else if (name === "fine") {
         outcome = data;
@@ -779,6 +790,8 @@ async function runTurn(path, body, view, text, usersBefore = null) {
   finishView(view);
   state.controller = null;
   setBusy(false);
+  // revisore spento: nessun verdetto, la bozza diventa la risposta senza timbro
+  if (view.writing && !view.revealed) reveal(view);
   metrics.total = performance.now() - started;
   hideInfoAlert();
   if (outcome.esito === "conferma_richiesta") {
