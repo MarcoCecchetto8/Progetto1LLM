@@ -1,6 +1,8 @@
+import asyncio
+
 import pytest
 
-from lab_server.check import parse_args
+from lab_server.check import check, parse_args
 
 
 def test_parse_args_reads_json_values():
@@ -14,3 +16,16 @@ def test_parse_args_keeps_text_with_spaces_and_equals():
 def test_parse_args_without_equals():
     with pytest.raises(SystemExit):
         parse_args(["Asia/Tokyo"])
+
+
+def test_check_lists_resource(capfd):
+    assert asyncio.run(check([])) == 0
+    lines = capfd.readouterr().out.splitlines()
+    assert any(line.startswith("resource utente://preferenze: preferenze (application/json)") for line in lines)
+
+
+def test_check_lists_prompts(capfd):
+    assert asyncio.run(check([])) == 0
+    lines = capfd.readouterr().out.splitlines()
+    assert "prompt spiega: Spiega un argomento al livello richiesto." in lines
+    assert "  argomento (obbligatorio): concetto da spiegare" in lines

@@ -2,6 +2,7 @@
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 
 from lab_server.timezones import get_timezone
 
@@ -21,6 +22,14 @@ class Settings:
     max_steps: int
     default_timezone: str
     log_level: str
+    notes_service_url: str = ""
+    show_reasoning: bool = True
+    scope_file: str = "config/ambito.txt"
+    max_reviews: int = 3
+    summary_threshold: int = 4000
+    summary_keep_turns: int = 2
+    preferences_file: str = "config/preferenze.json"
+    agent_service_url: str = ""
 
 
 def _get(env: Mapping[str, str], name: str, default: str | None = None) -> str:
@@ -61,4 +70,33 @@ def load_settings(env: Mapping[str, str]) -> Settings:
     if log_level not in LOG_LEVELS:
         raise ConfigError(f"LOG_LEVEL non valida: '{log_level}' (valori ammessi: {', '.join(LOG_LEVELS)}).")
 
-    return Settings(base_url, model, timeout, temperature, max_steps, timezone, log_level)
+    notes_url = env.get("NOTES_SERVICE_URL", "").strip().rstrip("/")
+
+    show_reasoning = _get(env, "SHOW_REASONING", "true").lower()
+    if show_reasoning not in ("true", "false"):
+        raise ConfigError(f"SHOW_REASONING non valida: '{show_reasoning}' (valori ammessi: true, false).")
+
+    scope_file = _get(env, "SCOPE_FILE", "config/ambito.txt")
+    max_reviews = _number(env, "MAX_REVIEWS", "3", int, 0, "un intero")
+    summary_threshold = _number(env, "SUMMARY_THRESHOLD", "4000", int, 1, "un intero")
+    summary_keep_turns = _number(env, "SUMMARY_KEEP_TURNS", "2", int, 1, "un intero")
+    preferences_file = _get(env, "PREFERENCES_FILE", "config/preferenze.json")
+    agent_url = env.get("AGENT_SERVICE_URL", "").strip().rstrip("/")
+
+    return Settings(base_url, model, timeout, temperature, max_steps, timezone, log_level, notes_url,
+                    show_reasoning == "true", scope_file, max_reviews, summary_threshold, summary_keep_turns,
+                    preferences_file, agent_url)
+
+
+def load_scope(path: str, root: Path) -> str:
+    """Legge il testo dell'ambito; il percorso relativo parte dalla radice del progetto."""
+    file = Path(path)
+    if not file.is_absolute():
+        file = root / file
+    try:
+        text = file.read_text(encoding="utf-8").strip()
+    except OSError:
+        text = ""
+    if not text:
+        raise ConfigError(f"SCOPE_FILE non valida: '{path}' non esiste o è vuoto.")
+    return text

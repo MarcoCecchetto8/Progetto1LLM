@@ -4,6 +4,7 @@ import logging
 import os
 import signal
 import sys
+import warnings
 
 from assistant import GOODBYE
 
@@ -16,6 +17,12 @@ def configure_logging(level: str) -> None:
         # "httpx2" è il nome del logger HTTP nell'ambiente installato (verificato con LOG_LEVEL=DEBUG)
         for name in ("httpx", "httpx2", "openai", "httpcore"):
             logging.getLogger(name).setLevel(logging.WARNING)
+
+
+def quiet_library_warnings() -> None:
+    # Con l'output strutturato langchain-openai fa emettere a pydantic un avviso innocuo a ogni chiamata
+    # (campo "parsed"): sporcherebbe il terminale a ogni domanda (router e revisore)
+    warnings.filterwarnings("ignore", message="Pydantic serializer warnings", category=UserWarning)
 
 
 def close_quietly(client) -> None:
@@ -39,39 +46,64 @@ def _start() -> int:
     # Librerie caricate qui, dentro main(): un Ctrl+C durante i secondi di caricamento dà il saluto
     from dotenv import load_dotenv
 
+    from assistant.agent_client import (START_TIMEOUT, AgentClient, AgentRequestError, AgentUnavailable, LocalAgentService,
+                                        wait_until_responds)
     from assistant.cli import run
     from assistant.config import ConfigError, load_settings
-    from assistant.graph import build_graph
-    from assistant.llm import LMStudioUnavailable, ModelNotFound, build_chat_model, check_model
-    from assistant.mcp_client import MCPClient, MCPConnectionError, server_command, server_env
+    from assistant.mcp_client import MCPConnectionError, MCPPromptError
 
     # Con stdout/stderr rediretti Windows può usare cp1252: forza UTF-8 per non rompere "→" e "…"
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")
     load_dotenv()
+    quiet_library_warnings()
     try:
         settings = load_settings(os.environ)
-        configure_logging(settings.log_level)
-        check_model(settings)
-    except (ConfigError, LMStudioUnavailable, ModelNotFound) as error:
+    except ConfigError as error:
         print(error, file=sys.stderr)
         return 1
-    client = MCPClient(server_command(), server_env(settings))
+    configure_logging(settings.log_level)
+    log = logging.getLogger("assistant")
+    service = None if settings.agent_service_url else LocalAgentService(quiet=settings.log_level != "DEBUG")
+    client = None
+    # Il finally copre anche un Ctrl+C durante l'attesa di start(): il processo figlio non resta vivo
     try:
         try:
-            tools = client.start()
-            if not tools:
-                raise MCPConnectionError("Il server degli strumenti non espone nessuno strumento.")
-        except MCPConnectionError as error:
+            url = settings.agent_service_url or service.start()
+            # Con un agente remoto (Docker) il container può essere avviato ma non ancora in ascolto
+            if service is None and not wait_until_responds(url):
+                raise AgentUnavailable(f"L'agente non risponde all'indirizzo {url} (atteso {START_TIMEOUT:g} secondi).")
+            # Con l'agente avviato in silenzio gli avvisi di avvio (preferenze, modello) non arriverebbero al terminale
+            for line in service.startup_warnings() if service is not None else []:
+                print(line, file=sys.stderr)
+            client = AgentClient(url)
+            status = client.status()
+            for part in ("modello", "strumenti"):
+                if not status[part]["raggiungibile"]:
+                    print(status[part]["messaggio"], file=sys.stderr)
+                    return 1
+            try:
+                prompt_list = client.prompts()
+            except (MCPPromptError, MCPConnectionError, AgentRequestError) as error:
+                log.warning("[mcp] prompt non disponibili (%s): nessun prompt", error)
+                prompt_list = []
+        except (AgentUnavailable, AgentRequestError) as error:
             print(error, file=sys.stderr)
             return 1
-        # Il catalogo arriva dal server (discovery), non è scritto nell'assistente
-        logging.getLogger("assistant").info("[mcp] catalogo: %s", ", ".join(tool.name for tool in tools))
-        graph = build_graph(build_chat_model(settings), tools, settings.max_steps)
-        return run(graph, settings)
+        log.info("[agente] servizio: %s", url)
+        log.info("[mcp] prompt: %s", ", ".join(p.name for p in prompt_list) or "nessuno")
+        color = sys.stdout.isatty()
+        if color and os.name == "nt":
+            # Abilita l'elaborazione VT nella console classica; Windows Terminal e VS Code la hanno già
+            os.system("")
+        return run(client, settings, color=color, model=status["modello"].get("modello", settings.model),
+                   prompt_list=prompt_list)
     finally:
-        close_quietly(client)
+        if client is not None:
+            close_quietly(client)
+        if service is not None:
+            close_quietly(service)
 
 
 if __name__ == "__main__":

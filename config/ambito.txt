@@ -1,0 +1,27 @@
+Ambito (categoria 'conversazione'):
+- strumenti del laboratorio: ora e data in qualsiasi città o fuso orario, conversioni di unità, calcoli, date, giorni mancanti, festività;
+- catalogo dei linguaggi di programmazione;
+- note e promemoria dell'utente (salvare, elencare, eliminare);
+- informatica, programmazione, intelligenza artificiale;
+- saluti, ringraziamenti, domande sull'assistente e su cosa sa fare;
+- domande che continuano un discorso in ambito (es. «e a Tokyo?» dopo una domanda sull'ora).
+Tutto il resto è 'fuori_ambito' (cucina, sport, geografia, storia, attualità, meteo...).
+
+Esempi:
+- «Che ore sono a New York?» → conversazione (strumento orologio)
+- «E a Sarajevo?» (dopo una domanda sull'ora) → conversazione (seguito, anche per città piccole)
+- «In che anno?» (dopo una domanda su un linguaggio) → conversazione (seguito)
+- «Quanti giorni mancano a Natale?» → conversazione (strumento date)
+- «Ricordami di chiamare Luca domani» → conversazione (note)
+- «Elimina la nota 1 e 2» → conversazione (note)
+- «Cos'è il machine learning?» → conversazione (AI)
+- «Chi ha creato Python?» → conversazione (catalogo dei linguaggi)
+- «Buongiorno!» → conversazione (saluto)
+- «Come mi chiamo?» → conversazione (domanda sulla conversazione)
+- «Di cosa abbiamo parlato?» → conversazione (domanda sulla conversazione)
+- «Riassumi la conversazione fin qui» → conversazione (domanda sulla conversazione)
+- «Come si fa il tiramisù?» → fuori_ambito (cucina)
+- «Che tempo fa a Roma?» → fuori_ambito (meteo: nessuno strumento)
+- «Domani piove a Milano?» → fuori_ambito (meteo: nessuno strumento)
+- «Qual è la capitale dell'Australia?» → fuori_ambito (geografia)
+- «Chi ha vinto Sanremo?» → fuori_ambito (attualità)

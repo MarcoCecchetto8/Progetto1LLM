@@ -3,13 +3,19 @@
 import logging
 from collections.abc import Callable
 from datetime import date, datetime
+from pathlib import Path
+from typing import Annotated
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
+from pydantic import Field
 
 from lab_server.calculator import calculate as evaluate
-from lab_server import dates
+from lab_server import catalog, dates
+from lab_server.catalog import DEFAULT_RESULTS, MAX_RESULTS
 from lab_server.clock import current_time, utc_now
+from lab_server.preferences import PREFERENCES_URI
+from lab_server.prompts import explain_text, summary_text
 from lab_server.timezones import get_timezone
 from lab_server.units import Unit, convert
 from lab_server.validation import ItalianValidationErrors
@@ -17,7 +23,8 @@ from lab_server.validation import ItalianValidationErrors
 logger = logging.getLogger("lab_server")
 
 
-def create_server(default_timezone: str, now: Callable[[], datetime] = utc_now) -> FastMCP:
+def create_server(default_timezone: str, now: Callable[[], datetime] = utc_now,
+                  preferences_file: Path | None = None) -> FastMCP:
     mcp = FastMCP("Strumenti del laboratorio", middleware=[ItalianValidationErrors()])
 
     @mcp.tool
@@ -58,6 +65,7 @@ def create_server(default_timezone: str, now: Callable[[], datetime] = utc_now) 
         """Calcola un'espressione aritmetica in modo sicuro.
 
         Ammessi: numeri (decimali con il punto), + - * /, parentesi, potenza con ^ o **.
+        In italiano «per» è la moltiplicazione (37 per 19 → 37 * 19), «diviso» la divisione.
         Non ammessi: lettere, funzioni (es. sqrt) ed equazioni con = (riscrivile come espressione).
         """
         try:
@@ -99,6 +107,7 @@ def create_server(default_timezone: str, now: Callable[[], datetime] = utc_now) 
         """Data che si ottiene aggiungendo (o togliendo, se negativo) un numero di giorni.
 
         start: data di partenza AAAA-MM-GG; se omessa si parte da oggi.
+        Esempi: «fra 45 giorni» → days=45; «100 giorni fa» → days=-100 (senza start).
         """
         return run(f"add_days({days}, {start})", lambda: dates.add_days(days, start, today()))
 
@@ -106,8 +115,44 @@ def create_server(default_timezone: str, now: Callable[[], datetime] = utc_now) 
     def days_between(end: str, start: str | None = None) -> str:
         """Numero di giorni fra due date AAAA-MM-GG (es. quanti giorni mancano a una scadenza).
 
+        Non serve per «che data era N giorni fa» o «che data sarà fra N giorni»: per quello usa add_days.
+
         start: data di partenza; se omessa si parte da oggi.
         """
         return run(f"days_between({end}, {start})", lambda: dates.days_between(end, start, today()))
+
+    @mcp.tool
+    def search_catalog(query: str, max_results: Annotated[int, Field(ge=1, le=MAX_RESULTS)] = DEFAULT_RESULTS) -> str:
+        """Cerca linguaggi di programmazione nel catalogo per parole chiave (nome, autore, paradigma, anno, parole della descrizione).
+
+        Passare poche parole al singolare (es. funzionale, Haskell, Bell Labs).
+        Restituisce un elenco breve con codice, nome e anno e il numero totale trovato; usarlo quando non si conosce il codice.
+        """
+        return run(f"search_catalog({query}, {max_results})", lambda: catalog.search(query, max_results))
+
+    @mcp.tool
+    def get_item(code: str) -> str:
+        """Tutte le informazioni di un solo linguaggio dato il suo codice (es. PY, HS), ottenuto da search_catalog."""
+        return run(f"get_item({code})", lambda: catalog.get_item(code))
+
+    if preferences_file is not None:
+        @mcp.resource(PREFERENCES_URI, name="preferenze", mime_type="application/json",
+                      description="Preferenze dell'utente per le risposte: lingua, fuso orario predefinito, stile.")
+        def preferences() -> str:
+            try:
+                return preferences_file.read_text(encoding="utf-8-sig")
+            except (OSError, UnicodeDecodeError):
+                raise ValueError(f"file delle preferenze non leggibile: {preferences_file}") from None
+
+    @mcp.prompt(name="spiega")
+    def explain(argomento: Annotated[str, Field(description="concetto da spiegare")],
+                livello: Annotated[str, Field(description="base, intermedio o avanzato")] = "base") -> str:
+        """Spiega un argomento al livello richiesto."""
+        return explain_text(argomento, livello)
+
+    @mcp.prompt(name="riassumi_conversazione")
+    def summarize(stile: Annotated[str, Field(description="sintetico o dettagliato")] = "sintetico") -> str:
+        """Riassume i turni della sessione corrente."""
+        return summary_text(stile)
 
     return mcp

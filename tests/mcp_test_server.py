@@ -20,6 +20,30 @@ def fail() -> str:
     raise ToolError("errore di prova")
 
 
+@mcp.resource("prova://testo")
+def testo() -> str:
+    """Testo di prova."""
+    return "ciao"
+
+
+@mcp.resource("prova://rotta")
+def rotta() -> str:
+    """Resource che solleva sempre un errore."""
+    raise RuntimeError("resource rotta")
+
+
+@mcp.prompt
+def saluta(nome: str) -> str:
+    """Prompt di prova."""
+    return f"Saluta {nome}."
+
+
+@mcp.prompt
+def rotto() -> str:
+    """Prompt che solleva sempre un errore."""
+    raise ValueError("prompt rotto")
+
+
 @mcp.tool
 def die() -> str:
     """Termina il processo del server, come un crash."""

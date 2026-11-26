@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pico · Assistente del laboratorio</title>
+  <meta name="color-scheme" content="light dark">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/config.js"></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <aside class="rail" id="rail" aria-label="Chat salvate">
+    <div class="brand">
+      <p class="brand-name">Pico</p>
+      <p class="brand-line">Assistente del laboratorio · modello locale</p>
+    </div>
+    <button type="button" class="new-chat" id="new-chat">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>
+      Nuova chat
+    </button>
+    <h2 class="rail-label" id="chats-label">Chat</h2>
+    <ul class="chat-list" id="chat-list" aria-labelledby="chats-label"></ul>
+    <p class="rail-empty" id="chat-list-empty" hidden>Nessuna chat salvata. La prima domanda ne crea una.</p>
+    <p class="rail-foot">Le chat restano salvate anche dopo il riavvio.</p>
+  </aside>
+  <div class="scrim" id="scrim" hidden></div>
+
+  <main class="room">
+    <header class="room-head">
+      <button type="button" class="menu" id="menu" aria-controls="rail" aria-expanded="false">
+        <!-- icona della barra laterale: finestra con il pannello delle chat a sinistra -->
+        <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2"/><path d="M6 2.5v11"/><rect class="menu-pane" x="2.5" y="3.5" width="3" height="9" rx="1"/></svg>
+        <span class="visually-hidden">Mostra le chat</span>
+      </button>
+      <h1 class="room-title" id="chat-title">Nuova chat</h1>
+      <p class="turn-state" id="turn-state" data-state="idle" aria-live="polite"></p>
+    </header>
+
+    <section class="thread" id="thread" aria-live="polite" aria-label="Messaggi">
+      <div class="welcome" id="welcome">
+        <h2 class="welcome-title">Ciao, sono Pico.</h2>
+        <p class="welcome-text">Rispondo con strumenti veri, eseguiti qui sul computer: l'ora in ogni fuso orario, conversioni di unità, calcoli, date e festività, il catalogo dei linguaggi di programmazione e le tue note. Ogni strumento che uso compare nella conversazione, con i dati che gli ho passato e il suo esito.</p>
+        <p class="welcome-label">Prova a chiedere</p>
+        <ul class="examples">
+          <li><button type="button" class="example" data-question="Che ore sono a Tokyo?"><span class="example-text">Che ore sono a Tokyo?</span><span class="example-tool">get_current_time</span></button></li>
+          <li><button type="button" class="example" data-question="Quanti giorni mancano a Natale?"><span class="example-text">Quanti giorni mancano a Natale?</span><span class="example-tool">days_between</span></button></li>
+          <li><button type="button" class="example" data-question="Quanti metri sono 2,5 km?"><span class="example-text">Quanti metri sono 2,5 km?</span><span class="example-tool">convert_units</span></button></li>
+          <li><button type="button" class="example" data-question="Ricordami di comprare il pane domani"><span class="example-text">Ricordami di comprare il pane domani</span><span class="example-tool">add_note</span></button></li>
+        </ul>
+      </div>
+      <ol class="messages" id="messages"></ol>
+    </section>
+
+    <div class="dock">
+      <div class="alert" id="alert" role="alert" hidden>
+        <p class="alert-text" id="alert-text"></p>
+        <button type="button" class="alert-action" id="alert-retry" hidden>Riprova</button>
+        <button type="button" class="alert-close" id="alert-close" aria-label="Chiudi l'avviso">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+        </button>
+      </div>
+
+      <form class="confirm" id="confirm" hidden>
+        <h2 class="confirm-title">Pico chiede una conferma</h2>
+        <p class="confirm-text">Le note eliminate non si possono recuperare. Scegli per ciascuna.</p>
+        <div class="confirm-list" id="confirm-list"></div>
+        <button type="submit" class="primary" id="confirm-send">Conferma le scelte</button>
+      </form>
+
+      <form class="composer" id="composer">
+        <label class="visually-hidden" for="question">Domanda per Pico</label>
+        <textarea id="question" rows="2" placeholder="Scrivi una domanda a Pico…" autocomplete="off"></textarea>
+        <button type="submit" class="primary" id="send" disabled>Invia</button>
+        <button type="button" class="secondary" id="stop" hidden>Interrompi</button>
+        <p class="composer-hint">Invio per inviare · Maiusc+Invio per andare a capo</p>
+      </form>
+    </div>
+  </main>
+
+  <dialog class="dialog" id="delete-dialog" aria-labelledby="delete-title" aria-describedby="delete-text">
+    <form method="dialog" class="dialog-body">
+      <h2 class="confirm-title" id="delete-title">Eliminare la chat?</h2>
+      <p class="dialog-name" id="delete-name"></p>
+      <p class="confirm-text" id="delete-text">I messaggi non si possono recuperare.</p>
+      <div class="dialog-actions">
+        <button type="submit" value="cancel" class="dialog-cancel" id="delete-cancel">Annulla</button>
+        <button type="submit" value="delete" class="dialog-danger" id="delete-ok">Elimina chat</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>

@@ -109,10 +109,11 @@ def test_calculate_rejects_code():
 FIXED_NOV = lambda: datetime(2026, 11, 2, 10, 0, tzinfo=UTC)
 
 
-def test_catalog_has_all_seven_tools():
+def test_catalog_has_all_nine_tools():
     names = {t.name for t in call(server(), lambda c: c.list_tools())}
     assert names == {"get_current_time", "convert_units", "calculate",
-                     "date_info", "find_holiday", "add_days", "days_between"}
+                     "date_info", "find_holiday", "add_days", "days_between",
+                     "search_catalog", "get_item"}
 
 
 def test_find_holiday_uses_today_in_default_timezone():
@@ -130,3 +131,132 @@ def test_today_follows_default_timezone():
 
 def test_date_info_wrong_format_is_error():
     assert "AAAA-MM-GG" in error_text("date_info", {"date": "25/12/2026"})
+
+
+def test_search_catalog_schema_has_bounds():
+    tools = {t.name: t for t in call(server(), lambda c: c.list_tools())}
+    prop = tools["search_catalog"].inputSchema["properties"]["max_results"]
+    assert prop["minimum"] == 1 and prop["maximum"] == 20 and prop["default"] == 5
+
+
+def test_search_catalog_and_get_item_calls():
+    found = call(server(), lambda c: c.call_tool("search_catalog", {"query": "Haskell"})).content[0].text
+    assert "HS: Haskell" in found
+    detail = call(server(), lambda c: c.call_tool("get_item", {"code": "hs"})).content[0].text
+    assert detail.startswith("Haskell (HS)")
+
+
+def test_get_item_unknown_code_is_error():
+    assert "non presente nel catalogo" in error_text("get_item", {"code": "XYZ"})
+
+
+def test_search_catalog_max_results_out_of_range_is_italian():
+    assert error_text("search_catalog", {"query": "python", "max_results": 0}) == (
+        'Argomenti non validi per search_catalog: max_results: "0" troppo piccolo (minimo 1).')
+    assert "troppo grande (massimo 20)" in error_text("search_catalog", {"query": "python", "max_results": 21})
+
+
+def test_search_catalog_accepts_numeric_string():
+    result = call(server(), lambda c: c.call_tool("search_catalog", {"query": "python", "max_results": "10"}))
+    assert result.is_error is False
+
+
+def test_search_catalog_no_match_is_not_error():
+    result = call(server(), lambda c: c.call_tool("search_catalog", {"query": "cobra"}))
+    assert result.is_error is False
+    assert result.content[0].text == (
+        'Nessun linguaggio corrisponde a "cobra". Se hai usato parole al plurale riprova al singolare '
+        "(es. funzionale); altrimenti il catalogo non lo contiene."
+    )
+
+
+# --- Preferenze come resource ---
+
+import json
+import logging
+from pathlib import Path
+
+import pytest
+
+from lab_server.__main__ import server_timezone
+from lab_server.preferences import PREFERENCES_URI
+
+
+def prefs_server(path):
+    return create_server("Europe/Rome", FIXED, path)
+
+
+def test_preferences_resource_listed(tmp_path):
+    file = tmp_path / "p.json"
+    file.write_text("{}", encoding="utf-8")
+    srv = prefs_server(file)
+    resources = call(srv, lambda c: c.list_resources())
+    assert len(resources) == 1
+    assert str(resources[0].uri) == PREFERENCES_URI
+    assert resources[0].name == "preferenze"
+    assert resources[0].mimeType == "application/json"
+    assert resources[0].description == "Preferenze dell'utente per le risposte: lingua, fuso orario predefinito, stile."
+    assert "preferenze" not in [t.name for t in call(srv, lambda c: c.list_tools())]
+
+
+def test_preferences_resource_reads_file(tmp_path):
+    file = tmp_path / "p.json"
+    file.write_text('{"lingua": "inglese"}', encoding="utf-8")
+    srv = prefs_server(file)
+    assert call(srv, lambda c: c.read_resource(PREFERENCES_URI))[0].text == '{"lingua": "inglese"}'
+    file.write_text('{"lingua": "spagnolo"}', encoding="utf-8")
+    assert call(srv, lambda c: c.read_resource(PREFERENCES_URI))[0].text == '{"lingua": "spagnolo"}'
+
+
+def test_preferences_resource_bom(tmp_path):
+    file = tmp_path / "p.json"
+    file.write_text('{"lingua": "inglese"}', encoding="utf-8-sig")
+    text = call(prefs_server(file), lambda c: c.read_resource(PREFERENCES_URI))[0].text
+    assert not text.startswith("﻿")
+    assert json.loads(text) == {"lingua": "inglese"}
+
+
+def test_preferences_resource_missing_file(tmp_path):
+    srv = prefs_server(tmp_path / "manca.json")
+    with pytest.raises(Exception):
+        call(srv, lambda c: c.read_resource(PREFERENCES_URI))
+
+
+def test_no_resource_without_file():
+    assert call(create_server("Europe/Rome", FIXED), lambda c: c.list_resources()) == []
+
+
+def test_server_timezone_from_preferences(tmp_path):
+    file = tmp_path / "p.json"
+    file.write_text('{"lingua": "italiano", "fuso_orario": "America/New_York", "stile": "sintetico"}', encoding="utf-8")
+    assert server_timezone({"PREFERENCES_FILE": str(file)}, tmp_path) == ("America/New_York", file)
+
+
+def test_server_timezone_fallback_logs_debug(tmp_path, caplog):
+    file = tmp_path / "p.json"
+    file.write_text('{"lingua": "italiano", "fuso_orario": "Marte/Base", "stile": "sintetico"}', encoding="utf-8")
+    with caplog.at_level(logging.DEBUG, logger="lab_server"):
+        result = server_timezone({"PREFERENCES_FILE": str(file), "DEFAULT_TIMEZONE": "Asia/Tokyo"}, tmp_path)
+    assert result[0] == "Asia/Tokyo"
+    assert any(r.levelno == logging.DEBUG for r in caplog.records)
+    assert not any(r.levelno >= logging.WARNING for r in caplog.records)
+
+
+def test_server_timezone_relative_path(tmp_path):
+    (tmp_path / "sub").mkdir()
+    file = tmp_path / "sub" / "p.json"
+    file.write_text('{"fuso_orario": "Asia/Tokyo"}', encoding="utf-8")
+    assert server_timezone({"PREFERENCES_FILE": "sub/p.json"}, tmp_path) == ("Asia/Tokyo", tmp_path / "sub" / "p.json")
+
+
+def test_preferences_resource_not_utf8(tmp_path):
+    file = tmp_path / "p.json"
+    file.write_text('{"lingua": "italiano"}', encoding="utf-16")
+    with pytest.raises(Exception, match="file delle preferenze non leggibile"):
+        call(prefs_server(file), lambda c: c.read_resource(PREFERENCES_URI))
+
+
+def test_server_timezone_not_utf8_falls_back(tmp_path):
+    file = tmp_path / "p.json"
+    file.write_text('{"fuso_orario": "Asia/Tokyo"}', encoding="utf-16")
+    assert server_timezone({"PREFERENCES_FILE": str(file), "DEFAULT_TIMEZONE": "Asia/Tokyo"}, tmp_path) == ("Asia/Tokyo", file)

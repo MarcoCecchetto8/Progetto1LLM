@@ -12,7 +12,28 @@ Gli strumenti sono esposti da un **server MCP** scritto con FastMCP (`lab_server
 
 Nome, descrizione e schema degli strumenti arrivano dal server (discovery): l'assistente non li riscrive. Dopo `bind_tools` il percorso nel grafo è lo stesso di prima: il modello propone la chiamata, il nodo `tools` la esegue tramite MCP e il risultato rientra come `ToolMessage` con lo stesso `tool_call_id`.
 
-I comandi qui sotto sono stati eseguiti su Windows 11 con PowerShell, Python 3.14.2 e Docker Desktop (Docker 29.9.2).
+Le **note** seguono un'altra strada: sono salvate in un database SQLite (`data/notes.db`, non versionato) dietro un piccolo servizio **FastAPI** (`notes_service/`), e i tre strumenti `add_note`, `list_notes` e `delete_note` sono wrapper scritti a mano in `assistant/notes.py` che chiamano il servizio via HTTP. A differenza degli strumenti MCP, qui non c'è discovery: nome, descrizione e schema sono definiti nell'assistente. L'eliminazione chiede conferma da terminale (`[s/N]`).
+
+La scadenza di `add_note` si indica come `AAAA-MM-GG` oppure con `oggi`, `domani`, `dopodomani` o un giorno della settimana (anche con accento diverso o con «prossimo»: `venerdì`, `venerdi`, `venerdì prossimo`). Le forme relative le calcola il programma, non il modello: un giorno della settimana vale sempre il prossimo con quel nome, da 1 a 7 giorni dopo oggi, mai oggi stesso (di lunedì, «lunedì» è il lunedì successivo). Sono accettate anche le forme inglesi equivalenti (`today`, `tomorrow`, `day after tomorrow`, `friday`, `next friday`), perché il modello a volte le usa. Altre forme («fra 3 giorni», «5 dicembre», «settimana prossima») sono rifiutate con un errore che elenca quelle ammesse.
+
+Un controllo del programma, non del modello, segnala i falsi successi: se la risposta finale dice di aver salvato o eliminato una nota ma nello stesso turno lo strumento corrispondente (`add_note` o `delete_note`) non ha risposto con successo, sotto la risposta compare un avviso (`⚠ Attenzione: nessuna nota è stata salvata (lo strumento non l'ha confermato).` oppure `... eliminata ...`). L'avviso fa parte della risposta e resta nella cronologia. Serve perché il modello locale a volte afferma di aver fatto un'operazione che non ha eseguito.
+
+## Architettura: l'agente come servizio
+
+L'agente (grafo, router, revisore, riassunto, strumenti MCP e note) non sta più dentro il programma da terminale: è un **servizio HTTP** FastAPI (`agent_service/`, porta 8001), e la CLI (`assistant/cli.py`) ne è un **client** (`assistant/agent_client.py`, con `httpx`).
+
+```
+terminale (assistant)  --HTTP/SSE-->  agente (agent_service)  --API OpenAI-->  LM Studio (host)
+                                         |-- stdio --> server MCP (lab_server)
+                                         '-- HTTP  --> servizio delle note (notes_service, porta 8000)
+```
+
+- L'agente **non ha stato**: a ogni richiesta il client manda cronologia e riassunto e li riceve aggiornati a turno completato. Il messaggio di sistema non viaggia mai: lo costruisce l'agente.
+- Il turno si può chiedere in JSON (`POST /chat`) o in streaming SSE (`POST /chat/stream`); la CLI usa lo streaming e mostra le stesse cose di prima (ragionamento, strumenti, risposta, revisore).
+- Il server MCP e il servizio delle note sono avviati dall'agente (in locale) o da Compose (`notes`); la CLI parla solo con l'agente.
+- In locale la CLI avvia l'agente da sola (`AGENT_SERVICE_URL` vuota) e lo chiude all'uscita; con `AGENT_SERVICE_URL` valorizzata si collega a quell'indirizzo.
+
+I comandi qui sotto sono stati eseguiti su Windows 11 con PowerShell, Python 3.14.2 e Docker Desktop (Docker 29.9.2), salvo dove indicato «da provare» o «da riprovare».
 
 ## Requisiti
 
@@ -43,6 +64,14 @@ Invoke-RestMethod http://localhost:1234/v1/models | Select-Object -ExpandPropert
 | `MAX_STEPS` | no | `5` | invocazioni massime del modello per domanda (≥ 1) |
 | `DEFAULT_TIMEZONE` | no | `Europe/Rome` | nome IANA esatto (maiuscole comprese), validato all'avvio sull'elenco del pacchetto `tzdata` |
 | `LOG_LEVEL` | no | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+| `SHOW_REASONING` | no | `true` | `true` o `false`: mostra o nasconde il ragionamento del modello durante il turno |
+| `MAX_REVIEWS` | no | `3` | revisioni massime della risposta per domanda (≥ 0); con `0` il revisore giudica ma non rimanda mai indietro |
+| `SUMMARY_THRESHOLD` | no | `4000` | token stimati (caratteri ÷ 4, riassunto compreso) oltre i quali la cronologia viene riassunta (≥ 1) |
+| `SUMMARY_KEEP_TURNS` | no | `2` | ultimi turni lasciati intatti dal riassunto (≥ 1) |
+| `SCOPE_FILE` | no | `config/ambito.txt` | file con l'ambito dell'assistente per il router (percorso relativo alla radice del progetto); se manca o è vuoto l'avvio si ferma con `SCOPE_FILE non valida: '<percorso>' non esiste o è vuoto.` |
+| `PREFERENCES_FILE` | no | `config/preferenze.json` | file delle preferenze dell'utente, esposto dal server come resource `utente://preferenze` (percorso relativo alla radice del progetto); se manca o non è valido l'avvio prosegue con le riserve e un avviso `[preferenze]` |
+| `AGENT_SERVICE_URL` | no | vuota | vuota in locale: l'assistente avvia da solo l'agente su `http://127.0.0.1:8001`; con Docker Compose la CLI (`app`) la riceve impostata a `http://agent:8001` |
+| `NOTES_SERVICE_URL` | no | vuota | vuota in locale e con Docker Compose: l'agente avvia da solo il servizio delle note su `http://127.0.0.1:8000` (con Docker dentro il proprio container); impostata, l'agente usa un servizio già acceso a quell'indirizzo |
 
 ## Avvio locale (PowerShell)
 
@@ -55,16 +84,49 @@ pip install -r requirements.txt
 python -m assistant
 ```
 
+L'assistente avvia l'agente (porta 8001), che a sua volta avvia il server MCP e il servizio delle note; all'uscita li ferma tutti. Il servizio delle note risponde su http://127.0.0.1:8000 (la riga `[note] servizio: ...` si vede solo con `LOG_LEVEL=DEBUG`: vedi «Log»). Finché l'assistente è in esecuzione, la documentazione interattiva è su http://127.0.0.1:8000/docs. Le note stanno in `data/notes.db`, escluso da Git.
+
 ## Avvio con Docker
 
-LM Studio resta sull'host: il container lo raggiunge tramite `host.docker.internal`.
+Quattro container, uno per componente (step 9): `frontend`, `backend`, `agent` e `db` (PostgreSQL con l'immagine ufficiale). LM Studio resta sull'host: l'agente lo raggiunge tramite `host.docker.internal`. Prima di avviare: LM Studio acceso con il modello caricato, `.env` con le variabili di `.env.example` (comprese le `POSTGRES_*`), servizi locali spenti (vogliono le stesse porte).
 
 ```powershell
-docker compose build
+docker compose up -d --build
+docker compose ps
+```
+
+Poi la pagina è su http://127.0.0.1:8003. `docker compose ps` mostra i quattro servizi in esecuzione:
+
+| Servizio | Dockerfile | Porta sull'host | Che cosa fa |
+|---|---|---|---|
+| `frontend` | `frontend_service/Dockerfile` | `127.0.0.1:8003` | pagina web; il browser chiama il back-end su `http://127.0.0.1:8002` |
+| `backend` | `backend_service/Dockerfile` | `127.0.0.1:8002` | API delle chat; parte solo quando `db` è pronto (healthcheck); riceve dal `.env` solo l'indirizzo del database, composto da Compose con le `POSTGRES_*` |
+| `agent` | `agent_service/Dockerfile` | **nessuna** (non esposto) | grafo, server MCP (stdio) e servizio delle note, avviati dentro il container; lo raggiungono solo `backend` e `app` all'indirizzo `http://agent:8001` |
+| `db` | immagine `postgres:18.6-alpine` | `127.0.0.1:5433` | chat e messaggi, nel volume `pgdata` |
+
+- Le porte sono pubblicate solo su `127.0.0.1`: non sono raggiungibili da altri computer della rete.
+- Le chat restano nel volume `pgdata` anche dopo `docker compose down` e `docker compose up -d`; `docker compose down -v` cancella anche il volume, e con lui tutte le chat.
+- Le note stanno in `data/notes.db` sull'host, montata nel container dell'agente: sono le stesse dell'avvio locale. `config/preferenze.json` è montato in sola lettura.
+- Le immagini di back-end e front-end installano solo le proprie dipendenze (`requirements-backend.txt`, `requirements-frontend.txt`, stesse versioni di `requirements.txt`, controllate da `tests/test_requirements.py`).
+- Il back-end riceve utente, password e nome del database come `PGUSER`, `PGPASSWORD` e `PGDATABASE` (dalle `POSTGRES_*` del `.env`), non dentro `DATABASE_URL`: la password può contenere anche `@`, `/` o `%`.
+- Limite: l'agente riceve il `.env` intero, compresa la password del database che non usa.
+- Se LM Studio è spento l'agente parte lo stesso (nei log `[modello] …`) e resta in esecuzione: `GET /stato` del back-end risponde 503 con il modello non raggiungibile e la domanda dalla pagina dà l'errore del modello. Basta accendere LM Studio e riprovare, senza riavviare nulla.
+
+I log dell'agente (turni, strumenti, revisore) si leggono con `docker compose logs agent` (`-f` per seguirli); ogni strumento usato lascia una riga `[api] strumento <nome> <argomenti> → <esito>`. Se l'agente perde il collegamento con il server MCP o con le note non si riconnette da solo: `docker compose restart agent`.
+
+Per fermare tutto:
+
+```powershell
+docker compose down
+```
+
+**La CLI con Docker.** `docker compose up` non avvia la CLI (servizio `app`, profilo `cli`, stessa immagine dell'agente). Si apre con:
+
+```powershell
 docker compose run --rm app
 ```
 
-Si usa `run` e non `up`, perché `up` non collega il terminale all'input dell'applicazione.
+Si usa `run` e non `up`, perché `up` non collega il terminale all'input dell'applicazione. `run` avvia anche l'agente se è spento; la CLI aspetta fino a 60 secondi che risponda su `/stato`. Per ricostruire anche la sua immagine: `docker compose --profile cli build`.
 
 ## Comandi
 
@@ -72,22 +134,355 @@ Si usa `run` e non `up`, perché `up` non collega il terminale all'input dell'ap
 |---|---|
 | `help` | elenca comandi e modi di uscita |
 | `clear` | svuota la cronologia, pulisce lo schermo (solo se l'output è un terminale), ristampa l'intestazione e conferma con `Cronologia svuotata.` |
+| `/prompts` | elenca i prompt del server MCP, con gli argomenti (vedi «Prompt MCP») |
+| `/prompt <nome> argomento=valore …` | richiama un prompt del server e lo manda al modello come domanda (vedi «Prompt MCP») |
 | `quit`, `exit` | uscita con `Arrivederci!` |
-| Ctrl+C, Ctrl+D (Linux/Docker), Ctrl+Z + Invio (Windows) | uscita con `Arrivederci!` |
+| Ctrl+C al prompt, Ctrl+D (Linux/Docker), Ctrl+Z + Invio (Windows) | uscita con `Arrivederci!` |
+| Ctrl+C mentre il modello lavora | ferma solo il turno: compare `Risposta interrotta.` e si torna al prompt (entro circa mezzo secondo: l'agente invia un commento SSE di keepalive nei momenti di silenzio, altrimenti su Windows la lettura bloccata non vedrebbe il Ctrl+C) |
+| Ctrl+C alla domanda `[s/N]` di un'eliminazione | esce senza eliminare nulla |
 | riga vuota | ignorata |
 
 I comandi non distinguono maiuscole e minuscole.
 
+Un turno interrotto con Ctrl+C non entra nella cronologia. Uno strumento già eseguito non viene annullato: una nota già salvata resta salvata. Il Ctrl+C ferma il modello al pezzo successivo della risposta; uno strumento già in esecuzione (chiamata MCP o HTTP al servizio delle note) viene invece atteso fino alla fine, poi compare `Risposta interrotta.`. Il servizio delle note e il server degli strumenti restano attivi dopo l'interruzione. Su Windows il Ctrl+C ferma il turno subito anche durante router, revisore e strumenti, quando non arriva ancora testo: l'agente manda un evento vuoto (keepalive) ogni mezzo secondo (verificato il 2026-11-18).
+
+## L'agente da solo (HTTP)
+
+Senza la CLI, per provarlo a mano o per usarlo da altri programmi. Dal venv attivo, in un terminale:
+
+```powershell
+python -m agent_service
+```
+
+Parte su `http://127.0.0.1:8001` (opzioni `--host`, `--port`, `--quiet`) e avvia da solo server MCP e servizio delle note. Parte anche con LM Studio spento; non parte senza server MCP o servizio delle note (messaggio su stderr, codice d'uscita 1). Si ferma con Ctrl+C. Le variabili del `.env` valgono come per l'assistente (`SHOW_REASONING` è solo della CLI: l'agente invia sempre il ragionamento).
+
+| Metodo e percorso | Che cosa fa |
+|---|---|
+| `POST /chat` | un turno, risposta unica in JSON |
+| `POST /chat/stream` | lo stesso turno in streaming SSE |
+| `GET /stato` | stato di agente, modello, server MCP e servizio note; 200 se tutto risponde, 503 altrimenti (stesso corpo) |
+| `GET /prompts`, `POST /prompts/{nome}` | elenco dei prompt MCP e testo compilato (corpo `{"argomenti": {...}}`) |
+| `GET /docs`, `GET /openapi.json` | documentazione interattiva e schema |
+
+La documentazione interattiva con tutti i campi è su http://127.0.0.1:8001/docs.
+
+**Una domanda da PowerShell** (con l'agente acceso e un modello che risponde):
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8001/chat -ContentType 'application/json; charset=utf-8' -Body '{"messaggi":[{"ruolo":"utente","contenuto":"Che ore sono?"}]}'
+```
+
+La richiesta ha `messaggi` (nuovi, ruoli `utente` o `assistente`), `cronologia` e `riassunto` (facoltativi). La risposta ha `esito` (`completato` o `conferma_richiesta`), `risposta`, `strumenti`, `righe`, `cronologia` e `riassunto`: per proseguire la conversazione si rimandano `cronologia` e `riassunto` ricevuti. I ruoli dei messaggi sono `utente`, `assistente` e `strumento`.
+
+**Stato:**
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8001/stato
+```
+
+Con tutto raggiungibile (verificato il 2026-11-18, in locale e in Docker) risponde 200 con `agente: ok` e, per `modello`, `strumenti` e `note`, `raggiungibile: true` con un messaggio. Con LM Studio non raggiungibile risponde 503 con lo stesso corpo e `raggiungibile: false` per il modello (verificato il 2026-11-18 con un indirizzo chiuso in `LMSTUDIO_BASE_URL`; `Invoke-RestMethod` lo segnala come errore).
+
+**Eventi dello streaming (`/chat/stream`):** ogni evento è `event: <nome>` e `data: <json>`. Nomi: `ragionamento`, `risposta` (dati `{testo}`), `strumento` (`{nome, argomenti}`), `esito_strumento` (`{nome, contenuto, errore}`), `riga` (`{testo}`: revisore, riassunto, rifiuto), `fine` (la risposta completa, come `/chat`) ed `errore` (`{codice, messaggio}`).
+
+**Conferma prima di eliminare una nota (due chiamate).** L'agente non ha un terminale: quando il modello chiede `delete_note` non esegue nulla e risponde `esito: conferma_richiesta` con `conferme` (per ogni nota l'`id_nota` e la `domanda` già pronta) e `sospeso` (stato opaco). Il client chiede all'utente e rimanda lo stato con le decisioni (`true` elimina), omettendo `messaggi` e `cronologia`:
+
+```powershell
+$r = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8001/chat -ContentType 'application/json; charset=utf-8' -Body '{"messaggi":[{"ruolo":"utente","contenuto":"Elimina la nota 1"}]}'
+$r.conferme
+$ripresa = @{ ripresa = @{ sospeso = $r.sospeso; decisioni = @{ "1" = $true } } } | ConvertTo-Json -Depth 20
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8001/chat -ContentType 'application/json; charset=utf-8' -Body $ripresa
+```
+
+Entrambi gli esempi sono stati eseguiti il 2026-11-18 con Windows PowerShell 5.1 e `google/gemma-4-e2b` (con l'ID di una nota di prova al posto di `1`). Le risposte JSON dichiarano `charset=utf-8`: senza, PowerShell 5.1 mostrerebbe gli accenti illeggibili.
+
+**Errori.** Prima dello streaming e per `/chat` sono un codice HTTP con corpo `{"codice": ..., "messaggio": ...}`; durante lo streaming arrivano come evento `errore` con gli stessi codici.
+
+| HTTP | `codice` | Quando |
+|---|---|---|
+| 503 | `modello_non_raggiungibile` | LM Studio spento o su un altro indirizzo |
+| 504 | `modello_timeout` | il modello non risponde entro `LMSTUDIO_TIMEOUT` |
+| 422 | `contesto_pieno` | cronologia troppo lunga per il modello |
+| 502 | `errore_modello` | altro errore dell'API del modello |
+| 503 | `strumenti_non_raggiungibili` | il server MCP non risponde |
+| 503 | `note_non_raggiungibili` | il servizio delle note non risponde |
+| 502 | `risposta_vuota` | il modello non ha dato una risposta |
+| 422 | `prompt_rifiutato` | il server MCP ha respinto gli argomenti di un prompt |
+| 422 | (quello di FastAPI) | richiesta non valida (schema, cronologia o `ripresa` incoerenti) |
+| 500 | `errore_imprevisto` | errore non previsto (traceback nei log dell'agente) |
+
+**Limiti.**
+
+- Un turno alla volta: l'agente serializza i turni con un lock; una seconda richiesta aspetta la fine della prima.
+- Nessuna riconnessione automatica: se il server MCP o il servizio delle note si fermano, il turno dà `strumenti_non_raggiungibili` o `note_non_raggiungibili` e `/stato` risponde 503. Si riavvia l'agente: in locale basta uscire dall'assistente e riavviarlo, con Docker `docker compose restart agent`.
+- Nessuna autenticazione: le porte sono pubblicate solo su `127.0.0.1`.
+
+## Back-end delle chat
+
+Un servizio HTTP (FastAPI, porta 8002) che salva le chat in PostgreSQL e per ogni domanda chiama l'agente (`agent_service`, solo via HTTP: non importa grafo, LangChain né client MCP). Lo usa il front-end web dello step 8 (vedi «Front-end»); si prova anche da PowerShell o da `/docs`. La CLI non lo usa e conserva la cronologia solo per la sessione.
+
+**Prerequisiti.** Nel `.env` (copiandole da `.env.example`) servono `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` (per il container `db`) e `DATABASE_URL` (per il back-end in locale, per esempio `postgresql://lab:cambiami@127.0.0.1:5433/lab`: utente, password e database devono coincidere con i `POSTGRES_*`). Facoltativa `BACKEND_AGENT_URL` (indirizzo dell'agente, predefinito `http://127.0.0.1:8001`; distinta da `AGENT_SERVICE_URL` della CLI). `TEST_DATABASE_URL` serve solo ai test con PostgreSQL vero (vedi «Test»). Prima di `docker compose up -d db` le variabili vanno aggiunte al proprio `.env`.
+
+**Avvio** in tre terminali PowerShell, con il venv attivo in ciascuno:
+
+```powershell
+docker compose up -d db
+python -m agent_service
+python -m backend_service
+```
+
+Il back-end parte su `http://127.0.0.1:8002` (opzioni `--host`, `--port`, `--quiet`), si collega al database e crea le tabelle se mancano. Se il database non risponde, o manca `DATABASE_URL`, esce con codice 1 e un messaggio su stderr. L'agente non serve all'avvio e il back-end non lo avvia da solo (a differenza della CLI): senza agente elenca e legge le chat, l'invio dà 503. Si ferma con Ctrl+C. La documentazione interattiva è su http://127.0.0.1:8002/docs.
+
+| Metodo e percorso | Che cosa fa |
+|---|---|
+| `POST /chats` | crea una chat (201); corpo facoltativo `{"titolo": "..."}`, altrimenti «Nuova chat» |
+| `GET /chats` | elenca le chat, prima quella con l'attività più recente |
+| `GET /chats/{id}` | legge una chat con `messaggi` e `conferme` in attesa |
+| `DELETE /chats/{id}` | elimina chat e messaggi (204) |
+| `POST /chats/{id}/messaggi` | invia `{"testo": "..."}`; risposta unica in JSON |
+| `POST /chats/{id}/messaggi/stream` | lo stesso in streaming SSE |
+| `POST /chats/{id}/conferma` | decisioni sulle eliminazioni in attesa, `{"decisioni": {"3": true}}` |
+| `POST /chats/{id}/conferma/stream` | lo stesso in streaming SSE |
+| `GET /stato` | stato di database e agente; 200 se rispondono entrambi, 503 altrimenti (stesso corpo) |
+| `GET /docs`, `GET /openapi.json` | documentazione interattiva e schema |
+
+Il titolo «Nuova chat» diventa, al primo turno completato, la prima domanda ridotta a una riga e troncata a 60 caratteri.
+
+**Esempi da PowerShell** (con database e agente accesi; per la risposta serve anche LM Studio):
+
+```powershell
+$chat = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8002/chats
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8002/chats/$($chat.id)/messaggi" -ContentType 'application/json; charset=utf-8' -Body '{"testo": "Che ore sono?"}'
+Invoke-RestMethod "http://127.0.0.1:8002/chats/$($chat.id)"
+Invoke-RestMethod http://127.0.0.1:8002/stato
+```
+
+Lo streaming si guarda con `curl.exe` (con `-N` gli eventi compaiono man mano):
+
+```powershell
+curl.exe -N -X POST http://127.0.0.1:8002/chats/1/messaggi/stream -H "Content-Type: application/json" -d '{\"testo\": \"Che ore sono?\"}'
+```
+
+Gli eventi sono quelli dell'agente (`ragionamento`, `risposta`, `strumento`, `esito_strumento`, `riga`, `errore`) più un `fine` del back-end, con lo stesso corpo di `POST /chats/{id}/messaggi` (senza cronologia né stato sospeso). Le righe `: ` vuote sono keepalive. Con Windows PowerShell 5.1 i caratteri non ASCII scritti direttamente in `-Body` possono arrivare storpiati; le risposte del back-end invece dichiarano `charset=utf-8` e si leggono bene.
+
+**Con l'agente spento.** `POST .../messaggi` risponde 503 `agente_non_raggiungibile` («L'agente non risponde: controlla che sia avviato (python -m agent_service) e riprova.») e **non salva nulla**, né la domanda né la risposta: la chat resta com'era e si può riprovare. Con lo streaming l'errore arriva come evento `errore`. `GET /stato` risponde 503 con `agente.raggiungibile: false`.
+
+**Salvataggio a fine turno.** Il back-end non salva la domanda prima di chiamare l'agente: domanda e risposta (con gli strumenti usati) si salvano insieme, in una sola transazione, quando il turno è completato. È uno scostamento consapevole dall'ordine della slide: così una domanda non resta mai senza risposta e la cronologia dell'agente resta coerente con i messaggi mostrati. La cronologia e il riassunto restituiti dall'agente sostituiscono quelli salvati e si rimandano al turno successivo.
+
+**Interruzione dello streaming.** Se il client si disconnette prima che l'agente abbia mandato `fine`, il back-end chiude lo stream verso l'agente e non salva nulla. Se `fine` è già arrivato, salva comunque: le azioni del turno (una nota creata o eliminata) sono già avvenute. Nelle fasi silenziose (router, revisore, modello prima del primo token) il turno non si può fermare subito: il back-end se ne accorge solo all'evento successivo dell'agente, e se l'agente porta comunque a termine il turno, questo viene salvato.
+
+**Conferma delle eliminazioni.** Se il modello chiede `delete_note`, l'invio risponde `esito: conferma_richiesta` con `conferme` (`id_nota` e `domanda` per ciascuna nota); il back-end tiene lo stato sospeso dell'agente senza esporlo, e nessun messaggio è ancora salvato. Finché la conferma è in attesa, un nuovo messaggio dà 409 `conferma_in_attesa`. Si risponde con `POST /chats/{id}/conferma` e `{"decisioni": {"3": true}}` (`true` elimina): le decisioni devono coprire esattamente le note in attesa, altrimenti 422 `decisioni_non_valide`; senza conferma in attesa 409 `nessuna_conferma`. A conferma risolta il turno si salva con la domanda originale; un errore lascia la conferma in attesa, così si può ripetere. `GET /chats/{id}` mostra le `conferme` in attesa.
+
+**Errori.** Corpo `{"codice": ..., "messaggio": ...}` in italiano; con lo streaming, dopo l'apertura, evento `errore` con gli stessi campi.
+
+| HTTP | `codice` | Quando |
+|---|---|---|
+| 404 | `chat_non_trovata` | la chat non esiste |
+| 409 | `turno_in_corso` | c'è già un turno in corso su quella chat |
+| 409 | `conferma_in_attesa` | prima va risolta la conferma in attesa |
+| 409 | `nessuna_conferma` | `conferma` senza conferme in attesa |
+| 422 | `decisioni_non_valide` | decisioni incomplete o in più |
+| 422 | (quello di FastAPI) | richiesta non valida (per esempio testo vuoto) |
+| 503 | `agente_non_raggiungibile` | l'agente è spento o ha chiuso la connessione |
+| 503 | `database_non_raggiungibile` | PostgreSQL non risponde durante il funzionamento |
+| 502 | `risposta_agente_non_valida` | risposta dell'agente non comprensibile |
+| come l'agente | come l'agente | errori dell'agente inoltrati invariati (`modello_non_raggiungibile`, `modello_timeout`, ...) |
+| 500 | `errore_imprevisto` | errore non previsto (traceback nei log) |
+
+**Limiti.**
+
+- Un turno alla volta per chat (una seconda richiesta sulla stessa chat dà 409); chat diverse possono inviare insieme, ma l'agente serializza i turni.
+- Un solo processo del back-end: il segno «turno in corso» è in memoria e non vale tra processi.
+- Alcuni messaggi dell'agente nominano la CLI («usa 'clear'», «riavvia l'assistente»): sono inoltrati invariati, anche al front-end.
+- Nessun container del back-end e nessuna modifica ad `agent` e `app` in Compose fino allo step 9. Il servizio `db` pubblica la porta solo su `127.0.0.1:5433` (non 5432, per non scontrarsi con un PostgreSQL installato su Windows, che di solito occupa la 5432).
+- Nessuna autenticazione.
+
+## Front-end
+
+Una pagina web di chat (HTML, CSS e JavaScript, senza framework né build) servita da un piccolo servizio FastAPI (`frontend_service/`, porta 8003). Il browser parla **solo con il back-end** (`http://127.0.0.1:8002`), mai con l'agente o con le note. Il servizio del front-end serve la pagina, i file statici e `/config.js`, che dice alla pagina l'indirizzo del back-end.
+
+**Prerequisiti.** Database, agente e back-end accesi (vedi «Back-end delle chat»); per le risposte serve anche LM Studio.
+
+**Avvio** in tre terminali PowerShell, con il venv attivo in ciascuno:
+
+```powershell
+# terminale 1
+docker compose up -d db
+python -m agent_service
+```
+
+```powershell
+# terminale 2
+python -m backend_service
+```
+
+```powershell
+# terminale 3
+python -m frontend_service
+```
+
+**Tempi di risposta (misurati il 2026-11-25 su questo portatile: i7-1355U, grafica integrata Iris Xe, `liquid/lfm2-24b-a2b`).** Ogni turno fa tre chiamate al modello (router, agente, revisore; due per l'agente quando usa uno strumento) e il tempo va quasi tutto nella lettura dei prompt. Sulla grafica integrata (runtime Vulkan, flash attention non supportata) la lettura va a 36–45 token al secondo; **con il modello solo su CPU va a 56–68 token al secondo**, con generazione quasi uguale (13–15 token al secondo). Misure su CPU: primo turno con strumento a freddo 83 s (prima oltre 2 minuti), turno con strumento a cache calda circa 35 s (router ~7 s, agente ~8 s, revisore ~12 s). Router e revisore hanno un motivo breve (`maxLength` nello schema JSON: circa 45 token generati invece di 100). Se il modello viene scaricato per inattività (caricamento automatico con TTL di 60 minuti) si aggiunge circa un minuto. Back-end, agente e pagina pesano pochi millisecondi. Prima di una presentazione:
+
+```powershell
+# modello solo su CPU e sempre carico (senza --ttl non viene scaricato per inattività)
+& "$env:USERPROFILE\.lmstudio\bin\lms.exe" unload --all
+& "$env:USERPROFILE\.lmstudio\bin\lms.exe" load liquid/lfm2-24b-a2b --gpu off --context-length 8192 --parallel 4 -y
+```
+
+poi, con tutto acceso, si manda una domanda di prova dalla pagina e si aspetta la risposta: le domande successive partono con le cache calde. In LM Studio (impostazioni del modello, «CPU Thread Pool Size») il modello usa 4 thread su 12: alzarli può accelerare ancora la lettura dei prompt (non misurato). Per risposte più rapide si può spegnere il revisore con `MAX_REVIEWS=0` nel `.env` (circa 12 s in meno a turno, ma la riga «Revisore» non compare più) e riavviare l'agente.
+
+Poi si apre http://127.0.0.1:8003 nel browser. Il front-end parte su `127.0.0.1:8003` (opzioni `--host`, `--port`, `--quiet`) e si ferma con Ctrl+C. Se `FRONTEND_BACKEND_URL` non inizia con `http://` o `https://`, esce con codice 1 e un messaggio su stderr («FRONTEND_BACKEND_URL non valida: ...»).
+
+| Variabile | Dove | Default | Note |
+|---|---|---|---|
+| `FRONTEND_BACKEND_URL` | front-end | `http://127.0.0.1:8002` | indirizzo del back-end che la pagina chiama (via `/config.js`); la barra finale si toglie |
+| `BACKEND_CORS_ORIGINS` | back-end | `http://127.0.0.1:8003,http://localhost:8003` | origini del front-end ammesse dal back-end (CORS), separate da virgole; la pagina va aperta da una di queste |
+
+**Che cosa fa la pagina.**
+
+- Elenco delle chat (la più recente in alto), «Nuova chat» ed eliminazione con una finestra di conferma a tema («Annulla» ha il focus; Esc o un clic fuori annullano). «Nuova chat» non crea nulla subito: la chat nasce al primo invio.
+- Barra delle chat: il pulsante della barra in alto a sinistra (icona: finestra con il pannello a sinistra, pieno quando la barra è visibile) la chiude e la riapre; a finestra larga la scelta resta salvata nel browser. Fino a 1000 px di larghezza la barra si chiude da sola e il pulsante la apre come pannello sopra la chat (un clic fuori la richiude).
+- Messaggi della chat aperta: nel messaggio di Pico c'è solo la risposta, con il timbro «✓ revisionata» quando il revisore l'ha approvata; sotto, un menù a tendina chiuso (la riga nomina lo strumento usato) con schede degli strumenti, righe del revisore, tempi e ragionamento (se il modello lo manda). La risposta arriva in streaming come **bozza**: il testo compare man mano, attenuato e con il timbro «in revisione…»; quando il revisore l'approva prende il colore normale e il timbro «✓ revisionata»; se la boccia, la bozza è sostituita da «Il revisore ha chiesto una nuova risposta…» e la nuova arriva di nuovo in streaming; senza revisore (`MAX_REVIEWS=0`) a fine turno il timbro sparisce.
+- **Scelta di streaming con il revisore (slide 18 della lezione 6)**: si mostra la bozza mentre viene scritta, non solo la risposta approvata. Lo streaming della sola risposta approvata non esiste: il revisore giudica il testo completo, quindi quando approva la risposta è già tutta scritta. Nascondere la bozza (provato il 25/11) lasciava la pagina ferma per 30–40 s; il timbro dice sempre se il testo è già stato approvato. Il testo del riassunto della cronologia, quando scatta, sta nel menù dei dettagli e non nella risposta.
+- Invio invia, Maiuscolo+Invio va a capo.
+- Risposta in streaming: le parole compaiono man mano; durante l'attesa casella e «Invia» sono disattivati e c'è il pulsante «Interrompi». Dopo l'interruzione la pagina rilegge la chat: se Pico era già quasi alla fine la risposta può essere salvata comunque (vedi «Interruzione dello streaming»), altrimenti la domanda torna nella casella.
+- Nel menù dei dettagli di ogni risposta arrivata nella sessione una riga di misure (i secondi anche nella riga chiusa): tempo totale, tempo al primo token (comprende router e strumenti) e «≈ token» (pezzi ricevuti in streaming, un'approssimazione). Si misurano nel browser e non si salvano.
+- Conferma delle eliminazioni delle note dal browser («Elimina» / «Non eliminare»), anche riaprendo una chat con la conferma in attesa.
+- Errori in italiano, con il messaggio del back-end, senza bloccare la pagina; la domanda non inviata resta nella casella.
+- Su schermo stretto l'elenco delle chat diventa un pannello a scomparsa. Nessun font o script esterno.
+
+**Limiti.**
+
+- La logica JavaScript (lettura dello streaming, resa del testo, stati della pagina) non ha test automatici (niente Node): si prova nel browser. I test automatici coprono il servizio del front-end, il CORS del back-end e il contratto con `/openapi.json`.
+- Alcuni messaggi dell'agente nominano la CLI («usa 'clear'», «riavvia l'assistente»): la pagina li mostra così come sono.
+- Un errore 500 imprevisto del back-end arriva al browser senza intestazioni CORS, e la pagina lo mostra come «Il back-end non risponde…».
+- Il container del front-end e la sistemazione in Compose arrivano allo step 9. Nessuna autenticazione.
+
+## Che cosa si vede durante un turno
+
+La risposta arriva in streaming, mentre il modello la scrive:
+
+- il **ragionamento** del modello, attenuato (grigio), sotto l'intestazione `[ragionamento]`, nella lingua in cui il modello lo scrive;
+- ogni **strumento** richiesto, su una riga propria con nome e argomenti (`[strumento] <nome> <argomenti>`), poi l'esito (`[strumento] <nome> → <risultato>`, oppure `[strumento] <nome> errore → <risultato>`);
+- la **risposta**, token per token; senza colori (pipe, file, `-T`), se prima c'è il ragionamento, la risposta comincia sotto l'intestazione `[risposta]`, su una riga propria;
+- dopo ogni risposta, la riga del **revisore** (`[revisore] coerente`, oppure `[revisore] non coerente: <motivo> → nuova risposta` seguita dalla nuova risposta);
+- l'eventuale avviso del controllo dei falsi successi, in fondo, dopo la risposta.
+
+Con `SHOW_REASONING=false` il ragionamento non compare e resta solo la riga «…sto pensando» fino al primo strumento o al primo token della risposta. Se il modello non invia il ragionamento, non c'è nulla da mostrare. Il ragionamento non entra nella cronologia. I colori compaiono solo se l'uscita è un terminale: con pipe, file o `docker compose run -T` il contenuto è lo stesso, senza sequenze di colore.
+
+## Router dell'ambito
+
+Prima dell'agente, un router decide se la domanda rientra nell'ambito dell'assistente: strumenti del laboratorio, linguaggi di programmazione, informatica, intelligenza artificiale, saluti e domande sull'assistente stesso. Usa lo stesso modello di LM Studio, con il ragionamento spento e un output strutturato (categoria e motivo); riceve la domanda e gli ultimi messaggi di testo della conversazione, così un seguito come «e a Tokyo?» resta in ambito.
+
+- **In ambito**: la domanda passa all'agente come sempre.
+- **Fuori ambito**: nessuna chiamata al modello dell'agente e nessuno strumento; la risposta è un messaggio fisso con il motivo: `Posso aiutarti solo con gli strumenti del laboratorio, i linguaggi di programmazione, l'informatica e l'intelligenza artificiale. Motivo: <motivo>`. Domanda e rifiuto entrano nella cronologia.
+- **Errore del router** (risposta non valida): la domanda passa all'agente e nel log compare un avviso.
+- **Dove si modifica l'ambito**: `config/ambito.txt` (descrizione ed esempi con la categoria attesa); un altro file si indica con `SCOPE_FILE`. La modifica vale dalla sessione successiva, senza toccare il codice. Con Docker il file è copiato nell'immagine: dopo una modifica serve `docker compose build`.
+- **Log** (scritto dall'agente: vedi «Log»): a ogni decisione una riga `[router] categoria=<categoria> motivo=<motivo> → agente` oppure `→ rifiuto`; all'avvio `[router] ambito: <percorso> (<n> righe)`.
+- **Limite, il tempo**: il router è una chiamata in più al modello per ogni domanda: circa 23 s per decisione, misurati su questo computer.
+- **Limite, la precisione**: nelle sonde con 9 domande il router ha classificato bene 6 su 9 con la sola descrizione dell'ambito e 9 su 9 con gli esempi di `config/ambito.txt`. Nella prova reale ha classificato bene 12 domande su 12; il modello può comunque sbagliare.
+
+## Revisore della risposta
+
+Dopo la risposta finale dell'agente, un revisore controlla che risponda a **tutte** le parti della domanda e che resti in tema. Usa lo stesso modello di LM Studio, con il ragionamento spento e un output strutturato (`coerente` sì/no e `motivo`). Riceve solo la domanda e la risposta, non i risultati degli strumenti: controlla la coerenza, non la correttezza dei dati.
+
+- **Coerente**: la risposta resta e il turno finisce (`[revisore] coerente`).
+- **Non coerente**: il motivo torna all'agente come indicazione e l'agente risponde di nuovo (`[revisore] non coerente: <motivo> → nuova risposta`), con un nuovo budget di `MAX_STEPS` passaggi.
+- **Limite**: al massimo `MAX_REVIEWS` revisioni (predefinito 3); al limite resta l'ultima risposta (`[revisore] limite raggiunto (<n> revisioni): resta l'ultima risposta`).
+- **Verdetto non valido**: la risposta è approvata (`[revisore] verdetto non valido: risposta approvata`) e nel log compare un avviso.
+- **Quando non interviene**: rifiuto del router, messaggio di limite di passaggi, risposta vuota.
+- **Cronologia**: a fine turno restano la domanda, le chiamate agli strumenti con i loro risultati e la risposta finale; bozze bocciate e indicazioni del revisore vengono tolte. L'avviso dei falsi successi si applica alla risposta finale, dopo il revisore.
+- **Scelta di streaming (slide 18 della lezione 6)**: si mostrano anche le bozze mentre vengono scritte, con il verdetto del revisore subito sotto. Lo scopo è osservare l'agente al lavoro, compresa la correzione; nascondere le bozze lascerebbe lo schermo fermo per tutta la revisione (decine di secondi con questo modello).
+- **Log** (scritto dall'agente: vedi «Log»): all'avvio `[revisore] limite: <n> revisioni`; con `LOG_LEVEL=DEBUG` anche `[revisore] coerente=<sì|no> motivo=<motivo> revisione <n>/<max>` a ogni giudizio (a livello normale il verdetto si vede già nel terminale).
+- **Limite, il tempo**: ogni giudizio è una chiamata in più al modello, circa 23 s su questo computer; ogni bocciatura aggiunge anche una nuova risposta dell'agente.
+- **Limiti osservati nelle sonde**: giudizi corretti 6 su 6; dopo l'indicazione l'agente ha completato la risposta 3 volte su 3, ma calcolando a mente invece di usare `calculate` (il revisore non controlla come è stato ottenuto il dato).
+
+## Riassunto della cronologia
+
+All'inizio di ogni turno, prima del router, un nodo controlla la dimensione della conversazione. Se supera la soglia, un riassunto sostituisce i messaggi più vecchi. Usa lo stesso modello di LM Studio, con il ragionamento spento e un'uscita testuale semplice. Serve a mantenere la conversazione utilizzabile su molti turni con il contesto limitato del modello locale (su questo computer 8192 token), senza il messaggio «Il contesto del modello è pieno».
+
+- **Quando scatta**: quando la stima dei token supera `SUMMARY_THRESHOLD` (predefinito 4000). La stima è la somma dei caratteri dei messaggi, prompt di sistema compreso, più il riassunto in vigore, divisa per 4; gli schemi degli strumenti (circa 1365 token) non sono inclusi e sono coperti dal margine della soglia. Sotto la soglia, o se i turni precedenti sono al massimo `SUMMARY_KEEP_TURNS`, il nodo non chiama il modello.
+- **Che cosa conserva**: il prompt di sistema, gli ultimi `SUMMARY_KEEP_TURNS` turni completi (predefinito 2) e la domanda del turno corrente. Il taglio cade sempre all'inizio di un turno, quindi una chiamata a uno strumento e il suo risultato non vengono mai separati.
+- **Che cosa chiede al modello**: un riassunto in italiano di al massimo 120 parole che conservi nome dell'utente, fuso orario o città, ID e testo delle note, argomenti principali. L'utente va chiamato «l'utente» e, se nome o città sono noti, il riassunto inizia con «L'utente si chiama … e vive a …»: con «Marco, residente a Roma, …» l'agente non collegava il nome a chi gli parlava.
+- **Dove finisce il riassunto**: in un campo dello stato, sostituito a ogni nuovo riassunto e non accumulato. A ogni chiamata l'agente lo riceve in fondo al primo messaggio di sistema, con l'intestazione «Riassunto della conversazione precedente (fa parte di questa conversazione: usalo per rispondere alle domande sull'utente, come nome e città, e su ciò di cui si è parlato):»; non viene salvato nella cronologia. Con l'intestazione breve, dopo turni con strumenti, l'agente rispondeva «Non mi hai detto il tuo nome» (1 risposta giusta su 6 nella sonda; con quella esplicita 6 su 6).
+- **Router e revisore**: anche il router riceve il riassunto, in fondo al suo prompt di sistema, con l'intestazione breve «Riassunto della conversazione precedente:». Il revisore riceve, prima della domanda e della risposta, il riassunto, gli ultimi messaggi di testo della conversazione (la stessa regola del router: niente strumenti, al massimo 6) e i risultati degli strumenti del turno. Senza il contesto bocciava «di cosa abbiamo parlato?» («non c'è stato un argomento precedente»); con il contesto ma senza i risultati degli strumenti bocciava le note elencate da `list_notes` e l'ora di Tokyo. Con tutti e tre: 15 giudizi giusti su 15 nella sonda.
+- **Nel terminale**: prima del router compaiono una riga `[riassunto] <n> → <m> messaggi (circa <t1> → <t2> token)` e il testo del riassunto, mostrati una sola volta.
+- **`clear`**: svuota anche il riassunto.
+- **Errore**: se il riassunto non riesce (errore di LM Studio o testo vuoto) cronologia e riassunto restano come prima, nel log compare un avviso `[riassunto] non riuscito (...): cronologia invariata` e il turno prosegue.
+- **Log** (scritto dall'agente: vedi «Log»): all'avvio `[riassunto] soglia: <n> token stimati, turni conservati: <k>`; con `LOG_LEVEL=DEBUG` anche la riga dei conteggi.
+- **Limite, il tempo**: il riassunto è una chiamata in più al modello, 7–19 s nelle prove reali. Se dopo il riassunto la conversazione resta sopra la soglia (soglia bassa, riassunto lungo), il riassunto riparte a ogni turno.
+- **Limite, «dove vivo?»**: il router rifiuta «dove vivo?» come fuori ambito («non posso sapere dove vivi») quando la presentazione dell'utente non è più fra gli ultimi messaggi, anche con il riassunto e con un esempio in `config/ambito.txt` (0 su 3 nelle sonde). Funzionano «come mi chiamo?», «come mi chiamo e dove vivo?» e «di cosa abbiamo parlato?». È un limite del modello.
+- **Limite accettato, la memoria dei riassunti successivi**: con `google/gemma-4-e2b` nome, città e ID delle note sopravvivono ai riassunti successivi, ma gli argomenti più vecchi tendono a sparire al secondo riassunto. È un limite del modello.
+
+## Preferenze dell'utente
+
+Lingua delle risposte, fuso orario predefinito e stile non sono scritti nel codice: stanno in un file, che il server MCP espone come **resource** `utente://preferenze`. A leggerla è l'host (`assistant/`), non il modello: una volta sola all'avvio della sessione, prima della prima domanda; poi il blocco delle preferenze va in cima al prompt di sistema. Nel blocco in cima stanno lingua e stile; il fuso orario va nella frase delle istruzioni ed è il predefinito del server. Messo anche nel blocco, il modello saltava `get_current_time` per «Che ore sono?»: 3/6 con la riga del fuso, 6/6 senza (sonda con il grafo reale, 6 temperature). Un tool lo decide il modello durante la conversazione, una resource la decide l'host prima di chiamare il modello.
+
+- **Il file**: `config/preferenze.json`, versionato; un altro file si indica con `PREFERENCES_FILE`. Contenuto di partenza: `{"lingua": "italiano", "fuso_orario": "Europe/Rome", "stile": "sintetico"}`. La modifica vale dalla sessione successiva, senza toccare il codice (`clear` non rilegge il file).
+- **Campi e valori**: `lingua` (`italiano`, `inglese`, `spagnolo`); `fuso_orario` (nome IANA esatto, maiuscole comprese, come `DEFAULT_TIMEZONE`); `stile` (`sintetico`: una o due frasi, solo ciò che è chiesto; `dettagliato`: la risposta più il contesto utile preso dai risultati degli strumenti). I valori si confrontano esattamente come scritti; i campi in più sono ignorati.
+- **Riserve e avvisi**: un campo assente o con valore non ammesso usa la riserva di quel campo (`italiano`, `sintetico`, `DEFAULT_TIMEZONE`) e un avviso `WARNING` `[preferenze] ...` lo nomina; gli altri campi validi restano. Resource non disponibile o contenuto non valido: tutte le riserve e un avviso. L'avvio non si ferma mai per le preferenze.
+- **Fuso orario**: il fuso delle preferenze, se valido, è anche quello predefinito del server (`get_current_time` senza `timezone`, «oggi» degli strumenti delle date) e delle note, così host e server non sono in disaccordo.
+- **Data di oggi**: l'agente aggiunge al messaggio di sistema una riga come `Oggi è giovedì 19 novembre 2026 (2026-11-19), fuso orario Europe/Rome.`, calcolata a ogni chiamata al modello (non all'avvio, quindi corretta anche a cavallo della mezzanotte) nel fuso delle preferenze. Arriva all'agente e al revisore, non al router; non entra mai nella cronologia. Solo la data: l'ora resta allo strumento `get_current_time`.
+
+  Misura della data (`liquid/lfm2-24b-a2b`, 2026-11-19, 3 ripetizioni per domanda, sonda end-to-end con archivio delle note temporaneo; scadenza attesa: venerdì 2026-11-20, domani 2026-11-20, lunedì 2026-11-23):
+
+  | Domanda | Prima | Con la riga della data | Con la riga e le date relative calcolate dal programma |
+  |---|---|---|---|
+  | «Ricordami di consegnare il report venerdì» | 0/3 (sempre 2026-07-03) | 0/3 (sempre 2026-11-22, una domenica, scritta come «venerdì») | 3/3 (`due_date="venerdì"` → 2026-11-20) |
+  | «Ricordami di chiamare Luca domani» | 0/3 (2 volte nessun salvataggio, 1 volta 2025-11-19) | 3/3 | 3/3 (`due_date="tomorrow"` → 2026-11-20) |
+  | «Crea una nota per lunedì: riunione» | 0/3 (sempre 2024-06-17) | 3/3 | 3/3 (2026-11-23: il modello passa la data già calcolata grazie alla riga della data) |
+  | «Quanti giorni mancano a Natale?» | 3/3 (36 giorni) | 3/3 | 3/3 |
+
+  Prova reale (2026-11-19, lfm2): in locale via pipe «Ricordami di consegnare il report venerdì» → `add_note` con `due_date="venerdì"`, scadenza 2026-11-20; «Che giorno è oggi?» → `get_current_time`, «giovedì 19 novembre 2026». Con Docker (`docker compose build`, poi `docker compose run --rm -T app` da container fermi) «Ricordami di chiamare Luca domani» → `due_date="tomorrow"`, scadenza 2026-11-20; nei log dell'agente la riga `[api] strumento add_note`.
+
+  Nella misura intermedia, prima di accettare le forme inglesi, «domani» era 0/3: il modello passava `due_date="tomorrow"`, lo strumento lo rifiutava e il modello non riprovava.
+
+- **La resource non è tra i tool**: i tool passati al modello restano quelli del catalogo più le note. `python -m lab_server.check` elenca la resource dopo i tool.
+- **Log** (scritto dall'agente: vedi «Log»): all'avvio una riga `INFO` `[preferenze] utente://preferenze: lingua=<...>, fuso_orario=<...>, stile=<...>`, distinta dalle chiamate ai tool.
+- **Docker**: `compose.yaml` monta `config/preferenze.json` in sola lettura in `/app/config/preferenze.json`: una modifica vale dalla sessione successiva senza `docker compose build`. Il file deve esistere sull'host: con la sintassi breve del bind mount, se manca Docker crea una cartella vuota `config/preferenze.json`. Con un `PREFERENCES_FILE` diverso in Docker si usa la copia dentro l'immagine, perché si monta solo `config/preferenze.json`.
+- **Limiti**: i testi fissi del programma (rifiuto del router, avvisi, messaggi del terminale, prompt di router, revisore e riassunto) restano in italiano; risponde nella lingua scelta solo il modello. L'avviso sui falsi successi delle note è solo in italiano: con `inglese` o `spagnolo` una nota dichiarata salvata o eliminata senza lo strumento non produce l'avviso.
+- **Limite osservato, la lingua**: con `inglese` le risposte costruite sui risultati del catalogo, che sono in italiano, escono a volte in italiano (2 sessioni su 4 per «chi ha creato Python?»). È un limite del modello.
+
+## Prompt MCP
+
+Oltre a tool e resource, il server MCP espone due **prompt**: modelli di richiesta con argomenti. Li sceglie l'utente (non il modello) con i comandi `/prompts` e `/prompt`. L'elenco si legge una volta all'avvio, dopo il catalogo e le preferenze, con la riga `INFO` `[mcp] prompt: spiega, riassumi_conversazione` (nel log dell'agente: vedi «Log»).
+
+| Prompt | Argomenti | Valori |
+|---|---|---|
+| `spiega` | `argomento` (obbligatorio): il concetto da spiegare; `livello` (facoltativo) | `livello`: `base` (predefinito), `intermedio`, `avanzato`; `argomento` non vuoto |
+| `riassumi_conversazione` | `stile` (facoltativo) | `sintetico` (predefinito), `dettagliato` |
+
+```
+> /prompts
+> /prompt spiega argomento="Model Context Protocol" livello=base
+> /prompt riassumi_conversazione stile=dettagliato
+```
+
+- **Virgolette**: solo le virgolette doppie raggruppano; `argomento="Model Context Protocol"` è un solo valore. Il valore non cambia maiuscole e minuscole; il nome del comando e `/prompts` sì (`/PROMPTS` funziona), il nome del prompt no (`Spiega` non è `spiega`).
+- **Che cosa succede**: il testo del prompt prende il posto della domanda: il turno è identico a una domanda scritta a mano (router, strumenti, revisore, riassunto, Ctrl+C) e il messaggio resta nella cronologia. Per `spiega`, il router rifiuta gli argomenti fuori ambito (per esempio «tiramisù», verificato nella prova reale).
+- **Controlli prima del modello**: nome mancante, virgolette non chiuse, prompt sconosciuto, elemento senza `=`, argomento ripetuto, argomento sconosciuto, argomento obbligatorio mancante. In tutti i casi compare un messaggio e non partono né il modello né la richiesta al server. Un valore non ammesso (`livello=esperto`) o un `argomento` vuoto lo rifiuta il server: `Il server ha rifiutato il prompt: <motivo>`, senza chiamare il modello.
+- **Comando sconosciuto**: un testo che inizia con `/` e non è `/prompts` né `/prompt` (per esempio `/promt`) dà `Comando sconosciuto: /promt. Comandi: help, clear, /prompts, /prompt.` e non va al modello.
+- **Server caduto**: `Il server degli strumenti non risponde: esci e riavvia l'assistente.`, come durante un turno.
+- **Log** (scritto dall'agente: vedi «Log»): prima del turno una riga `INFO` `[prompt] <nome> <argomenti in JSON> → <testo del primo messaggio>`; con più messaggi, uno per ciascuno a `DEBUG`. Con `LOG_LEVEL=DEBUG` la richiesta `prompts/get` (`GetPromptRequest`) compare nei log MCP, distinta da `tools/call` e `resources/read` (verificato nella prova reale).
+
 ## Log
 
-I log vanno su stderr. All'avvio compare il catalogo letto dal server MCP; con `LOG_LEVEL=INFO` compare poi una riga per ogni chiamata a uno strumento, con l'id della chiamata del modello, gli argomenti e l'esito (`ok` o `errore`), per esempio:
+I log vanno su stderr e li scrive l'agente (insieme a server MCP e servizio delle note), non la CLI. Dove si vedono dipende da come si avvia:
+
+| Avvio | Che cosa compare |
+|---|---|
+| `python -m assistant`, `LOG_LEVEL` normale | l'agente parte in silenzio (`--quiet`): la CLI ristampa solo gli avvisi di avvio (`[preferenze] ...`, `[modello] ...`) e, durante la sessione, gli errori che arrivano come messaggi; le righe `INFO` (`[note]`, `[mcp]`, `[router]`, `[api]`, `[strumento]`...) non compaiono |
+| `python -m assistant` con `LOG_LEVEL=DEBUG` | l'agente non è silenzioso: tutti i suoi log compaiono nel terminale della CLI, con data e livello |
+| `python -m agent_service` a parte (poi `AGENT_SERVICE_URL=http://127.0.0.1:8001 python -m assistant` in un altro terminale) | i log dell'agente compaiono nel suo terminale, al livello di `LOG_LEVEL` |
+| Docker | `docker compose logs agent` (e `docker compose logs -f agent` per seguirli) |
+
+Con l'agente che scrive i log (casi `DEBUG`, a parte o Docker), all'avvio compare il catalogo letto dal server MCP; con `LOG_LEVEL=INFO` compare poi una riga per ogni chiamata a uno strumento, con l'id della chiamata del modello, gli argomenti e l'esito (`ok` o `errore`), per esempio:
 
 ```
 [mcp] catalogo: get_current_time
 [strumento] get_current_time call_id=1polVGvPjXs42xILRLFmbMpl47V0LucQ argomenti={"timezone": "Asia/Tokyo"} esito=ok → Asia/Tokyo: 2026-11-09T02:09:34+09:00
 ```
 
-Compaiono anche un avviso quando si raggiunge il limite di passaggi e, se il server MCP si ferma durante la sessione, la riga `[mcp] collegamento con il server perso: ...`, distinta dagli errori degli strumenti (`esito=errore`). Con `LOG_LEVEL=DEBUG` si vedono anche i nodi del grafo, l'instradamento, il contatore `steps/MAX_STEPS`, i messaggi rimossi dalla pulizia, i log HTTP delle librerie e i log del server MCP, che altrimenti non scrive nulla sul terminale.
+Compaiono anche un avviso quando si raggiunge il limite di passaggi e, se il server MCP si ferma durante la sessione, la riga `[mcp] collegamento con il server perso: ...`, distinta dagli errori degli strumenti (`esito=errore`). Le righe `[strumento] ... call_id=... esito=...` sono a livello `DEBUG`: si vedono con `LOG_LEVEL=DEBUG` (con la CLI che avvia l'agente) oppure con l'agente a parte (durante il turno gli strumenti si vedono già nel flusso descritto sopra). Con `LOG_LEVEL=DEBUG` si vedono anche i nodi del grafo, l'instradamento, il contatore `steps/MAX_STEPS`, i messaggi rimossi dalla pulizia, i log HTTP delle librerie e i log del server MCP, che altrimenti non scrive nulla sul terminale.
 
 ## Test
 
@@ -99,7 +494,14 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-Esito al 2026-11-08: 211 test superati. Alcuni test avviano davvero un server MCP di prova in stdio (`tests/mcp_test_server.py`): ogni avvio richiede alcuni secondi.
+I test dell'archivio delle chat contro PostgreSQL vero sono saltati se non è impostata `TEST_DATABASE_URL` (usano uno schema temporaneo, non toccano le tabelle del back-end). Per attivarli serve un PostgreSQL acceso, per esempio quello di `docker compose up -d db`:
+
+```powershell
+$env:TEST_DATABASE_URL = "postgresql://lab:cambiami@127.0.0.1:5433/lab"
+python -m pytest tests/test_chat_store.py
+```
+
+Esito al 2026-11-24: 903 test superati e 1 saltato (con `TEST_DATABASE_URL` su un PostgreSQL temporaneo; il test saltato vale solo per PostgreSQL e non ha senso sull'archivio in memoria). Alcuni test avviano davvero un server MCP di prova in stdio (`tests/mcp_test_server.py`): ogni avvio richiede alcuni secondi.
 
 ## Verifica diretta del server MCP
 
@@ -116,9 +518,43 @@ python -m lab_server.check calculate "expression=__import__('os')"
 python -m lab_server.check find_holiday name=Pasqua
 python -m lab_server.check add_days days=24
 python -m lab_server.check date_info date=25/12/2026
+python -m lab_server.check search_catalog query=funzionale
+python -m lab_server.check get_item code=PY
+python -m lab_server.check get_item code=XYZ
 ```
 
-Il primo comando stampa nome, descrizione e schema di ogni strumento; il secondo il risultato (`Asia/Tokyo: ...`); il terzo `ERRORE: Fuso orario sconosciuto: "Mars/Olympus". ...` con codice d'uscita 1. Il quarto stampa `3 hl = 300 l`; il quinto `ERRORE: Conversione impossibile: hl è un'unità di volume, kg di peso.` con codice d'uscita 1. Il sesto stampa `10 * 7 / 9 = 7.777777777777778`; il settimo `ERRORE: Carattere "_" non ammesso: ...` con codice d'uscita 1. Le date: `find_holiday` stampa per esempio `Pasqua 2026 (2026-04-05, domenica) è già passata; la prossima è il 2027-03-28, domenica. Indicativo, non normativo.`; `add_days` la data fra 24 giorni; `date_info` con `25/12/2026` stampa `ERRORE: Data "25/12/2026" non valida: formato atteso AAAA-MM-GG ...` con codice d'uscita 1. In PowerShell un argomento con spazi va tra virgolette. Gli argomenti si scrivono come `chiave=valore`; i numeri (`value=2.5`) vengono letti come numeri.
+Il primo comando stampa nome, descrizione e schema di ogni strumento; il secondo il risultato (`Asia/Tokyo: ...`); il terzo `ERRORE: Fuso orario sconosciuto: "Mars/Olympus". ...` con codice d'uscita 1. Il quarto stampa `3 hl = 300 l`; il quinto `ERRORE: Conversione impossibile: hl è un'unità di volume, kg di peso.` con codice d'uscita 1. Il sesto stampa `10 * 7 / 9 = 7.777777777777778`; il settimo `ERRORE: Carattere "_" non ammesso: ...` con codice d'uscita 1. Le date: `find_holiday` stampa per esempio `Pasqua 2026 (2026-04-05, domenica) è già passata; la prossima è il 2027-03-28, domenica, fra 139 giorni. Indicativo, non normativo.` (con oggi 2026-11-09); `add_days` la data fra 24 giorni (per esempio `2026-11-09 + 24 giorni = 2026-12-03, giovedì — futura, fra 24 giorni. ...`); `date_info` con `25/12/2026` stampa `ERRORE: Data "25/12/2026" non valida: formato atteso AAAA-MM-GG ...` con codice d'uscita 1. Il catalogo dei linguaggi: `search_catalog` con `query=funzionale` stampa `Trovati 8 linguaggi per "funzionale", mostrati 5:` seguito da un elenco di codice, nome e anno (da `HS: Haskell (1990)` a `PY: Python (1991)`) e dall'invito a ripetere la ricerca con `max_results` più alto; `get_item` con `code=PY` stampa la scheda di Python (anno, autori, paradigmi, tipizzazione, descrizione); con `code=XYZ` stampa `ERRORE: Codice "XYZ" non presente nel catalogo: usa search_catalog per trovare il codice.` con codice d'uscita 1. In PowerShell un argomento con spazi va tra virgolette. Gli argomenti si scrivono come `chiave=valore`; i numeri (`value=2.5`) vengono letti come numeri.
+
+## Verifica diretta del servizio delle note
+
+Senza assistente e senza modello. In un terminale si avvia il servizio (database temporaneo, porta 8000 libera):
+
+```powershell
+python -m notes_service --db $env:TEMP\notes-prova.db
+```
+
+In un secondo terminale:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/notes -ContentType 'application/json' -Body '{"text":"prova","due_date":"2026-11-13"}'
+Invoke-RestMethod http://127.0.0.1:8000/notes
+Invoke-RestMethod -Method Delete http://127.0.0.1:8000/notes/1
+```
+
+La `POST` restituisce `{"id":1,"text":"prova","due_date":"2026-11-13","created_at":"2026-11-09T16:06:38+00:00"}` (`created_at` è in UTC), la `GET` `{"total":1,"notes":[...]}` con quella nota, la `DELETE` la nota eliminata. Il servizio scrive su stderr una riga per ogni creazione (`nota creata id=1 testo=prova scadenza=2026-11-13`) ed eliminazione. `http://127.0.0.1:8000/docs` risponde 200. Si ferma con Ctrl+C.
+
+Con Docker (2026-11-09): `docker compose config`, `docker compose build` e `docker compose up -d notes` vanno a buon fine; `docker compose ps` mostra `notes` acceso con `127.0.0.1:8000->8000/tcp` (porta pubblicata solo su localhost). Dall'host le stesse tre chiamate funzionano e `data/notes.db` viene scritto attraverso la cartella montata (l'utente non root `appuser` del container riesce a scrivere). `docker compose down` ferma e rimuove il container.
+
+### Numeri delle note
+
+Una nota nuova prende il **numero libero più piccolo** (1 con l'archivio vuoto; dopo un'eliminazione il buco è ripreso dalla nota successiva) e l'elenco è **per numero crescente**, con la scadenza accanto. Una nota esistente non cambia mai numero. Per rinumerare una volta sola un archivio con numeri sparsi (servizio delle note spento, quindi anche agente locale e container `agent` spenti):
+
+```powershell
+Copy-Item data\notes.db data\notes.db.bak
+python -m notes_service.compact
+```
+
+Stampa le corrispondenze (`5 → 1`, …) oppure `Nessuna nota da rinumerare.`; `--db` indica un altro file. Nelle chat salvate prima della rinumerazione i numeri scritti sono quelli vecchi.
 
 ## Prova reale
 
@@ -176,7 +612,7 @@ Lo strumento `calculate` analizza l'espressione con il modulo `ast` di Python, s
 
 ### Prova reale di giorni e scadenze
 
-Quattro strumenti, tutti con date ISO (`AAAA-MM-GG`) e «oggi» calcolato nel fuso `DEFAULT_TIMEZONE`: `date_info` (giorno della settimana, festività, passata/oggi/futura), `find_holiday` (data di una festività nazionale; se quest'anno è già passata lo dice e dà la prossima), `add_days` (data fra N giorni, anche negativi) e `days_between` (giorni fra due date). Le festività a data fissa sono nel file `lab_server/holidays.json`; Pasqua e Lunedì dell'Angelo sono calcolati. Anni ammessi: 1900–2200. Ogni risultato termina con «Indicativo, non normativo.».
+Quattro strumenti, tutti con date ISO (`AAAA-MM-GG`) e «oggi» calcolato nel fuso `DEFAULT_TIMEZONE`: `date_info` (giorno della settimana, festività, passata/oggi/futura con i giorni di distanza, per esempio «futura, fra 53 giorni» o «passata, 1 giorno fa»), `find_holiday` (data di una festività nazionale; se quest'anno è già passata lo dice e dà la prossima, con i giorni che mancano), `add_days` (data fra N giorni, anche negativi) e `days_between` (giorni fra due date). Le festività a data fissa sono nel file `lab_server/holidays.json`; Pasqua e Lunedì dell'Angelo sono calcolati. Anni ammessi: 1900–2200. Ogni risultato termina con «Indicativo, non normativo.».
 
 | Domanda | Atteso | Esito |
 |---|---|---|
@@ -184,14 +620,269 @@ Quattro strumenti, tutti con date ISO (`AAAA-MM-GG`) e «oggi» calcolato nel fu
 | `che giorno sarà natale?` | `find_holiday` Natale: 2026-12-25, venerdì | ok (2026-11-08, domande da pipe) |
 | `che giorno sarà tra 24 giorni?` | `add_days` 24 | ok (2026-11-08, domande da pipe): il modello ha chiesto prima l'ora a `get_current_time` e poi `add_days` con la data di oggi → 2026-12-02, mercoledì |
 | `quanti giorni mancano a natale?` | `days_between` fino al 2026-12-25 | ok (2026-11-08, domande da pipe): 47 giorni |
+| `quanti giorni mancano a pasqua?` | numero dato dagli strumenti (`find_holiday` scrive «fra N giorni», oppure `days_between`), mai contato dal modello | prima prova (2026-11-09) fallita: solo `find_holiday` e «49 giorni» contati dal modello (erano 139). Dopo la correzione ok (2026-11-09): `find_holiday` Pasqua → «fra 139 giorni», riportato dal modello; anche `quanti giorni mancano a natale?` → `find_holiday` Natale «fra 46 giorni». Subito dopo, `che giorno della settimana è pasqua?` ha avuto risposta dalla cronologia senza nuove chiamate: data giusta (2027-03-28, domenica), ma senza ripetere che la Pasqua 2026 è già passata |
 | Le stesse domande a mano, in PowerShell e con Docker; memoria e `clear` | come sopra | ok (2026-11-08) |
 
 Con Docker Desktop su Windows il container ha raggiunto LM Studio con l'indirizzo `http://host.docker.internal:1234/v1` senza altre modifiche.
+
+### Prova reale del catalogo
+
+Due strumenti sul catalogo dei linguaggi di programmazione (20 linguaggi, file locale `lab_server/catalog.json`): `search_catalog` cerca per parole chiave (nome, autore, paradigma, anno, descrizione) e restituisce codice, nome e anno con il totale trovato (da 1 a 20 risultati, 5 per default); `get_item` dà la scheda completa di un linguaggio dal suo codice (per esempio `PY`, `HS`).
+
+| Domanda | Atteso | Esito |
+|---|---|---|
+| `chi ha creato Haskell?` | `search_catalog` poi `get_item` con il codice `HS`, autori nella risposta | prima prova (2026-11-09) fallita: nessuno strumento chiamato e risposta «non ho trovato informazioni». Dopo l'aggiunta alle istruzioni di sistema («chiama sempre gli strumenti del catalogo prima di rispondere») ok, anche ripetuta: `search_catalog` «Haskell», `get_item` `HS`, risposta «Comitato Haskell» |
+| `quali linguaggi funzionali ci sono nel catalogo?` | `search_catalog` con `funzionale`, elenco dei risultati (8 in totale) | ok (2026-11-09): query al singolare `funzionale`; letto «ci sono altri 3 risultati», il modello ha ripetuto la ricerca con `max_results` 10 e ha elencato tutti gli 8 |
+| `quali linguaggi funzionali sono nati prima del 1980?` | ricerca e controllo degli anni, nessun anno inventato | ok (2026-11-09): risposta dalla cronologia della domanda precedente, senza nuove chiamate: solo Lisp (1958) |
+| `c'è Brainfuck nel catalogo?` | `search_catalog` senza risultati, risposta che dice che non c'è | ok (2026-11-09) |
+| `dimmi tutto sul linguaggio con codice XYZ` | `get_item` con errore, nessuna scheda inventata | prima prova (2026-11-09) fallita: nessuna chiamata, il modello ha chiesto il codice. Dopo l'aggiunta alle istruzioni («se l'utente indica un codice, chiama subito `get_item`») ok, anche ripetuta: `get_item` `XYZ` con `esito=errore` ed errore spiegato all'utente |
+| Le stesse domande a mano, in PowerShell e con Docker; memoria e `clear` | come sopra | ok (2026-11-09) |
+
+Anche due domande su Python e sul linguaggio C hanno prodotto la sequenza `search_catalog` → `get_item` (`PY`, `C`); la ricerca «C» ha trovato solo C e C++.
+
+### Prova reale delle note
+
+Tre strumenti sulle note persistenti (`add_note`, `list_notes`, `delete_note`), con il servizio FastAPI. Va provata in locale e con Docker, con LM Studio acceso.
+
+Esiti del 2026-11-15 con `google/gemma-4-e2b`, domande inviate da pipe (la conferma `[s/N]` legge la riga successiva dell'input, quindi `s` o `n` vanno sulla riga dopo la domanda).
+
+| Domanda | Atteso | Esito |
+|---|---|---|
+| `Ricordami di comprare il latte` (e altre due note con scadenza AAAA-MM-GG) | una chiamata `add_note` per richiesta | ok: 3 note salvate, scadenze corrette |
+| `Ricordami di consegnare il report venerdì` | una sola chiamata `add_note`, scadenza = il prossimo venerdì | **non superata (limite del modello)**: vedi sotto |
+| `Che note ho?` | `list_notes`, ordine per scadenza | ok: scadenze in ordine, poi quelle senza scadenza |
+| `Elimina la nota 99` | errore chiaro, nessuna richiesta di conferma, nulla eliminato | ok 4 volte su 5 (errore «Nessuna nota con ID 99»); 1 volta il modello non chiama `delete_note` e risponde che dovrebbe prima verificare |
+| eliminazione di una nota vera, rispondendo `n` e poi `s` | con `n` la nota resta, con `s` sparisce | ok |
+| riavvio dell'assistente | le note salvate ci sono ancora; le stesse note si vedono da Docker | ok in locale e con Docker (`docker compose run --rm -T app`); una nota salvata da Docker si ritrova nel file locale `data/notes.db` |
+| `Elimina le note 3 e 4`, rispondendo `s` e poi `n` | le due conferme arrivano una alla volta, ognuna con la sua nota | ok: la 3 eliminata, la 4 resta |
+| Ctrl+C alla domanda `[s/N]` | nessuna eliminazione, «Arrivederci!», porta 8000 liberata | ok (prova a mano dell'utente) |
+| `/docs` nel browser mentre l'assistente è in esecuzione | pagina della documentazione interattiva | ok (prova a mano dell'utente) |
+
+**Limite del modello: giorni della settimana.** Con «Ricordami di consegnare il report venerdì» il modello chiama `get_current_time` e spesso `add_days` con un numero di giorni sbagliato, poi risponde «Ho salvato un promemoria…» **senza chiamare `add_note`**. Misura su 5 conversazioni (archivio temporaneo): prima della modifica al prompt 0 salvataggi; dopo, 1 su 5; con il controllo dei falsi successi 0 su 5, ma in tutte e 5 la risposta arriva con l'avviso `⚠ Attenzione: nessuna nota è stata salvata…`. Il rimedio è indicare la data nel formato AAAA-MM-GG.
+
+**Falsi successi.** Senza controllo il modello dichiarava note salvate che non esistevano (1 volta su 5 con «Ricordami di comprare il latte», 3 su 5 con «venerdì»). Con il controllo, nelle stesse misure nessun falso successo è arrivato all'utente senza avviso. Il controllo non rende il modello affidabile: lo rende onesto verso l'utente. Può comparire un avviso ridondante quando il modello stesso dice che nulla è stato eliminato o salvato.
+
+**Regole del controllo (note).** L'avviso ⚠ compare in due casi, sempre solo se lo strumento corrispondente (`add_note`, `delete_note`) non ha dato un risultato senza errore dopo l'ultima domanda (una eliminazione annullata vale come conferma):
+
+1. *Dichiarazione*: la risposta dice di aver salvato o eliminato («Ho salvato…», «La nota è stata salvata», anche la frase breve «Nota salvata.» a inizio frase; non gli aggettivi di `list_notes`, come «Nessuna nota salvata.»).
+2. *Richiesta esplicita*: la domanda dell'utente (l'ultima vera, non le indicazioni del revisore) chiede di salvare a inizio domanda («Salva/Annota/Segna/Scrivi/Aggiungi/Crea una nota o un promemoria» seguito da «:» o dalla fine della domanda; «Annota che…», «Segnati che…»; «Ricordami di» seguito da un verbo all'infinito, anche con il pronome attaccato: «Ricordami di innaffiare le piante», «ricordami di comprarlo»), con «per favore», «ok» o «ehi» facoltativi davanti, oppure di eliminare con il numero («Elimina la nota 3», «Cancella le note 4 e 5», «Rimuovi il promemoria 3») a inizio domanda o dopo «e», «ed», «poi», virgola. Se la domanda termina con «?» non è mai una richiesta.
+
+Le forme sono volutamente strette, perché se l'utente parla d'altro («Ricordami di cosa parlava la nota 3», «Crea una nota musicale in Python», «Annota che cos'è un type hint», «Nota: uso Python 3.12. Spiegami i type hint») l'avviso non deve mai comparire. Non contano: «Ricordami di» non seguito da un infinito («Ricordami di nuovo…», «Ricordami di cos'è…»); «Nota:» e «Promemoria:» a inizio domanda; «Annota che» seguito da cos/cosa/ore/tipo/differenza/significa; «Scrivi che» e «Segna che»; «Crea/Scrivi/Salva una nota o un promemoria» seguito da «per», «che», «su»; i plurali per il salvataggio («Aggiungi note…»). Anche i passivi «aggiunta/creata» contano solo se legati a «nota» o «promemoria» («La nota è stata aggiunta»), non in «Il file è stato creato con open()».
+
+Eccezione: se la risposta termina con «?» (domanda di chiarimento, per esempio «Che testo vuoi salvare?») l'avviso legato alla richiesta non compare; la dichiarazione falsa avvisa comunque. Limiti: le forme di richiesta non previste passano senza avviso, e «Salva una nota di…», «Crea un promemoria per…», l'eliminazione senza numero («Elimina la nota di ieri») e i plurali non avvisano; «Ricordami di…» con un chiarimento non avvisa. Una risposta con un elenco numerato o con «La nota aggiunta ieri…» può dare un avviso in più (la frase breve conta a inizio frase, dopo «.», «!», «?», «:»).
+
+**Regola della stessa frase.** Le dichiarazioni con l'ausiliare («Ho salvato…», «è stato eliminato», «sono state registrate») contano solo se la frase che le contiene parla della nota: contiene «nota», «note» o «promemoria». Le frasi si dividono su «.», «!», «?» e a capo, senza spezzare «n. 3» e i numeri decimali. Anche le forme con il pronome seguono la regola (prova reale del 2026-11-23: «…e poi l'ho eliminato.» riferito a un file dava entrambi gli avvisi): «Fatto! L'ho eliminata.» da sola non avvisa più, mentre dopo una richiesta esplicita («Elimina la nota 3») vale ancora la regola della richiesta. Così «Ho cancellato il file temporaneo», «Il record è stato eliminato dal database» o «Ho salvato il modello con torch.save()» nelle risposte di programmazione non avvisano più; «Ho salvato la nota. Il file è stato eliminato.» avvisa solo per il salvataggio. Misura senza modello del 2026-11-20: 112 risposte vere registrate, nessuna differenza; 10 risposte di programmazione, 10 avvisi sbagliati prima e 0 dopo; 10 dichiarazioni sulle note, 10 su 10 riconosciute prima e dopo.
+
+**Misura del 2026-11-18** con `liquid/lfm2-24b-a2b` su 21 domande vere, ricalcolata con le regole finali (`check_note_claims` su domanda, strumenti chiamati e risposta registrati). Richieste riconosciute senza strumento: 9 su 11 (le due che non avvisano più sono «Crea un promemoria per la riunione di lunedì» e «Nota: comprare le uova», uscite volutamente dalle forme); avvisi sulle 10 domande d'altro: 0 su 10, qualunque sia la risposta. Avvisi sulle risposte vere: uno solo, «Nota: comprare le uova», dove il modello dichiara «Ho salvato la tua nota» senza chiamare `add_note` (dichiarazione falsa, avviso corretto). «Ricordami di innaffiare…» e «Segnati che venerdì…» → chiarimento, senza avviso.
+
+Prova reale degli avvisi (2026-11-19, `liquid/lfm2-24b-a2b`, domande inviate da pipe a `python -m assistant`):
+
+| Prova | Atteso | Esito |
+|---|---|---|
+| «Salva una nota: prova degli avvisi» | nota salvata, nessun avviso | ok: `add_note` chiamato, nota salvata, nessun avviso |
+| «Ricordami come mi chiamo» | nessun avviso | ok |
+| «Ricordami di nuovo come funziona una closure in Python» | nessun avviso | ok: spiegazione della closure, nessun avviso |
+| «Crea un promemoria per Android in Kotlin» | nessun avviso | ok: il modello ha cercato Kotlin nel catalogo, nessun avviso |
+| «Elimina la nota 8» quando il modello non chiama `delete_note` | avviso ⚠ di eliminazione | ok: il modello ha chiesto conferma a parole («Confermi l'eliminazione della nota 8? Risposta: sì / no») senza strumento → avviso legato alla richiesta |
+| dichiarazione falsa di eliminazione | avviso ⚠ | ok: alla riga successiva (`s`, letta come nuova domanda) il modello ha scritto «La nota 8 è stata eliminata con successo.» senza strumento → avviso; il database confermava la nota ancora presente |
+| «Nota salvata.» senza strumento | avviso ⚠ | non ricapitato con lfm2 (coperto dai test) |
+
+### Prova reale dello streaming
+
+Esiti del 2026-11-16 con `google/gemma-4-e2b`. Le prove con input da pipe (senza terminale, quindi senza colori) le ha eseguite Claude; quelle in un terminale vero (colori, Ctrl+C) le ha eseguite l'utente, tutte con esito positivo.
+
+| Prova | Atteso | Esito |
+|---|---|---|
+| `Quanto fa 17*23?` | ragionamento attenuato che scorre, poi risposta che scorre | ok: via pipe ragionamento (in inglese), `calculate`, esito `391`, risposta; in PowerShell ragionamento attenuato (prova dell'utente) |
+| `Che ore sono a Tokyo?` | ragionamento, riga dello strumento con argomenti, esito, risposta | ok via pipe, in locale e con Docker |
+| `SHOW_REASONING=false` | solo «…sto pensando», strumenti e risposta | ok via pipe |
+| Ctrl+C durante un ragionamento lungo, poi una domanda con uno strumento MCP e una nota | `Risposta interrotta.` subito, poi strumento e nota funzionano; Ctrl+C al prompt chiude | ok (prova a mano dell'utente) |
+| Ctrl+C alla domanda `[s/N]` di un'eliminazione | nessuna eliminazione, `Arrivederci!` | ok in Windows e Docker (prova a mano dell'utente) |
+| `Ricordami di consegnare il report venerdì` | se il modello dichiara un salvataggio mai avvenuto, avviso in fondo | ok via pipe: `get_current_time`, `add_days` sbagliato, poi l'avviso in fondo (limite del modello già noto) |
+| Docker con terminale (`docker compose run --rm app`) | colori e streaming | ok (prova a mano dell'utente) |
+| Docker con `-T` e input da pipe | stesso contenuto, nessun colore, `[risposta]` prima della risposta se c'è il ragionamento | ok (nessun carattere di colore nell'uscita) |
+
+### Prova reale del router
+
+Esiti del 2026-11-16 con `google/gemma-4-e2b`, domande inviate da pipe in una sola sessione (con `LOG_LEVEL=DEBUG` per vedere i passaggi del nodo agente).
+
+| Prova | Atteso | Esito |
+|---|---|---|
+| Le 9 domande della sonda | ok, 9 su 9 (Roma, «e a Tokyo?», saluto, rete neurale, latte, «Quali strumenti hai?» in ambito; carbonara, mondiale 2006, Parigi rifiutate). Tempo del router fra circa 8 e 26 s per decisione |
+| Almeno 3 domande nuove, non presenti fra gli esempi di `config/ambito.txt` | ok, 3 su 3: «Converti 10 miglia in chilometri» e «Che differenza c'è tra Python e Java?» in ambito, «Qual è il fiume più lungo d'Italia?» rifiutata |
+| Domanda in ambito | ok |
+| Domanda fuori ambito | ok: dopo `→ rifiuto` nessuna riga `[grafo] nodo model`. Il motivo dei rifiuti è spesso generico («La richiesta è fuori dall'ambito delle mie capacità di assistenza.») |
+| Modifica di `config/ambito.txt` (per esempio togliere «note») e nuova sessione | ok: con `SCOPE_FILE` che punta a una copia senza le righe sulle note, «Ricordami di comprare il latte» viene rifiutata |
+| Docker (`docker compose run --rm -T app` con input da pipe) | ok: carbonara rifiutata, «Che ore sono a Tokyo?» passa all'agente e usa `get_current_time` |
+
+### Prova reale del revisore
+
+Esiti del 2026-11-16 con `google/gemma-4-e2b`, domande inviate da pipe.
+
+| Prova | Atteso | Esito |
+|---|---|---|
+| `Che ore sono a Tokyo e quanto fa il 15% di 80?` | se la prima risposta è parziale: rifiuto motivato e nuova risposta completa; se è completa: approvata (si ripete con un'altra domanda in due parti) | completa al primo colpo (`get_current_time` e `calculate`), approvata. Con «Converti 5 chilometri in miglia e dimmi chi ha creato Python» la prima risposta dava solo l'anno di Python: **bocciata con motivo** («la risposta sulla creazione di Python è incompleta») e rifatta due volte; la terza è stata approvata ma diceva ancora solo «creato nel 1991», senza l'autore (giudizio sbagliato del revisore; l'agente non ha chiamato `get_item`). In una sonda controllata la correzione dopo l'indicazione era riuscita 3 volte su 3 |
+| Altre tre domande in due parti (Rust e 37 per 19; 25 dicembre 2026 e creatore del C; anno di Java e 10 km in metri) | se una parte manca: rifiuto motivato | tutte approvate al primo giudizio, nessuna bocciatura. Il revisore non controlla la correttezza: ha approvato `37 / 19` al posto di `37 * 19` e un autore di Rust scritto a memoria senza `get_item`. Per il C la prima bozza dava solo l'anno, ma conteneva anche la chiamata a `get_item`: è un passaggio intermedio, quindi il revisore non interviene, e il modello ha completato da solo («Dennis Ritchie») |
+| Una domanda semplice | approvata al primo passaggio | ok: «ciao, chi sei?», «Cos'è una rete neurale?» e la domanda in tre parti su Haskell, 2^10 e il 1/1/2000 approvate al primo passaggio |
+| Tempi del revisore e revisioni usate | registrati | circa 20–30 s per giudizio. Prima della correzione del prompt, una conversione spiegata come impossibile (miglia non supportate) veniva bocciata 3 volte fino al limite; con la regola «una parte spiegata come impossibile ha una risposta» la sonda dà 8 giudizi corretti su 8. Una domanda in tre parti (Natale, New York, Java) è finita in timeout del modello (120 s) dopo gli strumenti |
+| Docker (`docker compose run --rm -T app` con input da pipe) | stesso comportamento del locale | ok: «Cos'è un compilatore?» approvata, righe del router e del revisore come in locale |
+
+### Prova reale del riassunto
+
+Esiti del 2026-11-16 e 2026-11-17 con `google/gemma-4-e2b`, domande inviate da pipe in una sola sessione, con `SUMMARY_THRESHOLD=900` (variabile d'ambiente) e `LOG_LEVEL=DEBUG` per i tempi. Domande: «ciao, mi chiamo Marco e vivo a Roma», «chi ha creato Python?», «quanto fa 12 * 7?», «quanti metri sono 3 km?», «chi ha creato Rust?», «come mi chiamo?», «quali note ho?», «di cosa abbiamo parlato?», «che ore sono a Tokyo?».
+
+| Prova | Atteso | Esito |
+|---|---|---|
+| «ciao, mi chiamo Marco» al primo turno, poi alcune domande con strumenti e una nota; dopo il riassunto «come mi chiamo?» | riga e testo del riassunto visibili; la risposta contiene il nome | ok in locale: righe `[riassunto]` e testo visibili, il riassunto inizia con «L'utente si chiama Marco e vive a Roma», risposta «Mi hai detto che ti chiami Marco.» quando la presentazione era già stata riassunta. Prima delle correzioni del 2026-11-17 il router rifiutava «come mi chiamo e dove vivo?» e l'agente rispondeva «Non mi hai detto il tuo nome» |
+| Sessione sotto la soglia | nessuna riga `[riassunto]` (il nodo non chiama il modello) | ok: con `SUMMARY_THRESHOLD=1500` la stessa sessione non ha prodotto nessun riassunto |
+| Tempo del riassunto | registrato | 7–19 s per riassunto (5 riassunti nell'ultima sessione: 8, 10, 12, 18, 19 s) |
+| Secondo riassunto nella stessa sessione | registrare che cosa resta | nome, città e argomenti restano in tutti i riassunti dell'ultima sessione (Python, 12 × 7, 3 km, Rust); in sessioni precedenti un terzo riassunto aveva perso gli argomenti più vecchi (limite accettato). Il riassunto ha chiamato «nota ID PY» la scheda del catalogo di Python. Con soglia 900 la conversazione resta sopra la soglia e il riassunto riparte a ogni turno |
+| Domande sulla conversazione | «di cosa abbiamo parlato?» e «quali linguaggi abbiamo visto finora?» in ambito e approvate | ok: router «domanda sulla conversazione», revisore approva al primo giudizio; la risposta elenca Python e Rust |
+| Revisore con strumenti | «quali note ho?» e «che ore sono a Tokyo?» approvate | ok in locale e in Docker dopo la correzione del 2026-11-17 (prima: note bocciate 3 volte fino al limite) |
+| Docker (`docker compose run --rm -T -e SUMMARY_THRESHOLD=900 app` con input da pipe) | stesso comportamento del locale | ok (2026-11-17, dopo l'intestazione esplicita): due riassunti, entrambi iniziano con «L'utente si chiama Marco e vive a Roma»; «come mi chiamo?» → «Ti chiami Marco.»; «quali note ho?» con `list_notes` approvata al primo giudizio. Con l'intestazione breve, nella stessa prova, la risposta era «Non mi hai detto il tuo nome.» |
+
+Limiti visti nelle prove e già noti: il revisore legge a volte «12 per 7» come una divisione; in Docker l'agente ha dichiarato salvata la nota del latte senza chiamare `add_note` e in fondo è comparso l'avviso.
+
+### Prova reale delle preferenze
+
+Esiti del 2026-11-17 con `google/gemma-4-e2b`, domande inviate da pipe. In locale ogni sessione usa un file di preferenze diverso indicato con `PREFERENCES_FILE`, e un servizio delle note temporaneo con 4 note di prova (`NOTES_SERVICE_URL`), così `config/preferenze.json` e `data/notes.db` restano invariati.
+
+| Prova | Atteso | Esito |
+|---|---|---|
+| `fuso_orario: America/New_York`, «Che ore sono?» | ora di New York, senza chiedere il fuso | ok dopo la correzione: `get_current_time {}` e «Attualmente sono le 09:58:58 nel fuso orario America/New_York» (2 sessioni su 2; una terza sessione interrotta da un timeout di LM Studio). Con il fuso anche nel blocco delle preferenze il modello non chiamava lo strumento: nelle sonde 3 casi su 6, contro 6 su 6 senza quella riga e 12 su 12 con il prompt precedente |
+| `lingua: inglese`, nuova sessione | risposte in inglese | in parte: conversioni, ora di Tokyo e nota in inglese; la risposta a «chi ha creato Python?» (dati del catalogo in italiano) è uscita in italiano in 2 sessioni su 4. Limite del modello |
+| `stile: dettagliato`, «chi ha creato Python?» | risposta più lunga con paradigmi e tipizzazione | ok: autore, anno, paradigmi, tipizzazione e sintassi, approvata dal revisore |
+| Valore non ammesso (per esempio `stile: medio`) | avvio con la riserva e un `WARNING` `[preferenze]` che nomina il campo | ok: con lingua `francese`, fuso `Marte/Base` e stile `medio` tre avvisi, uno per campo, e preferenze `italiano`, `Europe/Rome`, `sintetico` |
+| File mancante | avvio con le riserve e un `WARNING` `[preferenze] resource non disponibile (...)` | ok: `[preferenze] resource non disponibile (Error reading resource 'utente://preferenze': file delle preferenze non leggibile: …): uso italiano, sintetico, Europe/Rome`, l'avvio prosegue |
+| `LOG_LEVEL=DEBUG` | `resources/read` una sola volta, prima della prima domanda, distinta dalle `tools/call` | ok: una sola richiesta `ReadResourceRequest` all'avvio, prima della prima domanda |
+| Revisore con `inglese` e `dettagliato` | nessuna bocciatura inutile; se capita, lingua della risposta rifatta | ok: tutte le risposte approvate al primo giudizio, nessuna bocciatura |
+| Stile sintetico con liste: «quali note ho?» con 4 o più note e «quali linguaggi sono funzionali?» | elenco completo, approvato dal revisore | note: ok, tutte e 5 elencate. Linguaggi: «Sono stati trovati 8 linguaggi per "funzionale", mostrati 5», senza ripetere la ricerca con `max_results` più alto; risposta corretta ma parziale |
+| Richiesta di una nota con `inglese` | limite dell'avviso delle note, solo italiano | «Remind me to buy milk»: `add_note` chiamato davvero, risposta in inglese; il caso del falso successo in inglese non si è presentato |
+| Docker (`docker compose run --rm -T app` con input da pipe): modifica del file montato e nuova sessione senza `build` | comportamento cambiato | ok: con il file di oggi ora di Roma in italiano; cambiato il file montato in `inglese` e `America/New_York`, la sessione successiva senza `build` risponde «The current time in America/New_York is 10:10:45 AM…». Il file è stato poi ripristinato |
+
+### Prova reale dei prompt
+
+Esiti del 2026-11-17 con `google/gemma-4-e2b`, comandi inviati da pipe in una sola sessione (più una seconda con `LOG_LEVEL=DEBUG`).
+
+| Prova | Atteso | Esito |
+|---|---|---|
+| `/prompts` | i due prompt con gli argomenti | ok: `spiega` (argomento obbligatorio, livello facoltativo) e `riassumi_conversazione` (stile facoltativo), con le descrizioni in italiano |
+| `/prompt spiega argomento="Model Context Protocol" livello=base`, poi `livello=avanzato` | risposte di livello diverso | ok per il livello: la base è breve e con parole semplici, l'avanzata parla di dettagli tecnici. Il contenuto però è sbagliato: il modello non conosce MCP e lo confonde con la gestione della finestra di contesto (limite del modello, che risponde a memoria) |
+| qualche domanda, poi `/prompt riassumi_conversazione` e `stile=dettagliato` | riassume i turni della sessione | ok: il sintetico in poche frasi, il dettagliato in un elenco per argomento con domanda e risposta; entrambi approvati dal revisore |
+| errori: obbligatorio mancante, argomento sconosciuto, prompt inesistente, `livello=esperto`, virgolette non chiuse, `/promt` | un messaggio ciascuno, nessuna chiamata al modello | ok: i sei messaggi attesi, nessuna riga del router né del modello |
+| `/prompt spiega argomento="tiramisù"` | rifiutato dal router | ok: `[router] categoria=fuori_ambito motivo=La richiesta riguarda la cucina…` e rifiuto |
+| riga `[prompt]` nel log; con `LOG_LEVEL=DEBUG` `prompts/get` distinto da `tools/call` | nome, argomenti e testo | ok: `[prompt] spiega {"argomento": "l'IA"} → Spiegami «l'IA» a livello base. …` (apostrofo intatto); nel log del server una `ListPromptsRequest` all'avvio e una `GetPromptRequest` per il comando, separate da `ListToolsRequest` e `ReadResourceRequest` |
+| Docker (`docker compose run --rm -T app` con input da pipe): `/prompts` e un `/prompt spiega` | come in locale | ok: `[mcp] prompt: spiega, riassumi_conversazione`, elenco, spiegazione dell'intelligenza artificiale di livello base approvata, `tema=x` bloccato |
+
+Osservato nella stessa sessione, senza legame con i prompt: dopo le due spiegazioni lunghe il router ha rifiutato «chi ha creato Python?», che pure è fra gli esempi di `config/ambito.txt` (limite del router con un contesto lungo).
+
+### Prova reale dell'agente come servizio
+
+Esiti del 2026-11-18 con `google/gemma-4-e2b`. Le prove locali e Docker sono state inviate da pipe (`printf ... | python -m assistant`, `docker compose run --rm -T app`); le prove con Ctrl+C e la visualizzazione in streaming sono state fatte a mano in un terminale PowerShell.
+
+| Prova | Atteso | Esito |
+|---|---|---|
+| Locale: `python -m assistant` (agente avviato in automatico), domanda con strumento («che ore sono?») | risposta con ora corretta e riga `[strumento]` | ok: `[agente] servizio: http://127.0.0.1:8001`, `get_current_time` chiamato, ora di Roma corretta, revisore «coerente» |
+| Locale: domanda fuori ambito | rifiuto del router | ok: «Chi ha vinto i mondiali di calcio del 2006?» rifiutata |
+| Locale: eliminare una nota, con risposta `s` e poi con `N` | domanda `[s/N]`; con `s` nota eliminata, con `N` annullata | ok (due note di prova create prima sul servizio): `Elimino la nota 6 «prova agente servizio A» · senza scadenza? [s/N]`, con `s` nota eliminata; per la nota 7 con `n` «Eliminazione della nota 7 annullata dall'utente.»; database controllato. Sulla nota 6 il modello ha prima chiesto conferma a parole senza chiamare `delete_note`: il revisore l'ha rimandato indietro e al secondo tentativo ha chiamato lo strumento |
+| Locale: salvare una nota | `add_note` chiamato | non riuscito: il modello ha scritto «Nota salvata.» senza chiamare `add_note` e senza avviso ⚠ (vedi sotto) |
+| Locale: Ctrl+C durante una risposta, poi un'altra domanda | `Risposta interrotta.`, il turno dopo funziona | ok (a mano): la risposta si ferma subito |
+| Locale (Windows): Ctrl+C mentre router o revisore lavorano, senza testo in arrivo | `Risposta interrotta.` entro circa un secondo (keepalive SSE) | ok (a mano): si interrompe subito |
+| Locale: streaming in un terminale vero | ragionamento e risposta token per token | ok (a mano). Misura: eventi ogni 0,06–0,12 s; prima del primo token 18–45 s di silenzio (router e modello); le risposte brevi compaiono quasi tutte insieme; le righe `[revisore]`, `[strumento]` e il rifiuto del router arrivano interi |
+| Locale: preferenze con un valore non ammesso, `python -m assistant` senza `LOG_LEVEL=DEBUG` | l'avviso `[preferenze] ...` compare comunque all'avvio | ok: `[preferenze] lingua 'klingon' non ammesso: uso 'italiano'`, risposta in italiano |
+| Locale: `/prompt spiega argomento=...` | spiegazione dal prompt MCP | ok: spiegazione della ricorsione di livello base, approvata |
+| Agente da solo: `python -m agent_service`, `/docs` | pagina della documentazione | ok: `/docs` 200 e arresto con Ctrl+Break (codice 0, porte 8000 e 8001 libere); browser non provato |
+| Agente da solo: `Invoke-RestMethod` su `/chat` con una domanda che usa uno strumento | risposta e traccia `[api]` nei log dell'agente | ok: `esito: completato`, chiamata `get_current_time` in `cronologia`; log `[api] turno /chat: …`, `[api] strumento …`, `[api] turno completato in 68.8 s` |
+| Agente da solo: conferma in due chiamate | `conferma_richiesta`, poi eliminazione | ok: `conferme` con `id_nota` 7 e la domanda, ripresa con `{"7": true}` → nota eliminata; log `[grafo] turno sospeso`, `[api] ripresa /chat: 1 decisioni` |
+| `/stato` con LM Studio non raggiungibile (503 e messaggio) e con il modello acceso (200) | 503 con il messaggio del modello / 200 | ok: 200 con tutto acceso; 503 con «LM Studio non è raggiungibile all'indirizzo http://127.0.0.1:9/v1…» (indirizzo chiuso al posto di LM Studio spento) |
+| Accenti con Windows PowerShell 5.1 | «è» e «»» leggibili | prima non riuscito (`Content-Type: application/json` senza charset: «è» diventava «Ã¨»); corretto con `charset=utf-8` e riverificato |
+| Docker: `docker compose build`, `docker compose run --rm app` partendo dai container fermi, una domanda con strumento | come in locale | ok: la CLI aspetta l'agente (due `GET /stato` nei log), `get_current_time`, ora corretta, revisore «coerente» |
+| Docker: `docker compose logs agent` | traccia del turno | ok: righe di avvio, `[api] turno /chat/stream`, `[api] strumento get_current_time …`, `[api] turno completato in 66.7 s` |
+
+Limiti osservati:
+
+- Il modello piccolo a volte dichiara «Nota salvata.» senza chiamare `add_note`. Il controllo dei falsi successi ora riconosce anche la frase secca «Nota salvata.» e la richiesta esplicita non eseguita (vedi «Regole del controllo»); il limite c'era prima dell'agente come servizio.
+- Una domanda mista («Spiegami la ricorsione… voglio una pompa») passa il router, perché una parte è in ambito: l'agente risponde alla parte in ambito e rifiuta l'altra. Per rifiutarle per intero basterebbe un esempio in `config/ambito.txt`.
+
+### Prova reale del back-end
+
+Esiti del 2026-11-24. La prova di avvio senza modello è stata fatta con un PostgreSQL 18.6 temporaneo (`docker run --rm -d`, immagine `postgres:18.6-alpine`, porta 55432) e un indirizzo dell'agente su cui non ascolta nessuno (`BACKEND_AGENT_URL=http://127.0.0.1:8011`), con `DATABASE_URL` nell'ambiente del processo; il `.env` non è stato toccato. Le prove con LM Studio sono del 2026-11-25 (modello `liquid/lfm2-24b-a2b`, database con `docker compose up -d db`, agente con `python -m agent_service` e back-end con `python -m backend_service` in locale, richieste con `Invoke-RestMethod` e `curl.exe` da Windows PowerShell 5.1).
+
+| Prova | Atteso | Esito |
+|---|---|---|
+| `python -m backend_service` con database acceso | parte su 8002 | ok: `Uvicorn running on http://127.0.0.1:8002` |
+| `POST /chats` e `GET /chats` | 201 con la chat, poi in elenco | ok (con `curl.exe` e con `Invoke-RestMethod`, Windows PowerShell 5.1) |
+| Invio `{"testo":"Che ore sono?"}` con l'agente spento | 503 `agente_non_raggiungibile`, nulla salvato | ok: 503 con il messaggio previsto; `GET /chats/1` con `messaggi: []` |
+| Lo stesso con lo streaming (`curl.exe -N`) | evento `errore` | ok: keepalive e poi `event: errore` con `agente_non_raggiungibile` |
+| `GET /stato` con l'agente spento | 503 | ok: database `raggiungibile: true`, agente `raggiungibile: false` |
+| `GET /docs` | 200 | ok (browser non provato) |
+| Arresto e riavvio del back-end | le chat sono ancora in elenco | ok: le tre chat create prima sono in elenco dopo il riavvio |
+| Avvio con database non raggiungibile (porta 1) o senza `DATABASE_URL` | codice 1 e messaggio chiaro, senza password | ok: «Il database non risponde all'indirizzo postgresql://lab@127.0.0.1:1/lab: avvia PostgreSQL con docker compose up -d db.» e «Manca DATABASE_URL: ...», codice 1 in entrambi i casi |
+| `docker compose up -d db` con il `.env` dell'utente (variabili `POSTGRES_*` e `DATABASE_URL` aggiunte), riavvio del back-end, poi `docker compose down` e `up -d db`: la chat c'è ancora | la chat resta (volume `pgdata`) | ok: dopo `down` e `up -d db` (container acceso da 55 s) tutte le chat e i messaggi, con strumenti e righe del revisore, sono ancora in elenco |
+| Con LM Studio: domanda con uno strumento (ora o calcolo), poi lettura della chat | risposta e messaggi salvati | ok: «Che ore sono?» → `get_current_time` con `Europe/Rome`, ora giusta, `[revisore] coerente`; i due messaggi in `GET /chats/1` |
+| Con LM Studio: eliminazione di una nota con conferma (`/conferma`) | `conferma_richiesta`, poi eliminazione e messaggi salvati | ok: nota 13 salvata con `add_note`; «Elimina la nota 13» → `conferma_richiesta` con la domanda della nota 13; `{"13": false}` → nota ancora presente; in una chat nuova `{"13": true}` → «La nota 13 è stata eliminata.», `delete_note` nei messaggi salvati, `GET /notes/13` 404 |
+| Con LM Studio: streaming con `curl.exe -N`, anche con Ctrl+C a metà | eventi man mano; con Ctrl+C prima di `fine` nulla salvato | ok: keepalive, `strumento` e `esito_strumento` (`Asia/Tokyo`), `risposta` a pezzi visti arrivare man mano, `riga` del revisore e `fine` con i messaggi salvati. Interruzione: connessione chiusa dal client dopo 15 s (`curl.exe -m 15`, al posto del Ctrl+C) → nessun messaggio salvato, e il turno successivo nella stessa chat è riuscito |
+| `DELETE /chats/{id}` | 204, poi 404 | ok: 204 per quattro chat, poi `GET` 404 «La chat 3 non esiste.» |
+
+Limiti osservati:
+
+- Il modello a volte non chiama `delete_note`. Una volta ha chiesto conferma a parole («Confermi l'eliminazione…?»): rispondendo «sì» ha chiamato lo strumento ed è arrivata la conferma vera. Un'altra volta, nella stessa chat, ha dichiarato l'eliminazione senza farla: il controllo dei falsi successi ha aggiunto l'avviso, ma il revisore l'ha giudicata coerente. In una chat nuova lo strumento è stato chiamato subito. Il limite è del modello e c'era già prima del back-end.
+- Incollare più comandi insieme in Windows PowerShell 5.1 può sembrare bloccare la finestra (righe `>>`, e un clic nella finestra attiva la selezione e mette in pausa l'output): i comandi partono lo stesso, e ogni nuovo Invio riesegue il blocco (quattro chat «Prova» in più). Meglio una riga alla volta.
+
+### Prova reale del front-end
+
+Prove da fare nel browser (http://127.0.0.1:8003) con database, agente, back-end, front-end e LM Studio accesi. Esiti della prova dell'utente del 2026-11-26 (modello `liquid/lfm2-24b-a2b`). Non provato nel browser: il testo del riassunto automatico nel menù invece che nella bozza (serve una chat oltre `SUMMARY_THRESHOLD`). Tempi osservati: circa 39 s per il primo turno di una chat, circa 30 s per i successivi, di più con le note.
+
+| Prova | Atteso | Esito |
+|---|---|---|
+| Conversazione con uno strumento dal browser (per esempio «Che ore sono?») | la risposta compare, con la riga dello strumento usato | ok (2026-11-26): «che note ci sono?» con `list_notes` nel menù, note 1…9 in ordine |
+| Chat creata dall'interfaccia, poi arresto e riavvio del back-end e ricarica della pagina | la chat è ancora in elenco con i suoi messaggi | ok (2026-11-26) |
+| Agente spento, invio di una domanda | messaggio di errore comprensibile, pagina utilizzabile, domanda ancora nella casella | ok (2026-11-26) |
+| Risposta in streaming | il testo compare man mano come bozza «in revisione…», poi «✓ revisionata» | ok (2026-11-26); prima la risposta era nascosta fino al verdetto, cambiata su richiesta dell'utente |
+| «Che note ci sono?» | `list_notes` nel menù, note per numero crescente | ok (2026-11-26); prima della modifica il modello a volte ricopiava l'elenco a memoria (note dimenticate, «la 14 è stata eliminata» falso, segnalato dall'avviso) |
+| Nuova nota dopo un'eliminazione | riprende il numero libero più piccolo | ok (2026-11-26): dopo la compattazione 5…28 → 1…9, nuova nota 10; eliminata la 3, la nota successiva ha preso il 3; «Ricordami di comprare il caffè domani» salvata con `add_note` |
+| Eliminazione di una nota: prima «Non eliminare», poi «Elimina» | con «Non eliminare» la nota resta; con «Elimina» viene eliminata | ok (2026-11-26): traccia «Conferma · nota N: non eliminata / eliminata» |
+| Eliminazione di una chat | finestra di conferma a tema («Annulla» / «Elimina chat»), poi la chat sparisce dall'elenco | ok (2026-11-26): prima con la conferma del browser, giudicata brutta e sostituita con la finestra a tema; Annulla, Esc, clic fuori ed «Elimina chat» provati |
+| «Interrompi» durante una risposta | la risposta si ferma; salvata solo se Pico era già alla fine; il turno successivo funziona | ok (2026-11-26): nota «Risposta interrotta», domanda successiva senza avvisi |
+| Finestra stretta | fino a 1000 px l'elenco diventa un pannello che si apre con il pulsante della barra, la chat resta usabile | ok (2026-11-26): soglia alzata da 860 a 1000 px su richiesta dell'utente (a metà schermo su 1920 px, circa 960 px, restava la disposizione larga); a metà schermo la barra si chiude da sola, il pulsante apre il pannello, tornando a finestra intera la barra torna come lasciata |
+| Barra laterale a finestra larga | il pulsante della barra la chiude e la riapre; la chat prende tutta la larghezza; ricaricando resta come lasciata | ok (2026-11-26): chiusura e riapertura, scelta ricordata dopo il ricaricamento; icona ☰ sostituita su richiesta dell'utente con quella della barra laterale |
+
+### Prova reale con Docker Compose
+
+Evidenze dello step 9 (slide 16). Verifiche senza modello eseguite da Claude il 2026-11-26 con Docker Desktop:
+
+| Prova | Atteso | Esito |
+|---|---|---|
+| `docker compose config --services` | `agent`, `db`, `backend`, `frontend` (la CLI `app` no) | ok |
+| `docker compose --profile cli build` | quattro immagini | ok: agente 482 MB, back-end 240 MB, front-end 219 MB (`app` = immagine dell'agente) |
+| `docker compose up -d`, poi `docker compose ps` | quattro servizi in esecuzione; agente senza porte | ok: `127.0.0.1:8002`, `127.0.0.1:8003`, `127.0.0.1:5433`; `agent` senza porte |
+| http://127.0.0.1:8003 e http://127.0.0.1:8002/stato | 200; il back-end vede database, agente, modello, strumenti e note | ok: 9 strumenti, servizio delle note `http://127.0.0.1:8000` dentro il container |
+| http://127.0.0.1:8001 dall'host | nessuna risposta (agente non esposto) | ok |
+| Note e chat esistenti | stesse note di `data/notes.db` e stesse chat del volume | ok |
+
+Prova dell'utente dal browser, con LM Studio:
+
+| Prova | Atteso | Esito |
+|---|---|---|
+| Chat con uno strumento («Che ore sono a Tokyo?») | risposta con lo strumento; riga `[api] strumento get_current_time …` in `docker compose logs agent` | ok (2026-11-26): `[api] strumento get_current_time {'timezone': 'Asia/Tokyo'} → Asia/Tokyo: 2026-11-26T21:48:08+09:00`, `[api] turno completato in 56.3 s`. La riga compare solo a fine turno: lanciando i log mentre Pico scrive si vede solo `[router] …` |
+| Eliminazione di una nota con conferma («Non eliminare») | la nota resta | ok (2026-11-26) |
+| `docker compose down`, poi `docker compose up -d` | le chat sono ancora presenti | ok (2026-11-26); `down` cancella anche i log dei container |
 
 ## Diagnosi
 
 | Sintomo | Causa probabile e rimedio |
 |---|---|
+| La pagina mostra «Il back-end non risponde all'indirizzo …» | il back-end è spento o l'indirizzo è sbagliato: avviare `python -m backend_service` e controllare `FRONTEND_BACKEND_URL` (poi riavviare il front-end) |
+| In PowerShell 5.1 `docker compose logs agent` mostra `ÔåÆ` al posto di `→` (o altre lettere strane al posto delle accentate) | è solo la visualizzazione: la console legge l'UTF-8 dei log con la codifica di Windows. Prima dei log, da provare: `[Console]::OutputEncoding = [Text.Encoding]::UTF8` |
+| Errore CORS nella console del browser | la pagina è aperta da un'origine non elencata in `BACKEND_CORS_ORIGINS` (altra porta o altro host, per esempio con `--port` diverso): aprire http://127.0.0.1:8003 oppure aggiungere l'origine alla variabile e riavviare il back-end. Con Docker Compose il back-end non legge il `.env`: l'origine va aggiunta come `BACKEND_CORS_ORIGINS` in `environment` del servizio `backend` in `compose.yaml` |
+| `FRONTEND_BACKEND_URL non valida: ...` all'avvio del front-end | l'indirizzo non inizia con `http://` o `https://`: correggerlo nel `.env` |
+| `[preferenze] resource non disponibile (...): uso italiano, sintetico, <fuso>` | (avviso mostrato anche in avvio normale) il file delle preferenze manca o non si legge: controllare `PREFERENCES_FILE` e `config/preferenze.json`; l'avvio prosegue con le riserve |
+| `[preferenze] <campo> '<valore>' non ammesso: uso '<riserva>'` o `<campo> mancante: uso '<riserva>'` | campo assente, valore fuori elenco (lingua, stile) o fuso inesistente: correggere il file e riavviare; gli altri campi valgono |
+| `[preferenze] contenuto non valido (...): uso italiano, sintetico, <fuso>` | il file non è un oggetto JSON valido: correggerlo e riavviare |
+| il riassunto è lento o scatta troppo spesso | ogni riassunto è una chiamata in più al modello: alzare `SUMMARY_THRESHOLD` |
+| `[riassunto] non riuscito (...): cronologia invariata` | il riassunto non è riuscito (errore di LM Studio o testo vuoto): la cronologia resta invariata e il turno prosegue |
+| la pagina aspetta 35 s o più prima di rispondere (oltre un minuto la prima volta) | è la velocità del modello su questo portatile, non un errore: vedi «Tempi di risposta» nella sezione «Front-end» (modello solo su CPU e sempre carico, domanda di prova prima della demo, eventualmente `MAX_REVIEWS=0`); il contatore accanto allo stato mostra i secondi trascorsi |
+| il revisore rimanda indietro risposte corrette, o il turno è lento | il revisore è un modello piccolo e ogni giudizio costa circa 12 s su questo portatile: ridurre `MAX_REVIEWS` (anche a `0`) |
 | `... non valida` o `... mancante` all'avvio | variabile del `.env` assente o con valore non valido: il messaggio indica quale |
 | `LM Studio non raggiungibile o risposta non valida su .../models` all'avvio | server di LM Studio spento o su un'altra porta: avviarlo e controllare `LMSTUDIO_BASE_URL` |
 | `Modello '...' non trovato. Modelli disponibili: ...` | `LMSTUDIO_MODEL` non corrisponde a un id di `GET /v1/models`: copiarne uno dall'elenco |
@@ -201,6 +892,15 @@ Con Docker Desktop su Windows il container ha raggiunto LM Studio con l'indirizz
 | `Limite di passaggi raggiunto: ...` | il modello ha chiamato lo strumento troppe volte per una domanda: riformulare o aumentare `MAX_STEPS` |
 | `Impossibile avviare il server degli strumenti (...)` all'avvio | il server MCP non parte: controllare con `python -m lab_server.check` e reinstallare le dipendenze (`pip install -r requirements.txt`) |
 | `Il server degli strumenti non espone nessuno strumento.` all'avvio | catalogo vuoto: controllare con `python -m lab_server.check` |
-| `Il server degli strumenti non risponde: esci e riavvia l'assistente.` | il server MCP si è fermato durante la sessione: uscire e riavviare l'assistente (con `LOG_LEVEL=DEBUG` si vede il dettaglio) |
+| `Il server degli strumenti non risponde: riavvia l'agente (in locale basta riavviare l'assistente).` | il server MCP si è fermato durante la sessione: uscire e riavviare l'assistente, con Docker `docker compose restart agent` (con `LOG_LEVEL=DEBUG` si vede il dettaglio) |
+| `La porta 8000 è già in uso ...` o `La porta 8001 è già in uso ...` all'avvio | un altro servizio delle note o un altro agente è già acceso (di solito quello di Docker): `docker compose down` e riavviare |
+| `Il servizio delle note non risponde: riavvia l'agente (in locale basta riavviare l'assistente).` | il servizio delle note si è fermato durante la sessione: uscire e riavviare l'assistente, con Docker `docker compose restart agent` |
+| `L'agente non risponde: esci e riavvia l'assistente.` | la CLI non raggiunge l'agente o il flusso si è interrotto a metà turno (agente fermato o caduto): uscire e riavviare; per capire perché è caduto, rilanciare con `LOG_LEVEL=DEBUG`, o guardare `docker compose logs agent`; con `AGENT_SERVICE_URL` valorizzata controllare che l'agente sia acceso su quell'indirizzo |
+| `L'agente non risponde all'indirizzo ... (atteso 60 secondi).` | con `AGENT_SERVICE_URL` valorizzata l'agente non ha risposto su `/stato` entro 60 secondi: controllare che sia acceso (`docker compose ps`, `docker compose logs agent`) |
+| `/stato` risponde 503 | qualcosa non risponde: il corpo dice che cosa (`modello`, `strumenti` o `note`); con LM Studio spento l'agente resta utilizzabile appena lo si riaccende |
+| `Il server ha rifiutato il prompt: ...` | il server ha respinto i valori (per esempio `livello 'esperto' non ammesso` o `argomento vuoto`): correggere il valore, gli ammessi sono in `/prompts` e in «Prompt MCP» |
+| `Prompt sconosciuto: <nome>. Disponibili: ...` | nome sbagliato (maiuscole comprese): scegliere uno dei nomi di `/prompts` |
+| Domande in ambito rifiutate dal router | il modello classifica male: aggiungere esempi di quel tipo in `config/ambito.txt` e riavviare |
+| Il ragionamento non compare | il modello non invia `reasoning_content` oppure `SHOW_REASONING=false` nel `.env` |
 | Il modello risponde senza riga `[strumento]` nel log | il modello non ha chiamato lo strumento: la risposta non è verificata; riformulare la domanda |
 | Il container non raggiunge LM Studio | controllare che il server sia attivo sull'host; se serve, attivare in LM Studio l'opzione per servire sulla rete locale e riprovare |

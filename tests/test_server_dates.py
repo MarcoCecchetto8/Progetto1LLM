@@ -10,12 +10,17 @@ NOTE = "Indicativo, non normativo."
 
 def test_date_info_future_holiday():
     text = date_info("2026-12-25", TODAY)
-    assert "2026-12-25, venerdì (Natale) — futura." in text and text.endswith(NOTE)
+    assert "2026-12-25, venerdì (Natale) — futura, fra 53 giorni." in text and text.endswith(NOTE)
 
 
 def test_date_info_past_and_today():
-    assert "passata" in date_info("2026-01-01", TODAY)
+    assert "— passata, 305 giorni fa." in date_info("2026-01-01", TODAY)
     assert "— oggi." in date_info("2026-11-02", TODAY)
+
+
+def test_date_info_one_day_is_singular():
+    assert "— futura, fra 1 giorno." in date_info("2026-11-03", TODAY)
+    assert "— passata, 1 giorno fa." in date_info("2026-11-01", TODAY)
 
 
 def test_date_info_leap_day():
@@ -25,7 +30,14 @@ def test_date_info_leap_day():
 def test_find_holiday_already_passed_this_year():
     text = find_holiday("Pasqua", None, TODAY)
     assert "Pasqua 2026 (2026-04-05, domenica) è già passata; la prossima è il 2027-03-28, domenica" in text
+    assert "2027-03-28, domenica, fra 146 giorni." in text
     assert text.endswith(NOTE)
+
+
+def test_find_holiday_states_days_left():
+    # Nella prova reale il modello ha contato da solo «49 giorni» a Pasqua: il numero deve venire dallo strumento
+    assert "fra 139 giorni" in find_holiday("Pasqua", None, date(2026, 11, 9))
+    assert "fra 53 giorni" in find_holiday("Natale", None, TODAY)
 
 
 def test_find_holiday_still_to_come():
@@ -89,3 +101,15 @@ def test_add_days_out_of_range(days, start):
 def test_date_info_year_out_of_range():
     with pytest.raises(ValueError, match="1900"):
         date_info("1800-01-01", TODAY)
+
+
+def test_find_holiday_current_year_already_passed_also_gives_the_next():
+    # Il modello chiedeva l'Epifania con year=2026 a novembre e contava i giorni trascorsi
+    text = find_holiday("Epifania", 2026, date(2026, 11, 25))
+    assert "È già passata." in text
+    assert "La prossima è il" in text and "fra 42 giorni" in text
+
+
+def test_find_holiday_explicit_other_year_unchanged():
+    text = find_holiday("Epifania", 2025, date(2026, 11, 25))
+    assert "La prossima" not in text
