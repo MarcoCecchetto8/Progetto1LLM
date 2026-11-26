@@ -299,21 +299,41 @@ function traceLabel(tools, status, seconds) {
 
 const TRACE_STATUS = { ok: "revisionata", invalid: "revisione non riuscita", limit: "revisione al limite" };
 
+// «Nota 5 eliminata: …» / «Eliminazione della nota 5 annullata dall'utente.» → «Conferma · nota 5: eliminata»
+function confirmationTrace(tool) {
+  if (tool.nome !== "delete_note" || tool.errore || typeof tool.esito !== "string") return null;
+  const deleted = tool.esito.match(/^Nota (\d+) eliminata/);
+  const kept = tool.esito.match(/^Eliminazione della nota (\d+) annullata/);
+  if (!deleted && !kept) return null;
+  return decisionChip((deleted || kept)[1], Boolean(deleted));
+}
+
+function decisionChip(noteId, deleted) {
+  const chip = make("p", "decision");
+  chip.dataset.deleted = String(deleted);
+  chip.append(make("span", "review-label", "Conferma"), make("span", "", `nota ${noteId}: ${deleted ? "eliminata" : "non eliminata"}`));
+  return chip;
+}
+
 function assistantMessage(message) {
   const item = make("li", "msg-assistant");
+  // traccia delle conferme di eliminazione: resta visibile nella chat, sopra la risposta
+  for (const tool of message.strumenti || []) {
+    const trace = confirmationTrace(tool);
+    if (trace) item.append(trace);
+  }
   const answer = make("div", "answer");
   answer.append(renderText(message.contenuto));
   const verdict = reviewVerdict(message.righe);
   setStamp(answer, verdict);
   item.append(answer);
   const trace = traceShell();
-  for (const tool of message.strumenti || []) trace.body.append(toolCard(tool));
-  // rifiuto, limite di passaggi e avviso sulle note sono anche nel testo della risposta: non si ripetono
+  // nello stesso ordine del turno: prima il router, poi gli strumenti, poi il resto (revisore…)
   const content = String(message.contenuto || "");
-  for (const line of message.righe || []) {
-    if (line.trim() && content.includes(line.trim())) continue;
-    trace.body.append(infoLine(line));
-  }
+  const lines = (message.righe || []).filter((line) => !(line.trim() && content.includes(line.trim())));
+  for (const line of lines.filter((l) => l.startsWith("[router]"))) trace.body.append(infoLine(line));
+  for (const tool of message.strumenti || []) trace.body.append(toolCard(tool));
+  for (const line of lines.filter((l) => !l.startsWith("[router]"))) trace.body.append(infoLine(line));
   trace.tools = (message.strumenti || []).map((tool) => tool.nome);
   trace.status = TRACE_STATUS[verdict] || "";
   trace.label.textContent = traceLabel(trace.tools, trace.status, "");
@@ -402,7 +422,6 @@ function setBusy(busy) {
   el.send.hidden = busy;
   // «Interrompi» solo quando c'è un flusso da fermare (non durante la creazione della chat)
   el.stop.hidden = !(busy && state.controller);
-  el.question.readOnly = busy;
   el.newChat.disabled = busy;
   el.thread.setAttribute("aria-busy", String(busy));
   updateSend();
@@ -810,12 +829,14 @@ async function afterStop(chatId, text, usersBefore) {
     await loadChats();
   }
   setTurnState("stopped");
-  if (text && !saved && !el.question.value) el.question.value = text;
+  if (!saved) {
+    // nella chat resta la domanda con la nota dell'interruzione (non salvata: sparisce cambiando chat)
+    if (text) el.messages.append(userMessage(text));
+    el.messages.append(make("li", "interrupted", "Risposta interrotta"));
+    el.welcome.hidden = true;
+    scrollToEnd();
+  }
   updateSend();
-  showAlert(saved
-    ? "Risposta interrotta, ma Pico aveva già finito: la risposta è salvata."
-    : "Risposta interrotta. Se Pico era quasi alla fine, la risposta potrebbe comparire tra poco: riapri la chat per controllare.",
-  { tone: "info", retry: chatId != null ? () => openChat(chatId) : null });
 }
 
 // fromBox: la domanda viene dalla casella (con un esempio la bozza scritta nella casella non si tocca)
@@ -853,6 +874,12 @@ async function sendConfirm() {
   const hadFocus = el.confirm.contains(document.activeElement);
   hideConfirm();
   if (hadFocus) el.question.focus();
+  // la scelta resta visibile nella chat mentre Pico completa il turno
+  if (state.pendingView) {
+    for (const [noteId, deleted] of Object.entries(decisions)) {
+      state.pendingView.item.insertBefore(decisionChip(noteId, deleted), state.pendingView.item.firstChild);
+    }
+  }
   const view = turnView(null);
   // le schede sospese (es. delete_note) ricevono l'esito nel flusso della ripresa
   if (state.pendingView) view.cards = state.pendingView.cards.filter((card) => card.dataset.state === "running");

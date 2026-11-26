@@ -507,3 +507,20 @@ svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width:
 .trace-body .metrics { padding-left: 4px; }
 .trace-reasoning { display: grid; gap: 4px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 4px; background: var(--card); }
 .trace-reasoning-text { margin: 0; white-space: pre-wrap; font-size: 13px; color: var(--mute); }
+
+/* Traccia della conferma di eliminazione e nota dell'interruzione, dentro la chat */
+.decision {
+  display: inline-flex; align-items: baseline; gap: 8px;
+  margin: 0; padding: 4px 10px;
+  border: 1px solid var(--line); border-radius: 4px;
+  background: var(--card);
+  font-size: 13px; color: var(--ink);
+}
+.decision[data-deleted="true"] { border-color: var(--signal); }
+.decision[data-deleted="true"] .review-label { color: var(--signal); }
+.interrupted {
+  justify-self: end;
+  margin-top: -12px;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--mute);
+}
