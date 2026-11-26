@@ -340,6 +340,7 @@ Poi si apre http://127.0.0.1:8003 nel browser. Il front-end parte su `127.0.0.1:
 **Che cosa fa la pagina.**
 
 - Elenco delle chat (la più recente in alto), «Nuova chat» ed eliminazione con una finestra di conferma a tema («Annulla» ha il focus; Esc o un clic fuori annullano). «Nuova chat» non crea nulla subito: la chat nasce al primo invio.
+- Barra delle chat: il pulsante ☰ in alto a sinistra la chiude e la riapre; a finestra larga la scelta resta salvata nel browser. Fino a 1000 px di larghezza la barra si chiude da sola e ☰ la apre come pannello sopra la chat (un clic fuori la richiude).
 - Messaggi della chat aperta: nel messaggio di Pico c'è solo la risposta, con il timbro «✓ revisionata» quando il revisore l'ha approvata; sotto, un menù a tendina chiuso (la riga nomina lo strumento usato) con schede degli strumenti, righe del revisore, tempi e ragionamento (se il modello lo manda). La risposta arriva in streaming come **bozza**: il testo compare man mano, attenuato e con il timbro «in revisione…»; quando il revisore l'approva prende il colore normale e il timbro «✓ revisionata»; se la boccia, la bozza è sostituita da «Il revisore ha chiesto una nuova risposta…» e la nuova arriva di nuovo in streaming; senza revisore (`MAX_REVIEWS=0`) a fine turno il timbro sparisce.
 - **Scelta di streaming con il revisore (slide 18 della lezione 6)**: si mostra la bozza mentre viene scritta, non solo la risposta approvata. Lo streaming della sola risposta approvata non esiste: il revisore giudica il testo completo, quindi quando approva la risposta è già tutta scritta. Nascondere la bozza (provato il 25/11) lasciava la pagina ferma per 30–40 s; il timbro dice sempre se il testo è già stato approvato. Il testo del riassunto della cronologia, quando scatta, sta nel menù dei dettagli e non nella risposta.
 - Invio invia, Maiuscolo+Invio va a capo.
@@ -843,7 +844,8 @@ Prove da fare nel browser (http://127.0.0.1:8003) con database, agente, back-end
 | Eliminazione di una nota: prima «Non eliminare», poi «Elimina» | con «Non eliminare» la nota resta; con «Elimina» viene eliminata | ok (2026-11-26): traccia «Conferma · nota N: non eliminata / eliminata» |
 | Eliminazione di una chat | finestra di conferma a tema («Annulla» / «Elimina chat»), poi la chat sparisce dall'elenco | ok (2026-11-26): prima con la conferma del browser, giudicata brutta e sostituita con la finestra a tema; Annulla, Esc, clic fuori ed «Elimina chat» provati |
 | «Interrompi» durante una risposta | la risposta si ferma; salvata solo se Pico era già alla fine; il turno successivo funziona | ok (2026-11-26): nota «Risposta interrotta», domanda successiva senza avvisi |
-| Finestra stretta | sotto gli 860 px l'elenco diventa un pannello che si apre con ☰, la chat resta usabile | ok (2026-11-26, screenshot a 700 px); a metà schermo su 1920 px (circa 960 px) la disposizione resta quella larga |
+| Finestra stretta | fino a 1000 px l'elenco diventa un pannello che si apre con ☰, la chat resta usabile | ok (2026-11-26, screenshot a 700 px con la soglia a 860 px); soglia poi alzata a 1000 px su richiesta dell'utente (a metà schermo su 1920 px, circa 960 px, restava la disposizione larga): screenshot a 950 px ok, prova nel browser da fare |
+| Barra laterale a finestra larga | ☰ la chiude e la riapre; la chat prende tutta la larghezza; ricaricando resta come lasciata | da fare (screenshot a 1400 px: barra aperta e ☰ visibile) |
 
 ### Prova reale con Docker Compose
 
