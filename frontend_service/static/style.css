@@ -195,6 +195,9 @@ svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width:
   border: 1px solid var(--line); border-radius: var(--radius); background: var(--card);
 }
 .menu:hover { background: var(--ground-deep); }
+/* pannello dell'icona pieno quando la barra è visibile, vuoto quando è chiusa */
+.menu .menu-pane { stroke: none; fill: currentColor; opacity: 0; transition: opacity 160ms ease-out; }
+.menu[aria-expanded="true"] .menu-pane { opacity: 0.55; }
 
 /* ── Finestra larga: barra richiudibile ── */
 @media (min-width: 1001px) {
