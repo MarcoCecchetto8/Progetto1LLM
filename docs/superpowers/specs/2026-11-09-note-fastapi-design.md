@@ -176,6 +176,20 @@ Dichiarazione senza conferma = **falso successo**. Le frasi negative che conteng
 
 **Verifica.** Misura senza modello prima del piano: regola attuale e prototipo su tutte le risposte vere registrate e su risposte di programmazione; obiettivo zero avvisi sulle risposte d'altro e nessuna dichiarazione falsa registrata persa. Test con le frasi sopra (negativi) e con le dichiarazioni vere e false raccolte (positivi).
 
+### 5.8 Numeri delle note ed elenco richiesto davvero (revisione 2026-11-26)
+
+**Perché.** Prova nel browser dell'utente: l'elenco ordinato per scadenza mostra numeri «a caso» (4, 14, 24… poi 12, 11, 5) e, con l'autoincremento, fra qualche settimana le note avrebbero numeri come 223 e 300. In più, alla domanda «che note ci sono?» il modello a volte non chiama `list_notes` e ricopia un elenco a memoria dalla chat: ha dimenticato le note 5 e 28 e ha scritto «Le note 4 e 14 sono state eliminate» con la 14 ancora presente (l'avviso dei falsi successi ha fatto il suo lavoro).
+
+**Che cosa cambia (scelte dell'utente).**
+- **Numero libero più piccolo:** una nuova nota prende il più piccolo ID libero (1 se l'archivio è vuoto); il calcolo e l'inserimento stanno in un'unica istruzione SQL. Una nota esistente non cambia mai numero; dopo un'eliminazione resta un buco finché la nota successiva non lo riprende.
+- **Compattazione una volta sola:** comando `python -m notes_service.compact [--db PERCORSO]` (predefinito `data/notes.db`), da lanciare con il servizio spento: rinumera le note in ordine di ID a 1…N in una sola transazione e stampa le corrispondenze («5 → 1»…). Non parte mai da solo.
+- **Elenco per ID crescente** (`GET /notes` e `list_notes`), con la scadenza accanto come oggi. Con più note del limite (`limit`, predefinito 10) si vedono le prime per numero; `total` dice quante sono.
+- **Indicazione `list_notes`:** se la domanda chiede l'elenco delle note («che note ci sono?», «mostrami le note», «elenca i promemoria», «quante note ho?»: parola `note` o `promemoria` con una parola di elenco: che, quali, quante, elenca/elenco, mostra/mostrami, vedere, lista, le mie), il programma aggiunge alla copia della domanda per il modello «(indicazione del programma: per l'elenco delle note chiama `list_notes`)», con lo stesso meccanismo di `tool_hints` (la cronologia non cambia). Niente indicazione se la domanda contiene anche aggiungi/crea/salva/elimina/cancella o se parla di una sola «nota».
+
+**Rischi accettati.** Nelle chat vecchie i numeri scritti prima della compattazione o di una nota eliminata e poi riusata possono indicare un'altra nota: la conferma prima di eliminare mostra numero e testo. Una frase sulle note che il riconoscimento non prevede non riceve l'indicazione (comportamento di oggi).
+
+**Scartate.** Rinumerazione continua 1…N dopo ogni eliminazione: due eliminazioni nello stesso turno cancellerebbero la nota sbagliata dopo la conferma e l'elenco visibile in chat diventerebbe subito sbagliato.
+
 ## 6. Docker
 
 - `compose.yaml`: nuovo servizio `notes` (stessa immagine, comando che avvia il servizio su `0.0.0.0:8000`), porta `8000` pubblicata sull'host (per `/docs` da Windows); il servizio `app` riceve `NOTES_SERVICE_URL=http://notes:8000` e dipende da `notes`.

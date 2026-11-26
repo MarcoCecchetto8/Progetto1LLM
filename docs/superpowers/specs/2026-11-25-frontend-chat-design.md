@@ -93,6 +93,15 @@ browser ──HTTP──► frontend_service (8003): index.html, app.js, style.c
 
 **Revisione 2026-11-25 (scelte dell'utente dopo la prova reale):** nel messaggio di Pico c'è solo la risposta; schede degli strumenti, righe informative (revisore), misure e ragionamento stanno in un menù a tendina (`<details>`) chiuso, la cui riga nomina gli strumenti usati, lo stato e i secondi. La risposta in arrivo resta **nascosta finché il revisore non l'approva** (decisione dell'utente: un revisore deve filtrare prima che si legga la risposta; la bozza visibile, provata per prima, è stata scartata): si vedono solo gli stati «Pico scrive la risposta…» e, 1,5 s dopo l'ultimo pezzo, «Il revisore controlla la risposta…»; con «[revisore] coerente» compare la risposta con il timbro «✓ revisionata». Revisore con un solo giro (`MAX_REVIEWS=1`); `MAX_REVIEWS=0` lo spegne del tutto e la risposta compare a fine turno.
 
+**Revisione 2026-11-26 — bozza visibile in streaming (sostituisce la risposta nascosta).** Scelta dell'utente dopo la prova nel browser: la risposta deve arrivare in streaming fino al browser (slide 18 della lezione 6: «Con il revisore attivo, scegliere se mostrare la bozza mentre viene scritta oppure solo la risposta approvata, e documentare la scelta»). Uno streaming della sola risposta approvata non esiste: il revisore giudica il testo completo, quindi quando approva la risposta è già tutta scritta. Si sceglie quindi la **bozza visibile**:
+- ogni pezzo di `risposta` aggiorna subito il testo nel messaggio di Pico, con colore attenuato (`--mute`) e timbro «in revisione…»; prima del primo pezzo resta lo stato «Pico sta pensando…»;
+- 1,5 s dopo l'ultimo pezzo la barra di stato e la riga del menù dicono «in revisione…», ma il testo resta visibile;
+- con `[revisore] coerente` il testo prende il colore normale e il timbro diventa «✓ revisionata»; con verdetto non valido o limite raggiunto il testo resta e il timbro è quello di oggi;
+- con `[revisore] non coerente` la bozza è sostituita dallo stato «Il revisore ha chiesto una nuova risposta…» e la nuova bozza arriva in streaming come la prima;
+- senza revisore (`MAX_REVIEWS=0`, nessuna riga del revisore) a fine turno il timbro sparisce e il testo prende il colore normale; rifiuti del router e avvisi delle note si mostrano come oggi;
+- dopo il riavvio della pagina le risposte salvate si vedono come oggi (testo normale e timbro dalle righe salvate).
+La scelta e il motivo vanno anche nel README.
+
 **Accessibilità e aspetto**: design con la skill impeccable (palette, tipografia, spaziature, stati vuoti, stato di attesa); contrasto sufficiente, focus visibile, pulsanti con etichetta, area messaggi `aria-live="polite"`; tema chiaro e scuro secondo il sistema. Nessun font o script esterno (funziona offline).
 
 ## 6. Test
