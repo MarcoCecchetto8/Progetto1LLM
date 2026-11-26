@@ -36,11 +36,11 @@ def decided(decisions):
 
 @pytest.mark.parametrize("due, expected", [
     (None, "senza scadenza"),
-    ("2026-11-13", "scadenza 2026-11-13 (fra 4 giorni)"),
-    ("2026-11-10", "scadenza 2026-11-10 (fra 1 giorno)"),
-    ("2026-11-09", "scadenza 2026-11-09 (scade oggi)"),
-    ("2026-11-07", "scadenza 2026-11-07 (scaduta da 2 giorni)"),
-    ("2026-11-08", "scadenza 2026-11-08 (scaduta da 1 giorno)"),
+    ("2026-11-13", "scadenza 13-11-2026 (fra 4 giorni)"),
+    ("2026-11-10", "scadenza 10-11-2026 (fra 1 giorno)"),
+    ("2026-11-09", "scadenza 09-11-2026 (scade oggi)"),
+    ("2026-11-07", "scadenza 07-11-2026 (scaduta da 2 giorni)"),
+    ("2026-11-08", "scadenza 08-11-2026 (scaduta da 1 giorno)"),
 ])
 def test_due_phrase(due, expected):
     assert due_phrase(due, TODAY) == expected
@@ -48,12 +48,19 @@ def test_due_phrase(due, expected):
 
 def test_add_note(client):
     out = make_tools(client)["add_note"].invoke({"text": "consegnare il report", "due_date": "2026-11-13"})
-    assert out == "Nota 1 salvata: «consegnare il report» · scadenza 2026-11-13 (fra 4 giorni)."
+    assert out == "Nota 1 salvata: «consegnare il report» · scadenza 13-11-2026 (fra 4 giorni)."
 
 
 def test_add_note_invalid_date(client):
     with pytest.raises(ToolException, match="oggi, domani, dopodomani"):
-        make_tools(client)["add_note"].invoke({"text": "x", "due_date": "13/11/2026"})
+        make_tools(client)["add_note"].invoke({"text": "x", "due_date": "13 novembre"})
+
+
+@pytest.mark.parametrize("value", ["13/11/2026", "13-11-2026", "13.11.2026"])
+def test_add_note_accepts_italian_date(client, value):
+    # Le scadenze si mostrano come gg-mm-aaaa: il modello può ripassarle così
+    out = make_tools(client)["add_note"].invoke({"text": "x", "due_date": value})
+    assert "scadenza 13-11-2026" in out
 
 
 @pytest.mark.parametrize("value, expected", [
@@ -93,7 +100,7 @@ def test_resolve_due_date_every_english_weekday_from_every_day():
 
 def test_add_note_english_date(client):
     out = make_tools(client)["add_note"].invoke({"text": "chiamare Luca", "due_date": "tomorrow"})
-    assert out == "Nota 1 salvata: «chiamare Luca» · scadenza 2026-11-10 (fra 1 giorno)."
+    assert out == "Nota 1 salvata: «chiamare Luca» · scadenza 10-11-2026 (fra 1 giorno)."
 
 
 def test_resolve_due_date_month_and_year_end():
@@ -109,7 +116,7 @@ def test_resolve_due_date_invalid(value):
 
 def test_add_note_relative_date(client):
     out = make_tools(client)["add_note"].invoke({"text": "report", "due_date": "venerdì"})
-    assert out == "Nota 1 salvata: «report» · scadenza 2026-11-13 (fra 4 giorni)."
+    assert out == "Nota 1 salvata: «report» · scadenza 13-11-2026 (fra 4 giorni)."
 
 
 def test_add_note_description_shows_relative_example():
@@ -175,7 +182,25 @@ def test_delete_note_without_decision_is_cancelled(client, caplog):
 def test_delete_note_missing(client):
     with pytest.raises(ToolException) as exc:
         make_tools(client)["delete_note"].invoke({"note_id": 99}, config=decided({99: True}))
-    assert str(exc.value) == "Nessuna nota con ID 99: nulla è stato eliminato."
+    assert str(exc.value) == "Nessuna nota con ID 99: nulla è stato eliminato. Non ci sono note salvate."
+
+
+def test_delete_note_missing_lists_existing_ids(client):
+    # L'utente diceva «elimina la nota 1 e 2» pensando alla posizione nell'elenco
+    tools = make_tools(client)
+    for text in ("a", "b", "c"):
+        tools["add_note"].invoke({"text": text})
+    client.delete("/notes/1")
+    with pytest.raises(ToolException) as exc:
+        tools["delete_note"].invoke({"note_id": 1}, config=decided({1: True}))
+    assert str(exc.value) == "Nessuna nota con ID 1: nulla è stato eliminato. ID delle note salvate: 2, 3."
+
+
+def test_list_notes_names_the_id(client):
+    tools = make_tools(client)
+    tools["add_note"].invoke({"text": "a"})
+    assert tools["list_notes"].invoke({}).splitlines()[1].startswith("- nota 1: a")
+    assert "senza numerarle" in tools["list_notes"].description
 
 
 def delete_call(note_id, id="d"):

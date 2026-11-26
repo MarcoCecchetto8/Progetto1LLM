@@ -802,3 +802,8 @@ def test_system_prompt_counts_days_to_the_next_holiday():
     # «quanti giorni mancano all'Epifania» contava i giorni dall'Epifania passata
     p = system_prompt(prefs())
     assert "`find_holiday` senza anno" in p and "la prossima" in p
+
+
+def test_system_prompt_lists_notes_by_id():
+    # «1. 4 – …» faceva usare all'utente la posizione al posto dell'ID
+    assert "senza numerarle 1, 2, 3" in system_prompt(prefs())

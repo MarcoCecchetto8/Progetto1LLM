@@ -95,7 +95,7 @@ def system_prompt(preferences: Preferences) -> str:
         "lo strumento risponde «Nota N salvata», quindi non scrivere mai di averla salvata senza quella "
         "risposta. La scadenza va nel formato AAAA-MM-GG; se l'utente indica oggi, domani, dopodomani o un "
         "giorno della settimana (es. «venerdì»), non chiedergli la data e non calcolarla: passala così com'è "
-        "in `due_date` (es. due_date=\"venerdì\"). Per vedere le note usa `list_notes`. Per eliminare una nota usa `delete_note` "
+        "in `due_date` (es. due_date=\"venerdì\"). Per vedere le note usa `list_notes` e riportale con il loro ID (es. «nota 4»), senza numerarle 1, 2, 3. Per eliminare una nota usa `delete_note` "
         "con l'ID esatto preso da `list_notes`; se non è chiaro quale nota intende l'utente, chiediglielo; "
         "prima di eliminare il programma chiederà conferma all'utente: non chiederla tu, chiama subito `delete_note`. Non dire mai che una nota è stata "
         "eliminata se lo strumento non lo conferma. "

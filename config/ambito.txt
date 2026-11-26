@@ -13,6 +13,7 @@ Esempi:
 - «In che anno?» (dopo una domanda su un linguaggio) → conversazione (seguito)
 - «Quanti giorni mancano a Natale?» → conversazione (strumento date)
 - «Ricordami di chiamare Luca domani» → conversazione (note)
+- «Elimina la nota 1 e 2» → conversazione (note)
 - «Cos'è il machine learning?» → conversazione (AI)
 - «Chi ha creato Python?» → conversazione (catalogo dei linguaggi)
 - «Buongiorno!» → conversazione (saluto)
