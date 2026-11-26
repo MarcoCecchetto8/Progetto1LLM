@@ -53,7 +53,55 @@ def test_due_date_errors(store):
 def test_ordering(store):
     for due in ["2026-12-01", None, "2026-11-01", None, "2026-11-20"]:
         store.add("n", due)
-    assert [n["id"] for n in store.list_notes()[1]] == [3, 5, 1, 4, 2]
+    # elenco per numero crescente, qualunque sia la scadenza
+    assert [n["id"] for n in store.list_notes()[1]] == [1, 2, 3, 4, 5]
+
+
+def test_add_reuses_smallest_free_id(store):
+    for i in range(4):
+        store.add(f"n{i}")
+    store.delete(2)
+    store.delete(3)
+    assert [store.add("x")["id"] for _ in range(3)] == [2, 3, 5]
+
+
+def test_add_on_empty_store_starts_from_one(store):
+    assert store.add("a")["id"] == 1
+    store.delete(1)
+    assert store.add("b")["id"] == 1
+
+
+def test_compact_renumbers_in_id_order(store):
+    for i in range(1, 6):
+        store.add(f"n{i}")
+    store.delete(1)
+    store.delete(3)
+    assert store.compact() == [(2, 1), (4, 2), (5, 3)]
+    notes = store.list_notes()[1]
+    assert [(n["id"], n["text"]) for n in notes] == [(1, "n2"), (2, "n4"), (3, "n5")]
+    assert store.add("nuova")["id"] == 4
+
+
+def test_compact_noop(store):
+    assert store.compact() == []
+    for i in range(3):
+        store.add(f"n{i}")
+    assert store.compact() == []
+
+
+def test_compact_command(tmp_path, capsys):
+    from notes_service import compact
+    db = tmp_path / "notes.db"
+    store = NoteStore(db)
+    for i in range(5):
+        store.add(f"n{i}")
+    for note_id in (1, 3, 4):
+        store.delete(note_id)
+    compact.main(["--db", str(db)])
+    out = capsys.readouterr().out
+    assert "2 → 1" in out and "5 → 2" in out
+    compact.main(["--db", str(db)])
+    assert "Nessuna nota da rinumerare." in capsys.readouterr().out
 
 
 def test_limit(store):

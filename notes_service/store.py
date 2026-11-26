@@ -10,8 +10,15 @@ MAX_LIMIT = 50
 DEFAULT_LIMIT = 10
 
 _DATE_FORMAT = re.compile(r"\d{4}-\d{2}-\d{2}")
-# Prima le note con scadenza (la più vicina in alto), poi quelle senza (la più recente in alto)
-_ORDER = "ORDER BY due_date IS NULL, due_date, CASE WHEN due_date IS NULL THEN -id ELSE id END"
+# Elenco per numero crescente: i numeri restano bassi perché una nota nuova riprende il più piccolo libero
+_ORDER = "ORDER BY id"
+# Numero libero più piccolo (1 se l'archivio è vuoto), calcolato nella stessa istruzione dell'inserimento
+_INSERT = (
+    "INSERT INTO notes (id, text, due_date, created_at) "
+    "SELECT COALESCE(MIN(n.id + 1), 1), ?, ?, ? "
+    "FROM (SELECT 0 AS id UNION ALL SELECT id FROM notes) n "
+    "WHERE n.id + 1 NOT IN (SELECT id FROM notes)"
+)
 
 
 def _clean_text(text: str) -> str:
@@ -63,10 +70,7 @@ class NoteStore:
         due_date = _clean_due_date(due_date)
         created_at = datetime.now(UTC).isoformat(timespec="seconds")
         with self._connect() as conn:
-            cur = conn.execute(
-                "INSERT INTO notes (text, due_date, created_at) VALUES (?, ?, ?)",
-                (text, due_date, created_at),
-            )
+            cur = conn.execute(_INSERT, (text, due_date, created_at))
             note_id = cur.lastrowid
         return {"id": note_id, "text": text, "due_date": due_date, "created_at": created_at}
 
@@ -89,6 +93,18 @@ class NoteStore:
             if row:
                 conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
         return _to_note(row) if row else None
+
+    def compact(self) -> list[tuple[int, int]]:
+        """Rinumera le note a 1…N in ordine di numero, in una transazione; restituisce le coppie cambiate."""
+        changed = []
+        with self._connect() as conn:
+            ids = [row[0] for row in conn.execute("SELECT id FROM notes ORDER BY id")]
+            for new_id, old_id in enumerate(ids, start=1):
+                if new_id != old_id:
+                    # in ordine crescente il posto new_id è sempre già libero
+                    conn.execute("UPDATE notes SET id = ? WHERE id = ?", (new_id, old_id))
+                    changed.append((old_id, new_id))
+        return changed
 
 
 class _Connection:
