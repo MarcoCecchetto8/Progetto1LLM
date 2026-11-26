@@ -102,6 +102,8 @@ browser ──HTTP──► frontend_service (8003): index.html, app.js, style.c
 - dopo il riavvio della pagina le risposte salvate si vedono come oggi (testo normale e timbro dalle righe salvate).
 La scelta e il motivo vanno anche nel README.
 
+**Revisione 2026-11-26 — conferma dell'eliminazione di una chat a tema.** Al posto di `window.confirm` (giudicata brutta dall'utente) una finestra modale `<dialog>` nello stile del riquadro di conferma delle note: titolo «Eliminare la chat?», nome della chat, «I messaggi non si possono recuperare.», pulsanti «Annulla» (con il focus all'apertura, così Invio non cancella) ed «Elimina chat» (rosso, `--signal`). Esc o un clic fuori annullano. Tema chiaro e scuro come la pagina; funziona anche nel pannello stretto. Nessun cambio di API.
+
 **Accessibilità e aspetto**: design con la skill impeccable (palette, tipografia, spaziature, stati vuoti, stato di attesa); contrasto sufficiente, focus visibile, pulsanti con etichetta, area messaggi `aria-live="polite"`; tema chiaro e scuro secondo il sistema. Nessun font o script esterno (funziona offline).
 
 ## 6. Test

@@ -97,3 +97,12 @@
 - [ ] **Step 3: suite completa** con porte 8000–8003 libere: `python -m pytest` → tutti passano (exit 0).
 - [ ] **Step 4: prova reale dell'utente nel browser**: bozza in streaming, «che note ci sono?» con `list_notes` nel menù e numeri 1…9 in ordine, nuova nota → 10, elimina una nota e aggiungine un'altra → riprende il buco. Esiti nel README.
 - [ ] **Step 5:** merge `--no-ff` di `feature/frontend` in `developer`, push di `developer`, eliminare il branch e `.superpowers/sdd/2026-11-25-frontend-chat/`.
+
+### Task 5: conferma a tema per l'eliminazione di una chat (aggiunta 2026-11-26, approvata dall'utente)
+
+**Files:**
+- Modify: `frontend_service/static/index.html` (`<dialog id="delete-dialog">`), `frontend_service/static/style.css`, `frontend_service/static/app.js` (`deleteChat`, nuova `askDeleteChat(title: string) -> Promise<boolean>`)
+
+- [ ] **Step 1:** `<dialog>` con `<form method="dialog">`: titolo «Eliminare la chat?», nome della chat, «I messaggi non si possono recuperare.», pulsanti `value="cancel"` «Annulla» (focus all'apertura) e `value="delete"` «Elimina chat» (rosso). `askDeleteChat` apre con `showModal()` e risolve `true` solo con `returnValue === "delete"`; Esc e clic sullo sfondo (`event.target === dialog`) annullano. `deleteChat` la usa al posto di `window.confirm`.
+- [ ] **Step 2:** `node --check frontend_service/static/app.js` e `python -m pytest tests/test_frontend_service.py -q` → passano; prova nel browser dell'utente (Annulla, Esc, clic fuori, Elimina chat; tema scuro; finestra stretta).
+- [ ] **Step 3: commit** `feat(frontend): conferma a tema per l'eliminazione di una chat`.
