@@ -104,6 +104,11 @@ La scelta e il motivo vanno anche nel README.
 
 **Revisione 2026-11-26 — conferma dell'eliminazione di una chat a tema.** Al posto di `window.confirm` (giudicata brutta dall'utente) una finestra modale `<dialog>` nello stile del riquadro di conferma delle note: titolo «Eliminare la chat?», nome della chat, «I messaggi non si possono recuperare.», pulsanti «Annulla» (con il focus all'apertura, così Invio non cancella) ed «Elimina chat» (rosso, `--signal`). Esc o un clic fuori annullano. Tema chiaro e scuro come la pagina; funziona anche nel pannello stretto. Nessun cambio di API.
 
+**Revisione 2026-11-26 — barra laterale richiudibile (richiesta dell'utente).**
+- **Finestra larga (oltre 1000 px):** il pulsante ☰ è sempre visibile in alto a sinistra e apre/chiude la barra delle chat; chiusa, la colonna sparisce e la chat prende tutta la larghezza. La scelta resta nel browser (`localStorage`, chiave `pico.barra`, valori `chiusa`/`aperta`; se il browser non la salva, la barra parte aperta). Testo nascosto del pulsante «Nascondi le chat» / «Mostra le chat», `aria-expanded` coerente.
+- **Finestra stretta (fino a 1000 px, prima 860):** la barra si chiude da sola e ☰ la apre come pannello sopra la chat, come oggi (sfondo scuro, clic fuori chiude). Solo le regole di barra, pannello e pulsante passano a 1000 px; il resto della disposizione compatta (spaziature, esempi su una colonna) resta sotto 860 px.
+- Passando da stretta a larga vale di nuovo la scelta salvata; il pannello aperto si chiude.
+
 **Accessibilità e aspetto**: design con la skill impeccable (palette, tipografia, spaziature, stati vuoti, stato di attesa); contrasto sufficiente, focus visibile, pulsanti con etichetta, area messaggi `aria-live="polite"`; tema chiaro e scuro secondo il sistema. Nessun font o script esterno (funziona offline).
 
 ## 6. Test
