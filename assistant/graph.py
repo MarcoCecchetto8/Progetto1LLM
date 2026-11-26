@@ -135,6 +135,11 @@ _RELATIVE_DAYS = re.compile(r"(?:fra|tra)\s+(\d{1,4})\s+giorni|(\d{1,4})\s+giorn
 
 _HOLIDAY_QUESTION = re.compile(r"\bmanca(?:no)?\b", re.IGNORECASE)
 
+# «che note ci sono?», «mostrami le note»: il modello a volte ricopiava l'elenco a memoria dalla chat
+_NOTES_LIST = re.compile(r"\b(?:che|quali|quante|elenc\w*|mostr\w*|vedere|lista|mie)\b.*\b(?:note|promemoria)\b"
+                         r"|\b(?:note|promemoria)\b.*\b(?:elenc\w*|lista)\b", re.IGNORECASE)
+_NOTES_ACTION = re.compile(r"aggiung|\bcrea|salva|elimin|cancell", re.IGNORECASE)
+
 
 def tool_hints(text: str) -> str:
     """«fra 10 giorni», «100 giorni fa», «quanti giorni mancano all'Epifania»: indica al modello lo strumento e i
@@ -152,6 +157,8 @@ def tool_hints(text: str) -> str:
                 hints.append(f'per i giorni che mancano chiama `find_holiday` con name="{name}" senza anno '
                              "(conta la prossima)")
                 break
+    if _NOTES_LIST.search(text) and not _NOTES_ACTION.search(text):
+        hints.append("per l'elenco delle note chiama `list_notes`")
     return f"{text} (indicazione del programma: {'; '.join(hints)})" if hints else text
 
 

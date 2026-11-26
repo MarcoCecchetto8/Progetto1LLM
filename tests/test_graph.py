@@ -782,13 +782,22 @@ def test_system_prompt_remembers_what_the_user_says():
     ("e tra 45 giorni?", "chiama `add_days` con days=45"),
     ("Quanti giorni mancano all'Epifania?", 'chiama `find_holiday` con name="Epifania" senza anno'),
     ("quanto manca a Natale", 'chiama `find_holiday` con name="Natale" senza anno'),
+    # Elenco delle note: il modello a volte lo ricopiava a memoria dalla chat
+    ("che note ci sono?", "per l'elenco delle note chiama `list_notes`"),
+    ("Mostrami le note", "per l'elenco delle note chiama `list_notes`"),
+    ("quali promemoria ho?", "per l'elenco delle note chiama `list_notes`"),
+    ("elenca le mie note", "per l'elenco delle note chiama `list_notes`"),
+    ("Quante note ho?", "per l'elenco delle note chiama `list_notes`"),
+    ("fammi vedere la lista delle note", "per l'elenco delle note chiama `list_notes`"),
 ])
 def test_tool_hints(text, hint):
     out = tool_hints(text)
     assert out.startswith(text + " (indicazione del programma: ") and hint in out
 
 
-@pytest.mark.parametrize("text", ["Che ore sono a Tokyo?", "Natale è una bella festa", "Quanto fa 37 per 19?"])
+@pytest.mark.parametrize("text", ["Che ore sono a Tokyo?", "Natale è una bella festa", "Quanto fa 37 per 19?",
+                                  "elimina la nota cinque", "Aggiungi una nota: comprare il latte",
+                                  "cancella tutte le note", "salva queste note sul Python"])
 def test_tool_hints_leave_other_questions(text):
     assert tool_hints(text) == text
 
