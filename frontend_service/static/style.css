@@ -429,6 +429,29 @@ svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width:
 .choice.danger input:checked + span::before { box-shadow: inset 0 0 0 2px var(--signal-soft); }
 .confirm .primary { min-height: 40px; }
 
+/* Conferma dell'eliminazione di una chat: stesso linguaggio del riquadro di conferma delle note */
+.dialog {
+  width: min(420px, calc(100vw - 32px));
+  padding: 0;
+  border: 1px solid var(--signal); border-radius: var(--radius);
+  background: var(--card); color: var(--ink); box-shadow: var(--shadow);
+}
+.dialog::backdrop { background: rgba(15, 25, 21, 0.45); }
+.dialog-body { padding: 18px 20px; }
+.dialog-name { margin: 6px 0 0; font-weight: 600; overflow-wrap: anywhere; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.dialog-cancel, .dialog-danger {
+  min-height: 40px; padding: 0 18px;
+  border-radius: var(--radius); font-weight: 600;
+  transition: background-color 160ms ease-out;
+}
+.dialog-cancel { border: 1px solid var(--line-strong); background: var(--card); color: var(--ink); }
+.dialog-cancel:hover { background: var(--ground-deep); }
+/* testo nel colore della scheda: chiaro sul rosso scuro del tema chiaro, scuro sul rosso chiaro del tema scuro */
+.dialog-danger { border: 1px solid var(--signal); background: var(--signal); color: var(--card); }
+.dialog-danger:hover { filter: brightness(0.92); }
+.dialog-cancel:focus-visible, .dialog-danger:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
 /* ── Schermo stretto ── */
 @media (max-width: 860px) {
   body { grid-template-columns: minmax(0, 1fr); }

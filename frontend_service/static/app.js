@@ -557,12 +557,29 @@ async function openChat(id, { quiet = false } = {}) {
   }
 }
 
+// Conferma a tema al posto di window.confirm: «Annulla» ha il focus, Esc e clic sullo sfondo annullano.
+function askDeleteChat(title) {
+  const dialog = $("delete-dialog");
+  $("delete-name").textContent = `«${title}»`;
+  dialog.returnValue = "";
+  return new Promise((resolve) => {
+    const onBackdrop = (event) => { if (event.target === dialog) dialog.close("cancel"); };
+    dialog.addEventListener("click", onBackdrop);
+    dialog.addEventListener("close", () => {
+      dialog.removeEventListener("click", onBackdrop);
+      resolve(dialog.returnValue === "delete");
+    }, { once: true });
+    dialog.showModal();
+    $("delete-cancel").focus();
+  });
+}
+
 async function deleteChat(chat) {
   if (state.busy) {
     showAlert("Attendi la fine della risposta, oppure interrompila.", { tone: "info" });
     return;
   }
-  if (!window.confirm(`Eliminare la chat «${chat.titolo}»? I messaggi non si possono recuperare.`)) return;
+  if (!(await askDeleteChat(chat.titolo))) return;
   try {
     await api("DELETE", `/chats/${chat.id}`);
   } catch (error) {

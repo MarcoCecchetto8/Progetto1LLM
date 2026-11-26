@@ -76,5 +76,17 @@
       </form>
     </div>
   </main>
+
+  <dialog class="dialog" id="delete-dialog" aria-labelledby="delete-title" aria-describedby="delete-text">
+    <form method="dialog" class="dialog-body">
+      <h2 class="confirm-title" id="delete-title">Eliminare la chat?</h2>
+      <p class="dialog-name" id="delete-name"></p>
+      <p class="confirm-text" id="delete-text">I messaggi non si possono recuperare.</p>
+      <div class="dialog-actions">
+        <button type="submit" value="cancel" class="dialog-cancel" id="delete-cancel">Annulla</button>
+        <button type="submit" value="delete" class="dialog-danger" id="delete-ok">Elimina chat</button>
+      </div>
+    </form>
+  </dialog>
 </body>
 </html>
