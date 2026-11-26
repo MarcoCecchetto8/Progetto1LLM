@@ -70,8 +70,8 @@ Invoke-RestMethod http://localhost:1234/v1/models | Select-Object -ExpandPropert
 | `SUMMARY_KEEP_TURNS` | no | `2` | ultimi turni lasciati intatti dal riassunto (≥ 1) |
 | `SCOPE_FILE` | no | `config/ambito.txt` | file con l'ambito dell'assistente per il router (percorso relativo alla radice del progetto); se manca o è vuoto l'avvio si ferma con `SCOPE_FILE non valida: '<percorso>' non esiste o è vuoto.` |
 | `PREFERENCES_FILE` | no | `config/preferenze.json` | file delle preferenze dell'utente, esposto dal server come resource `utente://preferenze` (percorso relativo alla radice del progetto); se manca o non è valido l'avvio prosegue con le riserve e un avviso `[preferenze]` |
-| `AGENT_SERVICE_URL` | no | vuota | vuota in locale: l'assistente avvia da solo l'agente su `http://127.0.0.1:8001`; con Docker Compose viene impostata a `http://agent:8001` |
-| `NOTES_SERVICE_URL` | no | vuota | vuota in locale: l'assistente avvia da solo il servizio delle note su `http://127.0.0.1:8000`; con Docker Compose viene impostata a `http://notes:8000` |
+| `AGENT_SERVICE_URL` | no | vuota | vuota in locale: l'assistente avvia da solo l'agente su `http://127.0.0.1:8001`; con Docker Compose la CLI (`app`) la riceve impostata a `http://agent:8001` |
+| `NOTES_SERVICE_URL` | no | vuota | vuota in locale e con Docker Compose: l'agente avvia da solo il servizio delle note su `http://127.0.0.1:8000` (con Docker dentro il proprio container); impostata, l'agente usa un servizio già acceso a quell'indirizzo |
 
 ## Avvio locale (PowerShell)
 
@@ -88,24 +88,45 @@ L'assistente avvia l'agente (porta 8001), che a sua volta avvia il server MCP e 
 
 ## Avvio con Docker
 
-LM Studio resta sull'host: il container lo raggiunge tramite `host.docker.internal`.
+Quattro container, uno per componente (step 9): `frontend`, `backend`, `agent` e `db` (PostgreSQL con l'immagine ufficiale). LM Studio resta sull'host: l'agente lo raggiunge tramite `host.docker.internal`. Prima di avviare: LM Studio acceso con il modello caricato, `.env` con le variabili di `.env.example` (comprese le `POSTGRES_*`), servizi locali spenti (vogliono le stesse porte).
 
 ```powershell
-docker compose build
-docker compose run --rm app
+docker compose up -d --build
+docker compose ps
 ```
 
-Si usa `run` e non `up`, perché `up` non collega il terminale all'input dell'applicazione.
+Poi la pagina è su http://127.0.0.1:8003. `docker compose ps` mostra i quattro servizi in esecuzione:
 
-Compose avvia anche due container di servizio: `notes`, con il servizio delle note, e `agent`, con l'agente (`depends_on` avvia i container in ordine, ma non aspetta che l'agente sia pronto: è la CLI a restare in attesa, fino a 60 secondi, che `agent` risponda su `/stato`; `agent` a sua volta aspetta `notes`). Le porte 8000 e 8001 sono pubblicate solo su `127.0.0.1` dell'host, non raggiungibili dalla rete. Il container `app` è solo la CLI e parla con `http://agent:8001`; LM Studio, preferenze e servizio note servono all'agente. Le note stanno nella cartella `data/` del progetto, montata nel container: sono le stesse dell'avvio locale. Per fermare il servizio dopo l'uso:
+| Servizio | Dockerfile | Porta sull'host | Che cosa fa |
+|---|---|---|---|
+| `frontend` | `frontend_service/Dockerfile` | `127.0.0.1:8003` | pagina web; il browser chiama il back-end su `http://127.0.0.1:8002` |
+| `backend` | `backend_service/Dockerfile` | `127.0.0.1:8002` | API delle chat; parte solo quando `db` è pronto (healthcheck); riceve dal `.env` solo l'indirizzo del database, composto da Compose con le `POSTGRES_*` |
+| `agent` | `agent_service/Dockerfile` | **nessuna** (non esposto) | grafo, server MCP (stdio) e servizio delle note, avviati dentro il container; lo raggiungono solo `backend` e `app` all'indirizzo `http://agent:8001` |
+| `db` | immagine `postgres:18.6-alpine` | `127.0.0.1:5433` | chat e messaggi, nel volume `pgdata` |
+
+- Le porte sono pubblicate solo su `127.0.0.1`: non sono raggiungibili da altri computer della rete.
+- Le chat restano nel volume `pgdata` anche dopo `docker compose down` e `docker compose up -d`; `docker compose down -v` cancella anche il volume, e con lui tutte le chat.
+- Le note stanno in `data/notes.db` sull'host, montata nel container dell'agente: sono le stesse dell'avvio locale. `config/preferenze.json` è montato in sola lettura.
+- Le immagini di back-end e front-end installano solo le proprie dipendenze (`requirements-backend.txt`, `requirements-frontend.txt`, stesse versioni di `requirements.txt`, controllate da `tests/test_requirements.py`).
+- Il back-end riceve utente, password e nome del database come `PGUSER`, `PGPASSWORD` e `PGDATABASE` (dalle `POSTGRES_*` del `.env`), non dentro `DATABASE_URL`: la password può contenere anche `@`, `/` o `%`.
+- Limite: l'agente riceve il `.env` intero, compresa la password del database che non usa.
+- Se LM Studio è spento l'agente parte lo stesso (nei log `[modello] …`) e resta in esecuzione: `GET /stato` del back-end risponde 503 con il modello non raggiungibile e la domanda dalla pagina dà l'errore del modello. Basta accendere LM Studio e riprovare, senza riavviare nulla.
+
+I log dell'agente (turni, strumenti, revisore) si leggono con `docker compose logs agent` (`-f` per seguirli); ogni strumento usato lascia una riga `[api] strumento <nome> <argomenti> → <esito>`. Se l'agente perde il collegamento con il server MCP o con le note non si riconnette da solo: `docker compose restart agent`.
+
+Per fermare tutto:
 
 ```powershell
 docker compose down
 ```
 
-Non usare insieme l'assistente locale e quello Docker: vogliono le stesse porte (8000 e 8001).
+**La CLI con Docker.** `docker compose up` non avvia la CLI (servizio `app`, profilo `cli`, stessa immagine dell'agente). Si apre con:
 
-I log dell'agente (traccia dei turni, strumenti, revisore) si leggono con `docker compose logs agent`. Se l'agente perde il collegamento con il server MCP o con le note non si riconnette da solo: `docker compose restart agent`.
+```powershell
+docker compose run --rm app
+```
+
+Si usa `run` e non `up`, perché `up` non collega il terminale all'input dell'applicazione. `run` avvia anche l'agente se è spento; la CLI aspetta fino a 60 secondi che risponda su `/stato`. Per ricostruire anche la sua immagine: `docker compose --profile cli build`.
 
 ## Comandi
 
@@ -525,7 +546,7 @@ Con Docker (2026-11-09): `docker compose config`, `docker compose build` e `dock
 
 ### Numeri delle note
 
-Una nota nuova prende il **numero libero più piccolo** (1 con l'archivio vuoto; dopo un'eliminazione il buco è ripreso dalla nota successiva) e l'elenco è **per numero crescente**, con la scadenza accanto. Una nota esistente non cambia mai numero. Per rinumerare una volta sola un archivio con numeri sparsi (servizio delle note spento, quindi anche agente e Docker `notes` spenti):
+Una nota nuova prende il **numero libero più piccolo** (1 con l'archivio vuoto; dopo un'eliminazione il buco è ripreso dalla nota successiva) e l'elenco è **per numero crescente**, con la scadenza accanto. Una nota esistente non cambia mai numero. Per rinumerare una volta sola un archivio con numeri sparsi (servizio delle note spento, quindi anche agente locale e container `agent` spenti):
 
 ```powershell
 Copy-Item data\notes.db data\notes.db.bak
@@ -824,12 +845,34 @@ Prove da fare nel browser (http://127.0.0.1:8003) con database, agente, back-end
 | «Interrompi» durante una risposta | la risposta si ferma; salvata solo se Pico era già alla fine; il turno successivo funziona | ok (2026-11-26): nota «Risposta interrotta», domanda successiva senza avvisi |
 | Finestra stretta | sotto gli 860 px l'elenco diventa un pannello che si apre con ☰, la chat resta usabile | ok (2026-11-26, screenshot a 700 px); a metà schermo su 1920 px (circa 960 px) la disposizione resta quella larga |
 
+### Prova reale con Docker Compose
+
+Evidenze dello step 9 (slide 16). Verifiche senza modello eseguite da Claude il 2026-11-26 con Docker Desktop:
+
+| Prova | Atteso | Esito |
+|---|---|---|
+| `docker compose config --services` | `agent`, `db`, `backend`, `frontend` (la CLI `app` no) | ok |
+| `docker compose --profile cli build` | quattro immagini | ok: agente 482 MB, back-end 240 MB, front-end 219 MB (`app` = immagine dell'agente) |
+| `docker compose up -d`, poi `docker compose ps` | quattro servizi in esecuzione; agente senza porte | ok: `127.0.0.1:8002`, `127.0.0.1:8003`, `127.0.0.1:5433`; `agent` senza porte |
+| http://127.0.0.1:8003 e http://127.0.0.1:8002/stato | 200; il back-end vede database, agente, modello, strumenti e note | ok: 9 strumenti, servizio delle note `http://127.0.0.1:8000` dentro il container |
+| http://127.0.0.1:8001 dall'host | nessuna risposta (agente non esposto) | ok |
+| Note e chat esistenti | stesse note di `data/notes.db` e stesse chat del volume | ok |
+
+Prova dell'utente dal browser, con LM Studio:
+
+| Prova | Atteso | Esito |
+|---|---|---|
+| Chat con uno strumento («Che ore sono a Tokyo?») | risposta con lo strumento; riga `[api] strumento get_current_time …` in `docker compose logs agent` | ok (2026-11-26): `[api] strumento get_current_time {'timezone': 'Asia/Tokyo'} → Asia/Tokyo: 2026-11-26T21:48:08+09:00`, `[api] turno completato in 56.3 s`. La riga compare solo a fine turno: lanciando i log mentre Pico scrive si vede solo `[router] …` |
+| Eliminazione di una nota con conferma («Non eliminare») | la nota resta | ok (2026-11-26) |
+| `docker compose down`, poi `docker compose up -d` | le chat sono ancora presenti | ok (2026-11-26); `down` cancella anche i log dei container |
+
 ## Diagnosi
 
 | Sintomo | Causa probabile e rimedio |
 |---|---|
 | La pagina mostra «Il back-end non risponde all'indirizzo …» | il back-end è spento o l'indirizzo è sbagliato: avviare `python -m backend_service` e controllare `FRONTEND_BACKEND_URL` (poi riavviare il front-end) |
-| Errore CORS nella console del browser | la pagina è aperta da un'origine non elencata in `BACKEND_CORS_ORIGINS` (altra porta o altro host, per esempio con `--port` diverso): aprire http://127.0.0.1:8003 oppure aggiungere l'origine alla variabile e riavviare il back-end |
+| In PowerShell 5.1 `docker compose logs agent` mostra `ÔåÆ` al posto di `→` (o altre lettere strane al posto delle accentate) | è solo la visualizzazione: la console legge l'UTF-8 dei log con la codifica di Windows. Prima dei log, da provare: `[Console]::OutputEncoding = [Text.Encoding]::UTF8` |
+| Errore CORS nella console del browser | la pagina è aperta da un'origine non elencata in `BACKEND_CORS_ORIGINS` (altra porta o altro host, per esempio con `--port` diverso): aprire http://127.0.0.1:8003 oppure aggiungere l'origine alla variabile e riavviare il back-end. Con Docker Compose il back-end non legge il `.env`: l'origine va aggiunta come `BACKEND_CORS_ORIGINS` in `environment` del servizio `backend` in `compose.yaml` |
 | `FRONTEND_BACKEND_URL non valida: ...` all'avvio del front-end | l'indirizzo non inizia con `http://` o `https://`: correggerlo nel `.env` |
 | `[preferenze] resource non disponibile (...): uso italiano, sintetico, <fuso>` | (avviso mostrato anche in avvio normale) il file delle preferenze manca o non si legge: controllare `PREFERENCES_FILE` e `config/preferenze.json`; l'avvio prosegue con le riserve |
 | `[preferenze] <campo> '<valore>' non ammesso: uso '<riserva>'` o `<campo> mancante: uso '<riserva>'` | campo assente, valore fuori elenco (lingua, stile) o fuso inesistente: correggere il file e riavviare; gli altri campi valgono |

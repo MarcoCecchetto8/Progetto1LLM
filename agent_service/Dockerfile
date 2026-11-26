@@ -1,3 +1,5 @@
+# Agente (grafo LangGraph, server MCP in stdio e servizio delle note avviati nel container).
+# Contesto di build: la radice del progetto (vedi compose.yaml).
 FROM python:3.14-slim
 
 ENV PYTHONUNBUFFERED=1
@@ -16,4 +18,4 @@ COPY config/ ./config/
 RUN useradd --create-home appuser
 USER appuser
 
-CMD ["python", "-m", "assistant"]
+CMD ["python", "-m", "agent_service", "--host", "0.0.0.0"]
