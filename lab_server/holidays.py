@@ -72,3 +72,12 @@ def holiday_name(day: date) -> str | None:
     # Pasqua o Pasquetta possono cadere il 25 aprile: si nominano tutte le festività del giorno
     names = [entry["name"] for entry in data["fixed"] + data["easter"] if _date_of(entry, day.year) == day]
     return " e ".join(names) or None
+
+
+def holiday_names() -> dict[str, str]:
+    """Nomi e alias normalizzati (senza accenti, minuscoli) → nome canonico della festività."""
+    return {key: entry["name"] for key, entry in _by_key().items()}
+
+
+def normalize_name(text: str) -> str:
+    return _key(text)

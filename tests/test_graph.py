@@ -11,7 +11,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 
-from assistant.graph import (LIMIT_MESSAGE, build_graph, explain_multiplication, explain_relative_days, system_prompt,
+from assistant.graph import (LIMIT_MESSAGE, build_graph, explain_multiplication, system_prompt, tool_hints,
                             today_line,
                             with_today)
 from assistant.llm import REASONING_KEY
@@ -775,21 +775,22 @@ def test_system_prompt_remembers_what_the_user_says():
     assert "il nome" in system_prompt(prefs()) and "usalo" in system_prompt(prefs())
 
 
-LINE = "Oggi è mercoledì 25 novembre 2026 (2026-11-25), fuso orario Europe/Rome."
-
-
-@pytest.mark.parametrize("text, expected", [
-    ("Che data sarà fra 10 giorni?", "Che data sarà fra 10 giorni? (calcolato dal programma: fra 10 giorni = 2026-12-05, sabato)"),
-    ("Che giorno era 100 giorni fa?", "Che giorno era 100 giorni fa? (calcolato dal programma: 100 giorni fa = 2026-08-17, lunedì)"),
-    ("e tra 45 giorni?", "e tra 45 giorni? (calcolato dal programma: fra 45 giorni = 2027-01-09, sabato)"),
-    ("Quanti giorni mancano a Natale?", "Quanti giorni mancano a Natale?"),
+@pytest.mark.parametrize("text, hint", [
+    # Il programma indica lo strumento e i dati, il modello lo chiama: risultato giusto e strumento visibile
+    ("Che data sarà fra 10 giorni?", "chiama `add_days` con days=10"),
+    ("Che giorno era 100 giorni fa?", "chiama `add_days` con days=-100"),
+    ("e tra 45 giorni?", "chiama `add_days` con days=45"),
+    ("Quanti giorni mancano all'Epifania?", 'chiama `find_holiday` con name="Epifania" senza anno'),
+    ("quanto manca a Natale", 'chiama `find_holiday` con name="Natale" senza anno'),
 ])
-def test_explain_relative_days(text, expected):
-    assert explain_relative_days(text, LINE) == expected
+def test_tool_hints(text, hint):
+    out = tool_hints(text)
+    assert out.startswith(text + " (indicazione del programma: ") and hint in out
 
 
-def test_explain_relative_days_without_date_line():
-    assert explain_relative_days("fra 10 giorni", "") == "fra 10 giorni"
+@pytest.mark.parametrize("text", ["Che ore sono a Tokyo?", "Natale è una bella festa", "Quanto fa 37 per 19?"])
+def test_tool_hints_leave_other_questions(text):
+    assert tool_hints(text) == text
 
 
 def test_system_prompt_forbids_inventing_real_time_data():

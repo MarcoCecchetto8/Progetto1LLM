@@ -21,6 +21,7 @@ from assistant.llm import REASONING_KEY
 from assistant.reviewer import Review, feedback_message, is_review_feedback, last_question_index
 from assistant.router import Route, refusal_text, router_context
 from assistant.summarizer import estimate_tokens, summary_cut, summary_line, transcript, with_summary
+from lab_server.holidays import holiday_names, normalize_name
 from lab_server.preferences import Preferences
 
 logger = logging.getLogger("assistant.graph")
@@ -130,29 +131,33 @@ def explain_multiplication(text: str) -> str:
 
 
 _RELATIVE_DAYS = re.compile(r"(?:fra|tra)\s+(\d{1,4})\s+giorni|(\d{1,4})\s+giorni\s+fa", re.IGNORECASE)
-_ISO_IN_LINE = re.compile(r"\((\d{4}-\d{2}-\d{2})\)")
 
 
-def explain_relative_days(text: str, line: str) -> str:
-    """«fra 10 giorni» / «100 giorni fa»: aggiunge la data già calcolata (il modello piccolo sbaglia i conti)."""
-    found = _ISO_IN_LINE.search(line or "")
-    if not found:
-        return text
-    today = datetime.date.fromisoformat(found.group(1))
-    notes = []
+_HOLIDAY_QUESTION = re.compile(r"\bmanca(?:no)?\b", re.IGNORECASE)
+
+
+def tool_hints(text: str) -> str:
+    """«fra 10 giorni», «100 giorni fa», «quanti giorni mancano all'Epifania»: indica al modello lo strumento e i
+    dati da passare (sbagliava i conti a mente o la festività passata); il risultato lo dà lo strumento, visibile."""
+    hints = []
     for match in _RELATIVE_DAYS.finditer(text):
         if match.group(1):
-            days, label = int(match.group(1)), f"fra {match.group(1)} giorni"
+            hints.append(f"per «fra {match.group(1)} giorni» chiama `add_days` con days={match.group(1)}")
         else:
-            days, label = -int(match.group(2)), f"{match.group(2)} giorni fa"
-        day = today + datetime.timedelta(days=days)
-        notes.append(f"{label} = {day.isoformat()}, {_GIORNI[day.weekday()]}")
-    return f"{text} (calcolato dal programma: {'; '.join(notes)})" if notes else text
+            hints.append(f"per «{match.group(2)} giorni fa» chiama `add_days` con days=-{match.group(2)}")
+    if _HOLIDAY_QUESTION.search(text):
+        words = f" {normalize_name(text)} "
+        for key, name in holiday_names().items():
+            if not key[0].isdigit() and f" {key} " in words.replace("'", " ' ").replace("?", " "):
+                hints.append(f'per i giorni che mancano chiama `find_holiday` con name="{name}" senza anno '
+                             "(conta la prossima)")
+                break
+    return f"{text} (indicazione del programma: {'; '.join(hints)})" if hints else text
 
 
-def with_explained_question(messages: list[AnyMessage], line: str) -> list[AnyMessage]:
+def with_explained_question(messages: list[AnyMessage]) -> list[AnyMessage]:
     """Copia per la chiamata al modello: solo le domande dell'utente, la cronologia resta com'era."""
-    return [m.model_copy(update={"content": explain_relative_days(explain_multiplication(m.content), line)})
+    return [m.model_copy(update={"content": tool_hints(explain_multiplication(m.content))})
             if isinstance(m, HumanMessage) and isinstance(m.content, str) else m for m in messages]
 
 
@@ -210,7 +215,7 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
         steps = state["steps"] + 1
         logger.debug("[grafo] nodo model: passaggio %d/%d", steps, max_steps)
         line = today() if today else ""
-        messages = with_today(with_explained_question(state["messages"], line), line)
+        messages = with_today(with_explained_question(state["messages"]), line)
         response = model_with_tools.invoke(with_summary(messages, state.get("summary", "")))
         if REASONING_KEY in response.additional_kwargs:
             # Il ragionamento si mostra in streaming ma non entra nella cronologia
