@@ -3,13 +3,14 @@
 import datetime
 import json
 import logging
+import re
 from collections.abc import Callable
 from typing import Annotated, NotRequired, TypedDict
 
 import openai
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, AnyMessage, RemoveMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, RemoveMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool, ToolException
 from langgraph.graph import END, START, StateGraph
@@ -20,6 +21,7 @@ from assistant.llm import REASONING_KEY
 from assistant.reviewer import Review, feedback_message, is_review_feedback, last_question_index
 from assistant.router import Route, refusal_text, router_context
 from assistant.summarizer import estimate_tokens, summary_cut, summary_line, transcript, with_summary
+from lab_server.holidays import holiday_names, normalize_name
 from lab_server.preferences import Preferences
 
 logger = logging.getLogger("assistant.graph")
@@ -63,17 +65,26 @@ def system_prompt(preferences: Preferences) -> str:
     return preferences_block(preferences) + "\n\n" + (
         "Sei l'assistente del laboratorio. "
         "Quando l'utente ti saluta, presentati brevemente. "
+        "Ricorda quello che l'utente ti dice di sé in questa conversazione (per esempio il nome) e usalo "
+        "quando te lo chiede: è nella cronologia, non è un dato privato da negare. "
         "Per ora, date, conversioni e calcoli usa sempre gli strumenti: non inventare i risultati. "
+        "Non hai strumenti per meteo, notizie, prezzi o altri dati in tempo reale oltre a ora e data: se te li "
+        "chiedono dillo chiaramente e non inventarli. "
         "Quando l'utente chiede l'ora o la data, usa lo strumento `get_current_time`. "
         "Per le conversioni di unità usa `convert_units`. "
         "Per qualsiasi calcolo, anche semplice, chiama sempre `calculate`. "
+        "In italiano «per» è la moltiplicazione e «diviso» la divisione: «37 per 19» è 37 * 19, "
+        "«37 diviso 19» è 37 / 19. "
         "Per un'equazione semplice riscrivila come espressione e chiama `calculate` con quella: "
         "per esempio per 2x = 28 chiama `calculate` con 28 / 2. "
         "Per giorni della settimana, festività e scadenze usa `date_info`, `find_holiday`, `add_days` e "
         "`days_between`, con le date nel formato AAAA-MM-GG; riporta anche gli avvisi degli strumenti, "
         "per esempio che una festività è già passata. "
+        "Per quanti giorni mancano a una festività chiama `find_holiday` senza anno: se quest'anno è già passata "
+        "ti dà la prossima, e conta la prossima, non quella passata. "
         "Per sapere quanti giorni mancano a una data o a una festività non contare tu i giorni: riporta il numero "
         "dato dagli strumenti (per esempio «fra N giorni») oppure chiama `days_between`. "
+        "Per sapere che data sarà fra N giorni (o che data era N giorni fa) chiama `add_days`: non calcolarla tu. "
         "Per qualsiasi domanda su un linguaggio di programmazione (chi l'ha creato, anno, paradigmi...) "
         "chiama sempre gli strumenti del catalogo prima di rispondere; non dire mai che un dato non c'è senza "
         "averlo cercato. Se l'utente indica un codice (es. XYZ), chiama subito `get_item` con quel codice. "
@@ -85,9 +96,9 @@ def system_prompt(preferences: Preferences) -> str:
         "lo strumento risponde «Nota N salvata», quindi non scrivere mai di averla salvata senza quella "
         "risposta. La scadenza va nel formato AAAA-MM-GG; se l'utente indica oggi, domani, dopodomani o un "
         "giorno della settimana (es. «venerdì»), non chiedergli la data e non calcolarla: passala così com'è "
-        "in `due_date` (es. due_date=\"venerdì\"). Per vedere le note usa `list_notes`. Per eliminare una nota usa `delete_note` "
+        "in `due_date` (es. due_date=\"venerdì\"). Per vedere le note usa `list_notes` e riportale con il loro ID (es. «nota 4»), senza numerarle 1, 2, 3. Per eliminare una nota usa `delete_note` "
         "con l'ID esatto preso da `list_notes`; se non è chiaro quale nota intende l'utente, chiediglielo; "
-        "prima di eliminare il programma chiederà conferma all'utente. Non dire mai che una nota è stata "
+        "prima di eliminare il programma chiederà conferma all'utente: non chiederla tu, chiama subito `delete_note`. Non dire mai che una nota è stata "
         "eliminata se lo strumento non lo conferma. "
         "Se uno strumento restituisce un errore, correggi gli argomenti oppure spiega l'errore all'utente. "
         f"Se l'utente non indica un fuso orario usa `{preferences.fuso_orario}`; "
@@ -106,6 +117,56 @@ def today_line(day: datetime.date, timezone: str) -> str:
     # Nomi da tabelle e non da locale/strftime: il risultato non dipende dal sistema
     return (f"Oggi è {_GIORNI[day.weekday()]} {day.day} {_MESI[day.month - 1]} {day.year} "
             f"({day.isoformat()}), fuso orario {timezone}.")
+
+
+_NUMBER = r"\d+(?:[.,]\d+)?"
+_PER_BETWEEN_NUMBERS = re.compile(rf"({_NUMBER})\s+per\s+(?={_NUMBER})")
+
+
+def explain_multiplication(text: str) -> str:
+    """«37 per 19» → «37 × 19»: il modello piccolo legge «per» come divisione. Con «dividi/dividere» non si tocca."""
+    if re.search(r"\bdivid", text, re.IGNORECASE):
+        return text
+    return _PER_BETWEEN_NUMBERS.sub(r"\1 × ", text)
+
+
+_RELATIVE_DAYS = re.compile(r"(?:fra|tra)\s+(\d{1,4})\s+giorni|(\d{1,4})\s+giorni\s+fa", re.IGNORECASE)
+
+
+_HOLIDAY_QUESTION = re.compile(r"\bmanca(?:no)?\b", re.IGNORECASE)
+
+# «che note ci sono?», «mostrami le note»: il modello a volte ricopiava l'elenco a memoria dalla chat
+_NOTES_LIST = re.compile(r"\b(?:che|quali|quante|elenc\w*|mostr\w*|vedere|lista|mie)\b.*\b(?:note|promemoria)\b"
+                         r"|\b(?:note|promemoria)\b.*\b(?:elenc\w*|lista)\b", re.IGNORECASE)
+# azioni sulle note (anche «ricordami/annota/segnami», che aggiungono): l'indicazione dell'elenco sarebbe sbagliata
+_NOTES_ACTION = re.compile(r"aggiung|\bcrea|salva|elimin|cancell|ricord|\bannot|\bsegn", re.IGNORECASE)
+
+
+def tool_hints(text: str) -> str:
+    """«fra 10 giorni», «100 giorni fa», «quanti giorni mancano all'Epifania»: indica al modello lo strumento e i
+    dati da passare (sbagliava i conti a mente o la festività passata); il risultato lo dà lo strumento, visibile."""
+    hints = []
+    for match in _RELATIVE_DAYS.finditer(text):
+        if match.group(1):
+            hints.append(f"per «fra {match.group(1)} giorni» chiama `add_days` con days={match.group(1)}")
+        else:
+            hints.append(f"per «{match.group(2)} giorni fa» chiama `add_days` con days=-{match.group(2)}")
+    if _HOLIDAY_QUESTION.search(text):
+        words = f" {normalize_name(text)} "
+        for key, name in holiday_names().items():
+            if not key[0].isdigit() and f" {key} " in words.replace("'", " ' ").replace("?", " "):
+                hints.append(f'per i giorni che mancano chiama `find_holiday` con name="{name}" senza anno '
+                             "(conta la prossima)")
+                break
+    if _NOTES_LIST.search(text) and not _NOTES_ACTION.search(text):
+        hints.append("per l'elenco delle note chiama `list_notes`")
+    return f"{text} (indicazione del programma: {'; '.join(hints)})" if hints else text
+
+
+def with_explained_question(messages: list[AnyMessage]) -> list[AnyMessage]:
+    """Copia per la chiamata al modello: solo le domande dell'utente, la cronologia resta com'era."""
+    return [m.model_copy(update={"content": tool_hints(explain_multiplication(m.content))})
+            if isinstance(m, HumanMessage) and isinstance(m.content, str) else m for m in messages]
 
 
 def with_today(messages: list[AnyMessage], line: str) -> list[AnyMessage]:
@@ -161,8 +222,9 @@ def build_graph(model: BaseChatModel, tools: list[BaseTool], max_steps: int,
     def model_node(state: State) -> dict:
         steps = state["steps"] + 1
         logger.debug("[grafo] nodo model: passaggio %d/%d", steps, max_steps)
-        response = model_with_tools.invoke(
-            with_summary(with_today(state["messages"], today() if today else ""), state.get("summary", "")))
+        line = today() if today else ""
+        messages = with_today(with_explained_question(state["messages"]), line)
+        response = model_with_tools.invoke(with_summary(messages, state.get("summary", "")))
         if REASONING_KEY in response.additional_kwargs:
             # Il ragionamento si mostra in streaming ma non entra nella cronologia
             extra = {k: v for k, v in response.additional_kwargs.items() if k != REASONING_KEY}

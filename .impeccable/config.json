@@ -1,0 +1,26 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "icon-tile-stack",
+        "value": "*",
+        "files": [
+          "frontend_service/static/index.html"
+        ],
+        "createdAt": "2026-11-25T14:56:51.269Z",
+        "reason": "Claude: il pulsante menu (38px, solo su schermo stretto) sta a fianco del titolo h1 nella stessa riga flex, non sopra; screenshot .impeccable/review/chat1m/390x844.png"
+      },
+      {
+        "rule": "pulsing-dot",
+        "value": "*",
+        "files": [
+          "frontend_service/static/index.html"
+        ],
+        "createdAt": "2026-11-25T16:51:06.655Z",
+        "reason": "Claude: il punto pulsa solo durante un turno vero in corso (in attesa, strumento, risposta, revisione) e si ferma a fine turno; è legato a uno stato live"
+      }
+    ]
+  }
+}

@@ -1,11 +1,12 @@
 import asyncio
 import json
 import threading
+import time
 
 import httpx
 from fastapi.testclient import TestClient
 
-from assistant.agent_http import AgentHTTPClient, parse_sse
+from assistant.agent_http import KEEPALIVE_EVENT, AgentHTTPClient, parse_sse
 from backend_service import streaming
 from backend_service.app import create_app
 from backend_service.streaming import sse, stream_turn_events
@@ -216,7 +217,7 @@ class FakeAgent:
     def __init__(self, make_stream):
         self.make_stream = make_stream
 
-    def stream_turn(self, payload):
+    def stream_turn(self, payload, keepalive=False):
         return self.make_stream()
 
 
@@ -348,3 +349,24 @@ def test_stream_start_is_logged(caplog):
     with caplog.at_level("INFO", logger="backend_service"):
         events_of(stream_send(client, cid))
     assert f"[backend] invio (stream) chat {cid}: inizio" in caplog.text
+
+
+def test_cancel_during_silent_phase_releases_the_chat_at_the_next_keepalive():
+    # Il client se ne va mentre l'agente tace (router, revisore): i keepalive bastano per accorgersene
+    store, turns, cid = setup_direct()
+    closed, released = threading.Event(), threading.Event()
+
+    def agent_stream():
+        try:
+            yield "risposta", {"testo": "Sono"}
+            while True:  # fase silenziosa senza fine: solo keepalive
+                time.sleep(0.05)
+                yield KEEPALIVE_EVENT, {}
+        except GeneratorExit:
+            closed.set()
+            raise
+
+    leave_after_first_event(turns, cid, agent_stream, released)
+    assert released.wait(WAIT)
+    assert closed.wait(WAIT)
+    assert store.get_messages(cid) == []

@@ -16,7 +16,7 @@ ROUTER_INSTRUCTIONS = (
     "decidi solo se l'ultima domanda dell'utente rientra nell'ambito.\n"
     "Non devi saper rispondere tu: anche se servono strumenti o dati in tempo reale, "
     "se l'argomento è in ambito la categoria è 'conversazione'.\n"
-    "Il motivo è una frase breve in italiano."
+    "Il motivo è una frase breve e completa in italiano, al massimo 12 parole."
 )
 
 REFUSAL = (
@@ -29,7 +29,10 @@ class Route(BaseModel):
     categoria: Literal["conversazione", "fuori_ambito"] = Field(
         description="'conversazione' se la domanda rientra nell'ambito, 'fuori_ambito' altrimenti."
     )
-    motivo: str = Field(description="Frase breve in italiano che spiega la scelta.")
+    # maxLength solo nello schema: il modello genera meno token (il router costava ~100 token a turno),
+    # ma la validazione non lo impone, così un server che lo ignora non fa fallire il router
+    motivo: str = Field(description="Frase breve in italiano che spiega la scelta.",
+                        json_schema_extra={"maxLength": 160})
 
 
 def router_prompt(scope: str, summary: str = "") -> str:
@@ -67,3 +70,10 @@ def build_router(model: BaseChatModel, scope: str) -> Callable[[list[AnyMessage]
 
 def refusal_text(route: Route) -> str:
     return REFUSAL.format(motivo=route.motivo.strip() or "argomento fuori ambito")
+
+
+def router_line(category: str, reason: str) -> str:
+    """Riga della decisione del router per il turno (es. «[router] in ambito: domanda sull'ora»)."""
+    label = "in ambito" if category == "conversazione" else "fuori ambito"
+    reason = " ".join((reason or "").split())
+    return f"[router] {label}: {reason}" if reason else f"[router] {label}"

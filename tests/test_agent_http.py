@@ -7,7 +7,7 @@ import sys
 import httpx
 import pytest
 
-from assistant.agent_http import AgentHTTPClient, AgentRequestError, AgentUnavailable
+from assistant.agent_http import KEEPALIVE_EVENT, AgentHTTPClient, AgentRequestError, AgentUnavailable, parse_sse
 
 
 def test_import_is_light():
@@ -52,3 +52,10 @@ def test_turn_connect_error_is_unavailable():
     client = AgentHTTPClient("http://agent", transport=httpx.MockTransport(handler))
     with pytest.raises(AgentUnavailable):
         client.turn({})
+
+
+def test_parse_sse_keepalive_only_on_request():
+    lines = [": ", "", "event: risposta", 'data: {"testo": "ok"}', "", ": "]
+    assert list(parse_sse(lines)) == [("risposta", {"testo": "ok"})]
+    assert list(parse_sse(lines, keepalive=True)) == [
+        (KEEPALIVE_EVENT, {}), ("risposta", {"testo": "ok"}), (KEEPALIVE_EVENT, {})]

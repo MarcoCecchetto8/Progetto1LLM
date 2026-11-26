@@ -74,6 +74,11 @@ def _days(n: int) -> str:
     return f"{n} giorno" if n == 1 else f"{n} giorni"
 
 
+def italian_date(iso: str) -> str:
+    """AAAA-MM-GG → GG-MM-AAAA, il formato che si mostra all'utente."""
+    return date.fromisoformat(iso).strftime("%d-%m-%Y")
+
+
 def due_phrase(due_date: str | None, today: date) -> str:
     if not due_date:
         return "senza scadenza"
@@ -84,7 +89,7 @@ def due_phrase(due_date: str | None, today: date) -> str:
         when = "scade oggi"
     else:
         when = f"scaduta da {_days(-delta)}"
-    return f"scadenza {due_date} ({when})"
+    return f"scadenza {italian_date(due_date)} ({when})"
 
 
 def _call(client: httpx.Client, method: str, url: str, **kw) -> httpx.Response:
@@ -133,6 +138,28 @@ def build_confirmation_check(client: httpx.Client,
 _WEEKDAYS = ["lunedi", "martedi", "mercoledi", "giovedi", "venerdi", "sabato", "domenica"]  # come date.weekday()
 _WEEKDAYS_EN = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 _ISO_DATE =re.compile(r"\d{4}-\d{2}-\d{2}")
+_ITALIAN_DATE = re.compile(r"(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})")
+# Ora in fondo alla scadenza: «alle 18:30», «ore 9», «at 9», oppure «18:30» / «18.30» (un numero da solo no)
+_HOUR = r"(?:[01]?\d|2[0-3])"
+_TIME = re.compile(rf"(?:^|[\s,]+)(?:(?:alle ore|alle|ore|at)\s*{_HOUR}(?:[:.][0-5]\d)?|{_HOUR}[:.][0-5]\d)$")
+
+
+def note_time(value: str | None) -> str | None:
+    """L'ora indicata nella scadenza («oggi alle 18:30» → «18:30», «domani alle 9» → «9»), se c'è."""
+    if not value:
+        return None
+    match = _TIME.search(_normalize(value).strip())
+    if not match:
+        return None
+    hour = re.search(r"(\d{1,2})(?:[:.](\d{2}))?$", match.group(0))
+    return f"{hour.group(1)}:{hour.group(2)}" if hour.group(2) else hour.group(1)
+
+
+def with_time(text: str, time: str | None) -> str:
+    """Le note non hanno un campo ora: se l'ora non è già nel testo, la aggiunge in fondo."""
+    if not time or re.search(rf"\b{time.split(':')[0]}(?:[:.]\d{{2}})?\b", text):
+        return text
+    return f"{text} (alle {time})"
 
 
 def resolve_due_date(value: str | None, today: date) -> str | None:
@@ -140,6 +167,16 @@ def resolve_due_date(value: str | None, today: date) -> str | None:
     if value is None or not value.strip():
         return None
     word = _normalize(value).strip()
+    # Le note non hanno un'ora: «18:30» vale oggi, «domani alle 9» vale domani (l'ora resta nel testo)
+    time = _TIME.search(word)
+    if time:
+        word = word[:time.start()].strip(" ,")
+        if not word:
+            return today.isoformat()
+    italian = _ITALIAN_DATE.fullmatch(word)
+    if italian:  # «13-11-2026», «13/11/2026», «13.11.2026»: come le scadenze mostrate all'utente
+        day, month, year = italian.groups()
+        word = f"{year}-{int(month):02d}-{int(day):02d}"
     if _ISO_DATE.fullmatch(word):
         return word
     # Il modello a volte ragiona in inglese: accetto anche le forme equivalenti
@@ -162,14 +199,20 @@ def build_note_tools(client: httpx.Client, today: Callable[[], date]) -> list[Ba
 
         text: testo della nota. due_date: scadenza opzionale, AAAA-MM-GG oppure oggi, domani, dopodomani o un
         giorno della settimana: per le date relative passa la parola così com'è (es. due_date="venerdì"),
-        il programma calcola la data; se l'utente non indica una scadenza, omettila."""
+        il programma calcola la data; un'ora è ammessa (es. due_date="oggi alle 18:30", da sola vale oggi):
+        la scadenza tiene solo il giorno, quindi scrivi l'ora anche nel testo. Se l'utente non indica una
+        scadenza, omettila."""
         due = resolve_due_date(due_date, today())
+        text = with_time(text, note_time(due_date))
         note = _call(client, "POST", "/notes", json={"text": text, "due_date": due}).json()
         return f"Nota {note['id']} salvata: «{note['text']}» · {due_phrase(note['due_date'], today())}."
 
     @tool
     def list_notes(limit: int = 10) -> str:
-        """Elenca le note salvate, con ID, testo e scadenza. limit: numero massimo di note da mostrare."""
+        """Elenca le note salvate, con ID, testo e scadenza. limit: numero massimo di note da mostrare.
+
+        Riporta ogni nota con il suo ID (es. «nota 4»), senza numerarle 1, 2, 3: l'utente userà quel numero
+        per eliminarle."""
         data = _call(client, "GET", "/notes", params={"limit": limit}).json()
         total, notes = data["total"], data["notes"]
         if not notes:
@@ -179,17 +222,20 @@ def build_note_tools(client: httpx.Client, today: Callable[[], date]) -> list[Ba
         else:
             header = "1 nota:" if total == 1 else f"{total} note:"
         day = today()
-        rows = [f"- {n['id']}: {n['text']} · {due_phrase(n['due_date'], day)}" for n in notes]
+        rows = [f"- nota {n['id']}: {n['text']} · {due_phrase(n['due_date'], day)}" for n in notes]
         return "\n".join([header, *rows])
 
     @tool
     def delete_note(note_id: int, config: RunnableConfig) -> str:
-        """Elimina una nota dato il suo ID (visibile con list_notes). Prima chiede conferma all'utente."""
+        """Elimina una nota dato il suo ID (visibile con list_notes). La conferma all'utente la chiede il programma:
+        non chiederla tu, chiama subito questo strumento."""
         try:
             note = _call(client, "GET", f"/notes/{note_id}").json()
         except ToolException as e:
             if "Nessuna nota con ID" in str(e):
-                raise ToolException(f"Nessuna nota con ID {note_id}: nulla è stato eliminato.") from e
+                ids = [n["id"] for n in _call(client, "GET", "/notes", params={"limit": 50}).json()["notes"]]
+                known = f"ID delle note salvate: {', '.join(map(str, sorted(ids)))}." if ids else "Non ci sono note salvate."
+                raise ToolException(f"Nessuna nota con ID {note_id}: nulla è stato eliminato. {known}") from e
             raise
         # La decisione arriva dal grafo, che ha sospeso il turno per chiederla all'utente
         decision = config.get("configurable", {}).get("note_decisions", {}).get(note_id)

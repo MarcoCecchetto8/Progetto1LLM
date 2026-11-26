@@ -1,6 +1,6 @@
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
-from assistant.router import (REFUSAL, ROUTER_CONTEXT_MESSAGES, ROUTER_INSTRUCTIONS, Route, build_router,
+from assistant.router import (REFUSAL, ROUTER_CONTEXT_MESSAGES, ROUTER_INSTRUCTIONS, Route, build_router, router_line,
                               refusal_text, router_context, router_prompt)
 from assistant.summarizer import SUMMARY_HEADER
 
@@ -87,6 +87,15 @@ def test_route_schema_enum():
     assert schema["properties"]["categoria"]["enum"] == ["conversazione", "fuori_ambito"]
 
 
+def test_route_reason_is_short_in_schema_only():
+    # Il limite va al modello nello schema (meno token da generare); la validazione in Python
+    # non lo impone, così un server che lo ignora non fa fallire il router
+    schema = Route.model_json_schema()
+    assert schema["properties"]["motivo"]["maxLength"] == 160
+    assert list(schema["properties"]) == ["categoria", "motivo"]  # la decisione prima del motivo
+    assert Route(categoria="conversazione", motivo="x" * 300).motivo == "x" * 300
+
+
 def test_router_context_never_starts_with_assistant():
     # Alcuni template di chat (Gemma 2/3, Mistral) rifiutano un assistente subito dopo il sistema
     turns = []
@@ -100,3 +109,15 @@ def test_router_context_never_starts_with_assistant():
 
 def test_refusal_text_with_blank_reason():
     assert refusal_text(Route(categoria="fuori_ambito", motivo="  ")) == REFUSAL.format(motivo="argomento fuori ambito")
+
+
+def test_router_instructions_ask_for_short_reason():
+    # Il motivo finisce nel testo del rifiuto: deve chiudersi da solo prima del limite dello schema
+    assert "al massimo 12 parole" in ROUTER_INSTRUCTIONS
+
+
+def test_router_line():
+    # La decisione del router finisce fra le righe del turno (menù «dettagli» della pagina)
+    assert router_line("conversazione", "domanda sull'ora  in\nuna città") == "[router] in ambito: domanda sull'ora in una città"
+    assert router_line("fuori_ambito", "ricetta") == "[router] fuori ambito: ricetta"
+    assert router_line("conversazione", "") == "[router] in ambito"

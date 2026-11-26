@@ -1,0 +1,638 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-25T15:07:32+00:00",
+  "title": "Design System: Pico",
+  "extensions": {
+    "colorMeta": {
+      "ground": {
+        "role": "neutral",
+        "displayName": "Intonaco",
+        "canonical": "#dfe4df",
+        "tonalRamp": [
+          "#0a0c0a",
+          "#232623",
+          "#404340",
+          "#5e625e",
+          "#7f847f",
+          "#a2a6a2",
+          "#c7cac7",
+          "#edefed"
+        ],
+        "dark": "#121614"
+      },
+      "ground-deep": {
+        "role": "neutral",
+        "displayName": "Intonaco profondo",
+        "canonical": "#d3d9d4",
+        "tonalRamp": [
+          "#0a0c0a",
+          "#232624",
+          "#3f4340",
+          "#5e635f",
+          "#7f8480",
+          "#a2a6a3",
+          "#c6cac7",
+          "#ecefed"
+        ],
+        "dark": "#10150f"
+      },
+      "rail": {
+        "role": "primary",
+        "displayName": "Verde museo",
+        "canonical": "#1f3b33",
+        "tonalRamp": [
+          "#040e0a",
+          "#192924",
+          "#324741",
+          "#4d685f",
+          "#6e8980",
+          "#93aba3",
+          "#bacec8",
+          "#e3f3ed"
+        ],
+        "dark": "#1d3a31"
+      },
+      "rail-hover": {
+        "role": "primary",
+        "displayName": "Verde museo, passaggio",
+        "canonical": "#284a40",
+        "tonalRamp": [
+          "#030e0a",
+          "#162a24",
+          "#2f4840",
+          "#49695f",
+          "#6a8b80",
+          "#90aca3",
+          "#b8cfc7",
+          "#e1f3ed"
+        ],
+        "dark": "#25463c"
+      },
+      "rail-active": {
+        "role": "primary",
+        "displayName": "Verde museo, selezione",
+        "canonical": "#315a4e",
+        "tonalRamp": [
+          "#010f0a",
+          "#132a23",
+          "#2b4940",
+          "#446a5f",
+          "#658c80",
+          "#8caea3",
+          "#b5d0c7",
+          "#dff4ed"
+        ],
+        "dark": "#2f5a4d"
+      },
+      "rail-ink": {
+        "role": "neutral",
+        "displayName": "Testo della colonna",
+        "canonical": "#eef3ef",
+        "tonalRamp": [
+          "#0a0c0a",
+          "#232624",
+          "#404340",
+          "#5e625f",
+          "#7f8480",
+          "#a2a6a3",
+          "#c7cac7",
+          "#edefed"
+        ],
+        "dark": "#e8eee9"
+      },
+      "rail-mute": {
+        "role": "neutral",
+        "displayName": "Testo spento della colonna",
+        "canonical": "#b5c7bd",
+        "tonalRamp": [
+          "#070d0a",
+          "#1f2723",
+          "#39453f",
+          "#56655d",
+          "#77877e",
+          "#9ba9a1",
+          "#c1ccc6",
+          "#e8f1ec"
+        ],
+        "dark": "#9fb3a8"
+      },
+      "rail-line": {
+        "role": "neutral",
+        "displayName": "Filetto della colonna",
+        "canonical": "#3d5f54",
+        "tonalRamp": [
+          "#030e0a",
+          "#162a23",
+          "#2f4840",
+          "#49695f",
+          "#6a8b7f",
+          "#90aca2",
+          "#b8cfc7",
+          "#e1f3ed"
+        ],
+        "dark": "#3a5c51"
+      },
+      "card": {
+        "role": "neutral",
+        "displayName": "Smalto",
+        "canonical": "#fbfbf8",
+        "tonalRamp": [
+          "#0b0b0a",
+          "#252524",
+          "#424240",
+          "#61615f",
+          "#828280",
+          "#a5a5a3",
+          "#c9c9c7",
+          "#eeeeed"
+        ],
+        "dark": "#1e2622"
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Filetto",
+        "canonical": "#c3cbc5",
+        "tonalRamp": [
+          "#090c0a",
+          "#222623",
+          "#3e4340",
+          "#5d635e",
+          "#7d847f",
+          "#a1a7a2",
+          "#c5cbc7",
+          "#ecf0ed"
+        ],
+        "dark": "#34403a"
+      },
+      "line-strong": {
+        "role": "neutral",
+        "displayName": "Filetto forte",
+        "canonical": "#8d9b93",
+        "tonalRamp": [
+          "#080c0a",
+          "#202723",
+          "#3b453f",
+          "#59655e",
+          "#79867f",
+          "#9da8a2",
+          "#c2ccc6",
+          "#e9f1ec"
+        ],
+        "dark": "#5a6a62"
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Inchiostro",
+        "canonical": "#1b1f1d",
+        "tonalRamp": [
+          "#0a0c0b",
+          "#232624",
+          "#3f4341",
+          "#5e6260",
+          "#7f8481",
+          "#a2a6a4",
+          "#c7cac8",
+          "#ecefee"
+        ],
+        "dark": "#e6ebe7"
+      },
+      "mute": {
+        "role": "neutral",
+        "displayName": "Inchiostro spento",
+        "canonical": "#4f5c55",
+        "tonalRamp": [
+          "#080c0a",
+          "#202723",
+          "#3b453f",
+          "#58655e",
+          "#79867f",
+          "#9da8a2",
+          "#c2ccc7",
+          "#e9f1ec"
+        ],
+        "dark": "#a4b1aa"
+      },
+      "brass": {
+        "role": "secondary",
+        "displayName": "Ottone",
+        "canonical": "#8a6a2a",
+        "tonalRamp": [
+          "#140800",
+          "#332200",
+          "#553e0c",
+          "#795c21",
+          "#9c7d44",
+          "#bba172",
+          "#dcc69f",
+          "#feecce"
+        ],
+        "dark": "#d4b06a"
+      },
+      "brass-bright": {
+        "role": "secondary",
+        "displayName": "Ottone chiaro",
+        "canonical": "#c9a35a",
+        "tonalRamp": [
+          "#150800",
+          "#342100",
+          "#573d00",
+          "#7c5b11",
+          "#9e7d3a",
+          "#bea16a",
+          "#dec699",
+          "#ffecc9"
+        ],
+        "dark": "#d4b06a"
+      },
+      "focus": {
+        "role": "secondary",
+        "displayName": "Ottone del focus",
+        "canonical": "#b08a3e",
+        "tonalRamp": [
+          "#150800",
+          "#352100",
+          "#573d00",
+          "#7c5b0d",
+          "#9f7c37",
+          "#bea069",
+          "#dfc698",
+          "#ffecc8"
+        ]
+      },
+      "strip": {
+        "role": "neutral",
+        "displayName": "Grafite",
+        "canonical": "#2b2b2a",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252524",
+          "#424241",
+          "#616160",
+          "#828281",
+          "#a5a5a4",
+          "#c9c9c8",
+          "#eeeeee"
+        ],
+        "dark": "#0b0d0c"
+      },
+      "strip-ink": {
+        "role": "neutral",
+        "displayName": "Testo della grafite",
+        "canonical": "#f1f0ea",
+        "tonalRamp": [
+          "#0b0b09",
+          "#262522",
+          "#43423e",
+          "#62615d",
+          "#83827d",
+          "#a6a5a1",
+          "#cac9c5",
+          "#efeeec"
+        ],
+        "dark": "#eeede6"
+      },
+      "strip-mute": {
+        "role": "neutral",
+        "displayName": "Testo spento della grafite",
+        "canonical": "#b9b8b0",
+        "tonalRamp": [
+          "#0c0b09",
+          "#262521",
+          "#43423d",
+          "#62615b",
+          "#83837c",
+          "#a6a59f",
+          "#cac9c4",
+          "#efefea"
+        ],
+        "dark": "#a9a89f"
+      },
+      "signal": {
+        "role": "tertiary",
+        "displayName": "Rosso Olivetti",
+        "canonical": "#c8102e",
+        "tonalRamp": [
+          "#290000",
+          "#540002",
+          "#830014",
+          "#b50e29",
+          "#de424a",
+          "#fa7675",
+          "#ffa5a2",
+          "#ffd4cf"
+        ],
+        "dark": "#ff6b7f"
+      },
+      "signal-soft": {
+        "role": "tertiary",
+        "displayName": "Rosso tenue",
+        "canonical": "#fbe9ec",
+        "tonalRamp": [
+          "#0f090a",
+          "#2b2324",
+          "#4a3f41",
+          "#6b5d5f",
+          "#8d7e80",
+          "#aea1a3",
+          "#d1c6c8",
+          "#f5eced"
+        ],
+        "dark": "#3a1a20"
+      },
+      "user": {
+        "role": "primary",
+        "displayName": "Verde del messaggio utente",
+        "canonical": "#1f3b33",
+        "tonalRamp": [
+          "#040e0a",
+          "#192924",
+          "#324741",
+          "#4d685f",
+          "#6e8980",
+          "#93aba3",
+          "#bacec8",
+          "#e3f3ed"
+        ],
+        "dark": "#2b5246"
+      },
+      "user-ink": {
+        "role": "neutral",
+        "displayName": "Testo del messaggio utente",
+        "canonical": "#f6f8f6",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242524",
+          "#414241",
+          "#606260",
+          "#818381",
+          "#a4a5a4",
+          "#c8c9c8",
+          "#eeefee"
+        ],
+        "dark": "#f2f6f3"
+      },
+      "action": {
+        "role": "primary",
+        "displayName": "Verde dell'azione",
+        "canonical": "#1f3b33",
+        "tonalRamp": [
+          "#040e0a",
+          "#192924",
+          "#324741",
+          "#4d685f",
+          "#6e8980",
+          "#93aba3",
+          "#bacec8",
+          "#e3f3ed"
+        ],
+        "dark": "#3d7d69"
+      },
+      "action-hover": {
+        "role": "primary",
+        "displayName": "Verde dell'azione, passaggio",
+        "canonical": "#315a4e",
+        "tonalRamp": [
+          "#010f0a",
+          "#132a23",
+          "#2b4940",
+          "#446a5f",
+          "#658c80",
+          "#8caea3",
+          "#b5d0c7",
+          "#dff4ed"
+        ],
+        "dark": "#33705d"
+      },
+      "action-text": {
+        "role": "primary",
+        "displayName": "Verde come testo",
+        "canonical": "#1f3b33",
+        "tonalRamp": [
+          "#040e0a",
+          "#192924",
+          "#324741",
+          "#4d685f",
+          "#6e8980",
+          "#93aba3",
+          "#bacec8",
+          "#e3f3ed"
+        ],
+        "dark": "#7fc4ab"
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Solo il saluto della vista vuota."
+      },
+      "brand": {
+        "displayName": "Brand",
+        "purpose": "Il nome «Pico» in cima alla colonna."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Titolo della chat nell'intestazione."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Messaggi e risposte, cifre tabellari."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Maiuscolo spaziato: intestazione dell'elenco, stato del turno, etichetta del revisore, dicitura «Scheda»."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Schede degli strumenti, codice, nomi degli strumenti."
+      }
+    },
+    "shadows": [
+      {
+        "name": "cartellino",
+        "value": "0 1px 2px rgba(27, 47, 40, 0.10), 0 4px 12px rgba(27, 47, 40, 0.06)",
+        "dark": "0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 12px rgba(0, 0, 0, 0.25)",
+        "purpose": "Esempi, schede degli strumenti, riquadro di conferma."
+      },
+      {
+        "name": "risposta",
+        "value": "0 1px 2px rgba(27, 47, 40, 0.08)",
+        "purpose": "Contatto appena accennato sotto la risposta."
+      },
+      {
+        "name": "cassetto",
+        "value": "0 0 24px rgba(0, 0, 0, 0.25)",
+        "purpose": "Colonna aperta come cassetto su schermo stretto."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state",
+        "value": "160ms ease-out",
+        "purpose": "Fondo, bordo, colore, opacità e sollevamento di 1px degli esempi."
+      },
+      {
+        "name": "drawer",
+        "value": "200ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+        "purpose": "Entrata e uscita della colonna su schermo stretto."
+      },
+      {
+        "name": "pulse",
+        "value": "1.2s ease-in-out infinite",
+        "purpose": "Punto dello stato del turno e puntini dell'attesa."
+      },
+      {
+        "name": "cursor",
+        "value": "0.9s steps(2) infinite",
+        "purpose": "Cursore d'ottone della scheda in esecuzione."
+      },
+      {
+        "name": "reduced",
+        "value": "none",
+        "purpose": "Con prefers-reduced-motion animazioni e transizioni si azzerano."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "narrow",
+        "value": "860px"
+      }
+    ],
+    "focus": {
+      "value": "2px solid var(--focus)",
+      "offset": "2px",
+      "purpose": "Anello d'ottone su ogni controllo; aderente (offset 0) sulla casella."
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Unica azione primaria della vista: «Invia», «Conferma le scelte».",
+      "html": "<button class=\"ds-btn-primary\">Invia</button>",
+      "css": ".ds-btn-primary{min-width:116px;min-height:44px;padding:0 24px;border:1px solid var(--action, #1f3b33);border-radius:6px;background:var(--action, #1f3b33);color:#f6f8f6;font:600 15px/1.55 var(--font, \"Segoe UI\", system-ui, sans-serif);cursor:pointer;transition:background-color 160ms ease-out} .ds-btn-primary:hover:not(:disabled){background:var(--action-hover, #315a4e)} .ds-btn-primary:focus-visible{outline:2px solid var(--focus, #b08a3e);outline-offset:2px} .ds-btn-primary:disabled{background:var(--card, #fbfbf8);border-color:var(--line-strong, #8d9b93);color:var(--mute, #4f5c55);cursor:not-allowed}"
+    },
+    {
+      "name": "Stop Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Interruzione del turno in corso, in rosso.",
+      "html": "<button class=\"ds-btn-secondary\">Interrompi</button>",
+      "css": ".ds-btn-secondary{min-width:116px;min-height:44px;padding:0 24px;border:1px solid var(--signal, #c8102e);border-radius:6px;background:var(--card, #fbfbf8);color:var(--signal, #c8102e);font:600 15px/1.55 var(--font, \"Segoe UI\", system-ui, sans-serif);cursor:pointer;transition:background-color 160ms ease-out} .ds-btn-secondary:hover{background:var(--signal-soft, #fbe9ec)} .ds-btn-secondary:focus-visible{outline:2px solid var(--focus, #b08a3e);outline-offset:2px}"
+    },
+    {
+      "name": "Rail Button",
+      "kind": "button",
+      "refersTo": "button-rail",
+      "description": "«Nuova chat» dentro la colonna verde.",
+      "html": "<div class=\"ds-rail-wrap\"><button class=\"ds-btn-rail\"><svg viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M8 3v10M3 8h10\"/></svg>Nuova chat</button></div>",
+      "css": ".ds-rail-wrap{background:var(--rail, #1f3b33);padding:16px;width:268px} .ds-btn-rail{display:flex;align-items:center;gap:8px;width:100%;padding:9px 12px;border:1px solid var(--rail-line, #3d5f54);border-radius:6px;background:transparent;color:var(--rail-ink, #eef3ef);font:600 15px/1.55 var(--font, \"Segoe UI\", system-ui, sans-serif);text-align:left;cursor:pointer;transition:background-color 160ms ease-out,border-color 160ms ease-out} .ds-btn-rail:hover{background:var(--rail-hover, #284a40);border-color:var(--rail-mute, #b5c7bd)} .ds-btn-rail:focus-visible{outline:2px solid var(--focus, #b08a3e);outline-offset:2px}"
+    },
+    {
+      "name": "Composer",
+      "kind": "input",
+      "refersTo": "input-composer",
+      "description": "Casella della domanda, con cursore d'ottone.",
+      "html": "<textarea class=\"ds-composer\" rows=\"2\" placeholder=\"Scrivi una domanda a Pico…\"></textarea>",
+      "css": ".ds-composer{width:420px;min-height:56px;padding:10px 14px;border:1px solid var(--line-strong, #8d9b93);border-radius:6px;background:var(--card, #fbfbf8);color:var(--ink, #1b1f1d);font:15px/1.45 var(--font, \"Segoe UI\", system-ui, sans-serif);caret-color:var(--brass, #8a6a2a);resize:vertical} .ds-composer::placeholder{color:var(--mute, #4f5c55)} .ds-composer:focus-visible{outline:2px solid var(--focus, #b08a3e);outline-offset:0;border-color:var(--focus, #b08a3e)}"
+    },
+    {
+      "name": "Chat List",
+      "kind": "nav",
+      "refersTo": "nav-chat-item-active",
+      "description": "Elenco delle chat nella colonna verde, con la voce corrente evidenziata.",
+      "html": "<ul class=\"ds-chats\"><li class=\"ds-chat ds-chat-on\"><span class=\"ds-chat-t\">Che ore sono a Tokyo?</span><span class=\"ds-chat-d\">oggi, 10:42</span></li><li class=\"ds-chat\"><span class=\"ds-chat-t\">Giorni a Natale</span><span class=\"ds-chat-d\">ieri</span></li></ul>",
+      "css": ".ds-chats{list-style:none;margin:0;padding:16px;width:268px;display:grid;gap:2px;background:var(--rail, #1f3b33);color:var(--rail-ink, #eef3ef);font-family:var(--font, \"Segoe UI\", system-ui, sans-serif)} .ds-chat{display:grid;gap:1px;padding:8px 10px;border-radius:6px;cursor:pointer;transition:background-color 160ms ease-out} .ds-chat:hover{background:var(--rail-hover, #284a40)} .ds-chat-on{background:var(--rail-active, #315a4e)} .ds-chat-t{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .ds-chat-d{font-size:12px;color:var(--rail-mute, #b5c7bd)}"
+    },
+    {
+      "name": "Tool Tag",
+      "kind": "chip",
+      "refersTo": "tag-tool",
+      "description": "Etichetta dello strumento sotto le domande d'esempio.",
+      "html": "<span class=\"ds-tool-tag\">get_current_time</span>",
+      "css": ".ds-tool-tag{display:inline-block;padding:2px 8px;border-radius:3px;background:var(--strip, #2b2b2a);color:var(--strip-ink, #f1f0ea);font:12px/1.5 var(--mono, Consolas, ui-monospace, monospace)} .ds-tool-tag::before{content:\"→ \";color:var(--brass-bright, #c9a35a)}"
+    },
+    {
+      "name": "Turn State",
+      "kind": "chip",
+      "description": "Stato del turno nell'intestazione: punto pieno e maiuscolo spaziato.",
+      "html": "<p class=\"ds-turn\">strumento in corso</p>",
+      "css": ".ds-turn{margin:0;display:inline-flex;align-items:center;gap:8px;font:700 11px/1.55 var(--font, \"Segoe UI\", system-ui, sans-serif);letter-spacing:0.12em;text-transform:uppercase;color:var(--brass, #8a6a2a)} .ds-turn::before{content:\"\";width:8px;height:8px;border-radius:50%;background:currentColor;animation:ds-pulse 1.2s ease-in-out infinite} @keyframes ds-pulse{50%{opacity:.3}} @media (prefers-reduced-motion:reduce){.ds-turn::before{animation:none}}"
+    },
+    {
+      "name": "Answer Card",
+      "kind": "card",
+      "refersTo": "card-answer",
+      "description": "Cartellino smaltato della risposta di Pico.",
+      "html": "<div class=\"ds-answer\"><p>A Tokyo sono le <b>18:42</b> di martedì.</p></div>",
+      "css": ".ds-answer{width:min(680px,100%);padding:12px 18px;border:1px solid var(--line, #c3cbc5);border-radius:4px;background:var(--card, #fbfbf8);color:var(--ink, #1b1f1d);box-shadow:0 1px 2px rgba(27,47,40,.08);font:15px/1.55 var(--font, \"Segoe UI\", system-ui, sans-serif)} .ds-answer p{margin:0}"
+    },
+    {
+      "name": "Tool Card",
+      "kind": "custom",
+      "refersTo": "card-tool",
+      "description": "Scheda-reperto della Programma 101: numero in ottone, nome, argomenti, esito.",
+      "html": "<div class=\"ds-tool\"><div class=\"ds-tool-num\">Scheda<b>1</b></div><div class=\"ds-tool-body\"><span class=\"ds-tool-name\">get_current_time</span><span class=\"ds-tool-args\">timezone=Asia/Tokyo</span><span class=\"ds-tool-res\">2026-11-25T18:42:00+09:00</span></div></div>",
+      "css": ".ds-tool{width:min(680px,100%);display:grid;grid-template-columns:96px minmax(0,1fr);border:1px solid var(--strip, #2b2b2a);border-radius:4px;background:var(--strip, #2b2b2a);color:var(--strip-ink, #f1f0ea);box-shadow:0 1px 2px rgba(27,47,40,.10),0 4px 12px rgba(27,47,40,.06);overflow:hidden} .ds-tool-num{display:grid;align-content:center;gap:2px;padding:10px 12px;border-right:1px dashed #55554f;font:700 10px/1.4 var(--font, \"Segoe UI\", system-ui, sans-serif);letter-spacing:.16em;text-transform:uppercase;color:var(--strip-mute, #b9b8b0)} .ds-tool-num b{font-size:22px;line-height:1;letter-spacing:0;color:var(--brass-bright, #c9a35a)} .ds-tool-body{display:grid;gap:4px;padding:10px 14px;min-width:0;font:13.5px/1.45 var(--mono, Consolas, ui-monospace, monospace)} .ds-tool-name{font-weight:700} .ds-tool-args{color:var(--strip-mute, #b9b8b0);overflow-wrap:anywhere} .ds-tool-res{display:flex;gap:8px} .ds-tool-res::before{content:\"→\";color:var(--brass-bright, #c9a35a)}"
+    },
+    {
+      "name": "Review Note",
+      "kind": "custom",
+      "description": "Cartellino del revisore accanto alla risposta.",
+      "html": "<p class=\"ds-review\"><span class=\"ds-review-l\">Revisore</span><span>coerente</span></p>",
+      "css": ".ds-review{display:inline-flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin:0;padding:5px 12px;border:1px solid var(--line, #c3cbc5);border-radius:4px;background:var(--card, #fbfbf8);color:var(--ink, #1b1f1d);font:13px/1.55 var(--font, \"Segoe UI\", system-ui, sans-serif)} .ds-review-l{font-size:10.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--brass, #8a6a2a)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "La sala del museo della scienza",
+    "overview": "Pico vive in una sala di museo della scienza: intonaco grigio-verde come fondo, una colonna verde museo a sinistra che fa da indice delle sale (le chat), cartellini smaltati chiari a bordo sottile per le risposte. Gli strumenti che l'assistente esegue davvero non spariscono dietro la risposta: compaiono come schede magnetiche della Programma 101, bande grafite a tutta cornice con testo monospaziato, numero in ottone e l'esito su una riga propria. Il meccanismo è il reperto esposto.\n\nLa densità è quella di uno strumento di lavoro, non di una vetrina: scala tipografica stretta, gerarchia affidata al peso e al maiuscoletto spaziato più che alla dimensione, cifre tabellari ovunque perché tempi, numeri di scheda e conteggi dei token si leggano in colonna. Il rosso Olivetti è raro e significa sempre la stessa cosa: errore, avviso, scelta irreversibile. Tema chiaro e scuro seguono il sistema; lo scuro mantiene gli stessi ruoli con superfici più profonde e accenti più luminosi.",
+    "keyCharacteristics": [
+      "Fondo intonaco, colonna verde museo, cartellini chiari a bordo sottile.",
+      "Schede-strumento grafite e monospaziate, numerate in ottone, con stato «in esecuzione» ed esito.",
+      "Un'unica famiglia sans, gerarchia per peso e etichette in maiuscolo spaziato.",
+      "Rosso riservato a errori, avvisi ed eliminazioni.",
+      "Movimento minimo: transizioni di 160ms e un solo impulso per l'attesa."
+    ],
+    "rules": [
+      {
+        "name": "The Red Means Stop Rule",
+        "body": "Il rosso compare solo per errori, avvisi e azioni irreversibili. Mai come decorazione, mai come accento di marca.",
+        "section": "colors"
+      },
+      {
+        "name": "The Brass On Dark Rule",
+        "body": "L'ottone chiaro sta solo su grafite o verde; sul fondo chiaro si usa l'ottone scuro, che regge il contrasto.",
+        "section": "colors"
+      },
+      {
+        "name": "The Weight Not Size Rule",
+        "body": "La gerarchia si fa con peso e maiuscolo spaziato; la scala resta stretta (10px-30px).",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Rule",
+        "body": "Le cifre sono sempre tabellari: tempi, numeri di scheda e token devono allinearsi.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tonal First Rule",
+        "body": "Prima il tono e il filetto, poi l'ombra. L'ombra non cresce al passaggio: gli esempi si sollevano di 1px e cambiano bordo.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** mostrare ogni strumento eseguito come scheda grafite numerata, con argomenti ed esito su righe proprie.",
+      "**Do** usare il verde museo per la struttura (colonna) e per l'unica azione primaria della vista.",
+      "**Do** tenere l'ottone chiaro (`brass-bright`) solo su grafite o verde, e l'ottone scuro (`brass`) sul fondo chiaro.",
+      "**Do** usare cifre tabellari e il monospaziato per tutto ciò che viene dalla macchina.",
+      "**Do** mantenere transizioni di 160ms ease-out e azzerare animazioni e transizioni con `prefers-reduced-motion`.",
+      "**Do** dare a ogni controllo l'anello di focus d'ottone di 2px."
+    ],
+    "donts": [
+      "**Don't** usare il rosso per altro che errori, avvisi ed eliminazioni.",
+      "**Don't** nascondere gli strumenti dietro la risposta o ridurli a una riga grigia.",
+      "**Don't** usare bolle grigie e un accento blu: i messaggi dell'utente sono fogli verdi a 4px, le risposte cartellini smaltati.",
+      "**Don't** introdurre una seconda famiglia sans o ombre più profonde del cartellino."
+    ]
+  }
+}

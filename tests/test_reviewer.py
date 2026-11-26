@@ -102,3 +102,11 @@ def test_build_reviewer_with_today():
     model = FakeModel()
     build_reviewer(model, today=lambda: "Oggi è X.")("domanda", "risposta")
     assert model.invoked[1] == HumanMessage("Oggi è X.\n\n" + review_request("domanda", "risposta"))
+
+
+def test_review_reason_is_short_in_schema_only():
+    # Come per il router: limite nello schema per il modello, nessuna validazione che possa fallire
+    schema = Review.model_json_schema()
+    assert schema["properties"]["motivo"]["maxLength"] == 160
+    assert list(schema["properties"]) == ["coerente", "motivo"]  # il giudizio prima del motivo
+    assert Review(coerente=True, motivo="x" * 400).motivo == "x" * 400

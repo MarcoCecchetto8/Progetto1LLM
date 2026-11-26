@@ -87,6 +87,23 @@ browser ──HTTP──► frontend_service (8003): index.html, app.js, style.c
 - Chat senza messaggi: nell'elenco si mostra la data di `creata`.
 - Payload degli eventi SSE (inoltrati dall'agente così come sono): `strumento {nome, argomenti}`, `esito_strumento {nome, contenuto, errore}`, `risposta {testo}` (pezzo incrementale), `riga {testo}`, `ragionamento {testo}`, `fine` = corpo di `TurnResult`, `errore {codice, messaggio}`. Gli elementi di `strumenti` nei messaggi salvati sono `{nome, argomenti, esito, errore}`.
 
+**Misure della risposta** (richiesta dell'utente del 2026-11-25, dopo l'approvazione): sotto ogni risposta arrivata in streaming nella sessione, una riga discreta con **tempo totale** (dall'invio all'evento `fine`), **tempo al primo token** (dall'invio al primo evento `risposta`, che comprende router e strumenti) e **≈ token** (numero di eventi `risposta` ricevuti: con LM Studio di solito un pezzo per token, quindi un'approssimazione dichiarata). Si misurano nel browser e non si salvano: le risposte rilette dal back-end non le mostrano. Conteggio esatto dei token (uso riportato dal modello) fuori ambito: richiederebbe di modificare agente e back-end.
+
+**Direzione visiva** (scelta dell'utente con impeccable): «Sala dei reperti» (cartellini smaltati del Museo della Scienza e della Tecnologia di Milano) per palette e ordine, con gli strumenti mostrati come le schede magnetiche della Olivetti Programma 101. Il contratto di direzione sta in `.impeccable/surfaces/`.
+
+**Revisione 2026-11-25 (scelte dell'utente dopo la prova reale):** nel messaggio di Pico c'è solo la risposta; schede degli strumenti, righe informative (revisore), misure e ragionamento stanno in un menù a tendina (`<details>`) chiuso, la cui riga nomina gli strumenti usati, lo stato e i secondi. La risposta in arrivo resta **nascosta finché il revisore non l'approva** (decisione dell'utente: un revisore deve filtrare prima che si legga la risposta; la bozza visibile, provata per prima, è stata scartata): si vedono solo gli stati «Pico scrive la risposta…» e, 1,5 s dopo l'ultimo pezzo, «Il revisore controlla la risposta…»; con «[revisore] coerente» compare la risposta con il timbro «✓ revisionata». Revisore con un solo giro (`MAX_REVIEWS=1`); `MAX_REVIEWS=0` lo spegne del tutto e la risposta compare a fine turno.
+
+**Revisione 2026-11-26 — bozza visibile in streaming (sostituisce la risposta nascosta).** Scelta dell'utente dopo la prova nel browser: la risposta deve arrivare in streaming fino al browser (slide 18 della lezione 6: «Con il revisore attivo, scegliere se mostrare la bozza mentre viene scritta oppure solo la risposta approvata, e documentare la scelta»). Uno streaming della sola risposta approvata non esiste: il revisore giudica il testo completo, quindi quando approva la risposta è già tutta scritta. Si sceglie quindi la **bozza visibile**:
+- ogni pezzo di `risposta` aggiorna subito il testo nel messaggio di Pico, con colore attenuato (`--mute`) e timbro «in revisione…»; prima del primo pezzo resta lo stato «Pico sta pensando…»;
+- 1,5 s dopo l'ultimo pezzo la barra di stato e la riga del menù dicono «in revisione…», ma il testo resta visibile;
+- con `[revisore] coerente` il testo prende il colore normale e il timbro diventa «✓ revisionata»; con verdetto non valido o limite raggiunto il testo resta e il timbro è quello di oggi;
+- con `[revisore] non coerente` la bozza è sostituita dallo stato «Il revisore ha chiesto una nuova risposta…» e la nuova bozza arriva in streaming come la prima;
+- senza revisore (`MAX_REVIEWS=0`, nessuna riga del revisore) a fine turno il timbro sparisce e il testo prende il colore normale; rifiuti del router e avvisi delle note si mostrano come oggi;
+- dopo il riavvio della pagina le risposte salvate si vedono come oggi (testo normale e timbro dalle righe salvate).
+La scelta e il motivo vanno anche nel README.
+
+**Revisione 2026-11-26 — conferma dell'eliminazione di una chat a tema.** Al posto di `window.confirm` (giudicata brutta dall'utente) una finestra modale `<dialog>` nello stile del riquadro di conferma delle note: titolo «Eliminare la chat?», nome della chat, «I messaggi non si possono recuperare.», pulsanti «Annulla» (con il focus all'apertura, così Invio non cancella) ed «Elimina chat» (rosso, `--signal`). Esc o un clic fuori annullano. Tema chiaro e scuro come la pagina; funziona anche nel pannello stretto. Nessun cambio di API.
+
 **Accessibilità e aspetto**: design con la skill impeccable (palette, tipografia, spaziature, stati vuoti, stato di attesa); contrasto sufficiente, focus visibile, pulsanti con etichetta, area messaggi `aria-live="polite"`; tema chiaro e scuro secondo il sistema. Nessun font o script esterno (funziona offline).
 
 ## 6. Test

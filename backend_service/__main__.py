@@ -15,6 +15,13 @@ from backend_service.app import create_app
 from backend_service.store import PostgresChatStore, StoreUnavailable
 
 DEFAULT_AGENT_URL = "http://127.0.0.1:8001"
+DEFAULT_CORS_ORIGINS = ["http://127.0.0.1:8003", "http://localhost:8003"]
+
+
+def parse_cors_origins(value: str) -> list[str]:
+    """Origini ammesse da BACKEND_CORS_ORIGINS (separate da virgole); vuota: quelle del front-end locale."""
+    origins = [part.strip().rstrip("/") for part in value.split(",")]
+    return [origin for origin in origins if origin] or list(DEFAULT_CORS_ORIGINS)
 
 
 def _without_password(url: str) -> str:
@@ -62,7 +69,7 @@ def main() -> None:
 
     agent = AgentHTTPClient(os.environ.get("BACKEND_AGENT_URL", "").strip() or DEFAULT_AGENT_URL)
     uvicorn.run(
-        create_app(store, agent),
+        create_app(store, agent, parse_cors_origins(os.environ.get("BACKEND_CORS_ORIGINS", ""))),
         host=args.host,
         port=args.port,
         log_level=logging.getLevelName(level).lower(),

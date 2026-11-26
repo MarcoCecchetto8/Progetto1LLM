@@ -65,6 +65,7 @@ def create_server(default_timezone: str, now: Callable[[], datetime] = utc_now,
         """Calcola un'espressione aritmetica in modo sicuro.
 
         Ammessi: numeri (decimali con il punto), + - * /, parentesi, potenza con ^ o **.
+        In italiano «per» è la moltiplicazione (37 per 19 → 37 * 19), «diviso» la divisione.
         Non ammessi: lettere, funzioni (es. sqrt) ed equazioni con = (riscrivile come espressione).
         """
         try:
@@ -106,12 +107,15 @@ def create_server(default_timezone: str, now: Callable[[], datetime] = utc_now,
         """Data che si ottiene aggiungendo (o togliendo, se negativo) un numero di giorni.
 
         start: data di partenza AAAA-MM-GG; se omessa si parte da oggi.
+        Esempi: «fra 45 giorni» → days=45; «100 giorni fa» → days=-100 (senza start).
         """
         return run(f"add_days({days}, {start})", lambda: dates.add_days(days, start, today()))
 
     @mcp.tool
     def days_between(end: str, start: str | None = None) -> str:
         """Numero di giorni fra due date AAAA-MM-GG (es. quanti giorni mancano a una scadenza).
+
+        Non serve per «che data era N giorni fa» o «che data sarà fra N giorni»: per quello usa add_days.
 
         start: data di partenza; se omessa si parte da oggi.
         """

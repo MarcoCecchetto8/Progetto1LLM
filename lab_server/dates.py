@@ -46,6 +46,10 @@ def find_holiday(name: str, year: int | None, today: date) -> str:
     if year is not None:
         canonical, day = holiday_date(name, year)
         passed = " È già passata." if day < today else ""
+        if day < today and year == today.year:
+            # Anno in corso e già passata: per «quanti giorni mancano» serve la prossima
+            _, following = holiday_date(name, year + 1)
+            passed += f" La prossima è il {_short(following)}, fra {(following - today).days} giorni."
         return f"{canonical} {year}: {describe(day, today)}{passed} {NOTE}"
     canonical, day = holiday_date(name, today.year)
     if day >= today:

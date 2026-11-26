@@ -7,6 +7,7 @@ import time
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from assistant.agent_http import AgentHTTPClient, AgentRequestError, AgentUnavailable
@@ -39,8 +40,13 @@ def _error(status: int, code: str, message: str) -> UTF8JSONResponse:
     return UTF8JSONResponse(status_code=status, content={"codice": code, "messaggio": message})
 
 
-def create_app(store: ChatStore, agent: AgentHTTPClient) -> FastAPI:
+def create_app(store: ChatStore, agent: AgentHTTPClient, cors_origins: list[str] | None = None) -> FastAPI:
     app = FastAPI(title="Back-end delle chat", default_response_class=UTF8JSONResponse)
+
+    # CORS solo per le origini indicate (il front-end nel browser); senza origini, nessun middleware
+    if cors_origins:
+        app.add_middleware(CORSMiddleware, allow_origins=cors_origins, allow_methods=["GET", "POST", "DELETE"],
+                           allow_headers=["Content-Type"], allow_credentials=False)
 
     @app.exception_handler(RequestValidationError)
     def validation_error_handler(request: Request, exc: RequestValidationError):

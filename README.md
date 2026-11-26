@@ -197,7 +197,7 @@ Entrambi gli esempi sono stati eseguiti il 2026-11-18 con Windows PowerShell 5.1
 
 ## Back-end delle chat
 
-Un servizio HTTP (FastAPI, porta 8002) che salva le chat in PostgreSQL e per ogni domanda chiama l'agente (`agent_service`, solo via HTTP: non importa grafo, LangChain né client MCP). Serve al front-end dello step 8; per ora si prova da PowerShell o da `/docs`. La CLI non lo usa e conserva la cronologia solo per la sessione.
+Un servizio HTTP (FastAPI, porta 8002) che salva le chat in PostgreSQL e per ogni domanda chiama l'agente (`agent_service`, solo via HTTP: non importa grafo, LangChain né client MCP). Lo usa il front-end web dello step 8 (vedi «Front-end»); si prova anche da PowerShell o da `/docs`. La CLI non lo usa e conserva la cronologia solo per la sessione.
 
 **Prerequisiti.** Nel `.env` (copiandole da `.env.example`) servono `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` (per il container `db`) e `DATABASE_URL` (per il back-end in locale, per esempio `postgresql://lab:cambiami@127.0.0.1:5433/lab`: utente, password e database devono coincidere con i `POSTGRES_*`). Facoltativa `BACKEND_AGENT_URL` (indirizzo dell'agente, predefinito `http://127.0.0.1:8001`; distinta da `AGENT_SERVICE_URL` della CLI). `TEST_DATABASE_URL` serve solo ai test con PostgreSQL vero (vedi «Test»). Prima di `docker compose up -d db` le variabili vanno aggiunte al proprio `.env`.
 
@@ -271,9 +271,69 @@ Gli eventi sono quelli dell'agente (`ragionamento`, `risposta`, `strumento`, `es
 
 - Un turno alla volta per chat (una seconda richiesta sulla stessa chat dà 409); chat diverse possono inviare insieme, ma l'agente serializza i turni.
 - Un solo processo del back-end: il segno «turno in corso» è in memoria e non vale tra processi.
-- Alcuni messaggi dell'agente nominano la CLI («usa 'clear'», «riavvia l'assistente»): sono inoltrati invariati; adattarli è lasciato allo step 8.
+- Alcuni messaggi dell'agente nominano la CLI («usa 'clear'», «riavvia l'assistente»): sono inoltrati invariati, anche al front-end.
 - Nessun container del back-end e nessuna modifica ad `agent` e `app` in Compose fino allo step 9. Il servizio `db` pubblica la porta solo su `127.0.0.1:5433` (non 5432, per non scontrarsi con un PostgreSQL installato su Windows, che di solito occupa la 5432).
 - Nessuna autenticazione.
+
+## Front-end
+
+Una pagina web di chat (HTML, CSS e JavaScript, senza framework né build) servita da un piccolo servizio FastAPI (`frontend_service/`, porta 8003). Il browser parla **solo con il back-end** (`http://127.0.0.1:8002`), mai con l'agente o con le note. Il servizio del front-end serve la pagina, i file statici e `/config.js`, che dice alla pagina l'indirizzo del back-end.
+
+**Prerequisiti.** Database, agente e back-end accesi (vedi «Back-end delle chat»); per le risposte serve anche LM Studio.
+
+**Avvio** in tre terminali PowerShell, con il venv attivo in ciascuno:
+
+```powershell
+# terminale 1
+docker compose up -d db
+python -m agent_service
+```
+
+```powershell
+# terminale 2
+python -m backend_service
+```
+
+```powershell
+# terminale 3
+python -m frontend_service
+```
+
+**Tempi di risposta (misurati il 2026-11-25 su questo portatile: i7-1355U, grafica integrata Iris Xe, `liquid/lfm2-24b-a2b`).** Ogni turno fa tre chiamate al modello (router, agente, revisore; due per l'agente quando usa uno strumento) e il tempo va quasi tutto nella lettura dei prompt. Sulla grafica integrata (runtime Vulkan, flash attention non supportata) la lettura va a 36–45 token al secondo; **con il modello solo su CPU va a 56–68 token al secondo**, con generazione quasi uguale (13–15 token al secondo). Misure su CPU: primo turno con strumento a freddo 83 s (prima oltre 2 minuti), turno con strumento a cache calda circa 35 s (router ~7 s, agente ~8 s, revisore ~12 s). Router e revisore hanno un motivo breve (`maxLength` nello schema JSON: circa 45 token generati invece di 100). Se il modello viene scaricato per inattività (caricamento automatico con TTL di 60 minuti) si aggiunge circa un minuto. Back-end, agente e pagina pesano pochi millisecondi. Prima di una presentazione:
+
+```powershell
+# modello solo su CPU e sempre carico (senza --ttl non viene scaricato per inattività)
+& "$env:USERPROFILE\.lmstudio\bin\lms.exe" unload --all
+& "$env:USERPROFILE\.lmstudio\bin\lms.exe" load liquid/lfm2-24b-a2b --gpu off --context-length 8192 --parallel 4 -y
+```
+
+poi, con tutto acceso, si manda una domanda di prova dalla pagina e si aspetta la risposta: le domande successive partono con le cache calde. In LM Studio (impostazioni del modello, «CPU Thread Pool Size») il modello usa 4 thread su 12: alzarli può accelerare ancora la lettura dei prompt (non misurato). Per risposte più rapide si può spegnere il revisore con `MAX_REVIEWS=0` nel `.env` (circa 12 s in meno a turno, ma la riga «Revisore» non compare più) e riavviare l'agente.
+
+Poi si apre http://127.0.0.1:8003 nel browser. Il front-end parte su `127.0.0.1:8003` (opzioni `--host`, `--port`, `--quiet`) e si ferma con Ctrl+C. Se `FRONTEND_BACKEND_URL` non inizia con `http://` o `https://`, esce con codice 1 e un messaggio su stderr («FRONTEND_BACKEND_URL non valida: ...»).
+
+| Variabile | Dove | Default | Note |
+|---|---|---|---|
+| `FRONTEND_BACKEND_URL` | front-end | `http://127.0.0.1:8002` | indirizzo del back-end che la pagina chiama (via `/config.js`); la barra finale si toglie |
+| `BACKEND_CORS_ORIGINS` | back-end | `http://127.0.0.1:8003,http://localhost:8003` | origini del front-end ammesse dal back-end (CORS), separate da virgole; la pagina va aperta da una di queste |
+
+**Che cosa fa la pagina.**
+
+- Elenco delle chat (la più recente in alto), «Nuova chat» ed eliminazione con una finestra di conferma a tema («Annulla» ha il focus; Esc o un clic fuori annullano). «Nuova chat» non crea nulla subito: la chat nasce al primo invio.
+- Messaggi della chat aperta: nel messaggio di Pico c'è solo la risposta, con il timbro «✓ revisionata» quando il revisore l'ha approvata; sotto, un menù a tendina chiuso (la riga nomina lo strumento usato) con schede degli strumenti, righe del revisore, tempi e ragionamento (se il modello lo manda). La risposta arriva in streaming come **bozza**: il testo compare man mano, attenuato e con il timbro «in revisione…»; quando il revisore l'approva prende il colore normale e il timbro «✓ revisionata»; se la boccia, la bozza è sostituita da «Il revisore ha chiesto una nuova risposta…» e la nuova arriva di nuovo in streaming; senza revisore (`MAX_REVIEWS=0`) a fine turno il timbro sparisce.
+- **Scelta di streaming con il revisore (slide 18 della lezione 6)**: si mostra la bozza mentre viene scritta, non solo la risposta approvata. Lo streaming della sola risposta approvata non esiste: il revisore giudica il testo completo, quindi quando approva la risposta è già tutta scritta. Nascondere la bozza (provato il 25/11) lasciava la pagina ferma per 30–40 s; il timbro dice sempre se il testo è già stato approvato. Il testo del riassunto della cronologia, quando scatta, sta nel menù dei dettagli e non nella risposta.
+- Invio invia, Maiuscolo+Invio va a capo.
+- Risposta in streaming: le parole compaiono man mano; durante l'attesa casella e «Invia» sono disattivati e c'è il pulsante «Interrompi». Dopo l'interruzione la pagina rilegge la chat: se Pico era già quasi alla fine la risposta può essere salvata comunque (vedi «Interruzione dello streaming»), altrimenti la domanda torna nella casella.
+- Nel menù dei dettagli di ogni risposta arrivata nella sessione una riga di misure (i secondi anche nella riga chiusa): tempo totale, tempo al primo token (comprende router e strumenti) e «≈ token» (pezzi ricevuti in streaming, un'approssimazione). Si misurano nel browser e non si salvano.
+- Conferma delle eliminazioni delle note dal browser («Elimina» / «Non eliminare»), anche riaprendo una chat con la conferma in attesa.
+- Errori in italiano, con il messaggio del back-end, senza bloccare la pagina; la domanda non inviata resta nella casella.
+- Su schermo stretto l'elenco delle chat diventa un pannello a scomparsa. Nessun font o script esterno.
+
+**Limiti.**
+
+- La logica JavaScript (lettura dello streaming, resa del testo, stati della pagina) non ha test automatici (niente Node): si prova nel browser. I test automatici coprono il servizio del front-end, il CORS del back-end e il contratto con `/openapi.json`.
+- Alcuni messaggi dell'agente nominano la CLI («usa 'clear'», «riavvia l'assistente»): la pagina li mostra così come sono.
+- Un errore 500 imprevisto del back-end arriva al browser senza intestazioni CORS, e la pagina lo mostra come «Il back-end non risponde…».
+- Il container del front-end e la sistemazione in Compose arrivano allo step 9. Nessuna autenticazione.
 
 ## Che cosa si vede durante un turno
 
@@ -462,6 +522,17 @@ Invoke-RestMethod -Method Delete http://127.0.0.1:8000/notes/1
 La `POST` restituisce `{"id":1,"text":"prova","due_date":"2026-11-13","created_at":"2026-11-09T16:06:38+00:00"}` (`created_at` è in UTC), la `GET` `{"total":1,"notes":[...]}` con quella nota, la `DELETE` la nota eliminata. Il servizio scrive su stderr una riga per ogni creazione (`nota creata id=1 testo=prova scadenza=2026-11-13`) ed eliminazione. `http://127.0.0.1:8000/docs` risponde 200. Si ferma con Ctrl+C.
 
 Con Docker (2026-11-09): `docker compose config`, `docker compose build` e `docker compose up -d notes` vanno a buon fine; `docker compose ps` mostra `notes` acceso con `127.0.0.1:8000->8000/tcp` (porta pubblicata solo su localhost). Dall'host le stesse tre chiamate funzionano e `data/notes.db` viene scritto attraverso la cartella montata (l'utente non root `appuser` del container riesce a scrivere). `docker compose down` ferma e rimuove il container.
+
+### Numeri delle note
+
+Una nota nuova prende il **numero libero più piccolo** (1 con l'archivio vuoto; dopo un'eliminazione il buco è ripreso dalla nota successiva) e l'elenco è **per numero crescente**, con la scadenza accanto. Una nota esistente non cambia mai numero. Per rinumerare una volta sola un archivio con numeri sparsi (servizio delle note spento, quindi anche agente e Docker `notes` spenti):
+
+```powershell
+Copy-Item data\notes.db data\notes.db.bak
+python -m notes_service.compact
+```
+
+Stampa le corrispondenze (`5 → 1`, …) oppure `Nessuna nota da rinumerare.`; `--db` indica un altro file. Nelle chat salvate prima della rinumerazione i numeri scritti sono quelli vecchi.
 
 ## Prova reale
 
@@ -736,16 +807,37 @@ Limiti osservati:
 - Il modello a volte non chiama `delete_note`. Una volta ha chiesto conferma a parole («Confermi l'eliminazione…?»): rispondendo «sì» ha chiamato lo strumento ed è arrivata la conferma vera. Un'altra volta, nella stessa chat, ha dichiarato l'eliminazione senza farla: il controllo dei falsi successi ha aggiunto l'avviso, ma il revisore l'ha giudicata coerente. In una chat nuova lo strumento è stato chiamato subito. Il limite è del modello e c'era già prima del back-end.
 - Incollare più comandi insieme in Windows PowerShell 5.1 può sembrare bloccare la finestra (righe `>>`, e un clic nella finestra attiva la selezione e mette in pausa l'output): i comandi partono lo stesso, e ogni nuovo Invio riesegue il blocco (quattro chat «Prova» in più). Meglio una riga alla volta.
 
+### Prova reale del front-end
+
+Prove da fare nel browser (http://127.0.0.1:8003) con database, agente, back-end, front-end e LM Studio accesi. Esiti della prova dell'utente del 2026-11-26 (modello `liquid/lfm2-24b-a2b`). Non provato nel browser: il testo del riassunto automatico nel menù invece che nella bozza (serve una chat oltre `SUMMARY_THRESHOLD`). Tempi osservati: circa 39 s per il primo turno di una chat, circa 30 s per i successivi, di più con le note.
+
+| Prova | Atteso | Esito |
+|---|---|---|
+| Conversazione con uno strumento dal browser (per esempio «Che ore sono?») | la risposta compare, con la riga dello strumento usato | ok (2026-11-26): «che note ci sono?» con `list_notes` nel menù, note 1…9 in ordine |
+| Chat creata dall'interfaccia, poi arresto e riavvio del back-end e ricarica della pagina | la chat è ancora in elenco con i suoi messaggi | ok (2026-11-26) |
+| Agente spento, invio di una domanda | messaggio di errore comprensibile, pagina utilizzabile, domanda ancora nella casella | ok (2026-11-26) |
+| Risposta in streaming | il testo compare man mano come bozza «in revisione…», poi «✓ revisionata» | ok (2026-11-26); prima la risposta era nascosta fino al verdetto, cambiata su richiesta dell'utente |
+| «Che note ci sono?» | `list_notes` nel menù, note per numero crescente | ok (2026-11-26); prima della modifica il modello a volte ricopiava l'elenco a memoria (note dimenticate, «la 14 è stata eliminata» falso, segnalato dall'avviso) |
+| Nuova nota dopo un'eliminazione | riprende il numero libero più piccolo | ok (2026-11-26): dopo la compattazione 5…28 → 1…9, nuova nota 10; eliminata la 3, la nota successiva ha preso il 3; «Ricordami di comprare il caffè domani» salvata con `add_note` |
+| Eliminazione di una nota: prima «Non eliminare», poi «Elimina» | con «Non eliminare» la nota resta; con «Elimina» viene eliminata | ok (2026-11-26): traccia «Conferma · nota N: non eliminata / eliminata» |
+| Eliminazione di una chat | finestra di conferma a tema («Annulla» / «Elimina chat»), poi la chat sparisce dall'elenco | ok (2026-11-26): prima con la conferma del browser, giudicata brutta e sostituita con la finestra a tema; Annulla, Esc, clic fuori ed «Elimina chat» provati |
+| «Interrompi» durante una risposta | la risposta si ferma; salvata solo se Pico era già alla fine; il turno successivo funziona | ok (2026-11-26): nota «Risposta interrotta», domanda successiva senza avvisi |
+| Finestra stretta | sotto gli 860 px l'elenco diventa un pannello che si apre con ☰, la chat resta usabile | ok (2026-11-26, screenshot a 700 px); a metà schermo su 1920 px (circa 960 px) la disposizione resta quella larga |
+
 ## Diagnosi
 
 | Sintomo | Causa probabile e rimedio |
 |---|---|
+| La pagina mostra «Il back-end non risponde all'indirizzo …» | il back-end è spento o l'indirizzo è sbagliato: avviare `python -m backend_service` e controllare `FRONTEND_BACKEND_URL` (poi riavviare il front-end) |
+| Errore CORS nella console del browser | la pagina è aperta da un'origine non elencata in `BACKEND_CORS_ORIGINS` (altra porta o altro host, per esempio con `--port` diverso): aprire http://127.0.0.1:8003 oppure aggiungere l'origine alla variabile e riavviare il back-end |
+| `FRONTEND_BACKEND_URL non valida: ...` all'avvio del front-end | l'indirizzo non inizia con `http://` o `https://`: correggerlo nel `.env` |
 | `[preferenze] resource non disponibile (...): uso italiano, sintetico, <fuso>` | (avviso mostrato anche in avvio normale) il file delle preferenze manca o non si legge: controllare `PREFERENCES_FILE` e `config/preferenze.json`; l'avvio prosegue con le riserve |
 | `[preferenze] <campo> '<valore>' non ammesso: uso '<riserva>'` o `<campo> mancante: uso '<riserva>'` | campo assente, valore fuori elenco (lingua, stile) o fuso inesistente: correggere il file e riavviare; gli altri campi valgono |
 | `[preferenze] contenuto non valido (...): uso italiano, sintetico, <fuso>` | il file non è un oggetto JSON valido: correggerlo e riavviare |
 | il riassunto è lento o scatta troppo spesso | ogni riassunto è una chiamata in più al modello: alzare `SUMMARY_THRESHOLD` |
 | `[riassunto] non riuscito (...): cronologia invariata` | il riassunto non è riuscito (errore di LM Studio o testo vuoto): la cronologia resta invariata e il turno prosegue |
-| il revisore rimanda indietro risposte corrette, o il turno è lento | il revisore è un modello piccolo e ogni giudizio costa circa 23 s: ridurre `MAX_REVIEWS` (anche a `0`) |
+| la pagina aspetta 35 s o più prima di rispondere (oltre un minuto la prima volta) | è la velocità del modello su questo portatile, non un errore: vedi «Tempi di risposta» nella sezione «Front-end» (modello solo su CPU e sempre carico, domanda di prova prima della demo, eventualmente `MAX_REVIEWS=0`); il contatore accanto allo stato mostra i secondi trascorsi |
+| il revisore rimanda indietro risposte corrette, o il turno è lento | il revisore è un modello piccolo e ogni giudizio costa circa 12 s su questo portatile: ridurre `MAX_REVIEWS` (anche a `0`) |
 | `... non valida` o `... mancante` all'avvio | variabile del `.env` assente o con valore non valido: il messaggio indica quale |
 | `LM Studio non raggiungibile o risposta non valida su .../models` all'avvio | server di LM Studio spento o su un'altra porta: avviarlo e controllare `LMSTUDIO_BASE_URL` |
 | `Modello '...' non trovato. Modelli disponibili: ...` | `LMSTUDIO_MODEL` non corrisponde a un id di `GET /v1/models`: copiarne uno dall'elenco |

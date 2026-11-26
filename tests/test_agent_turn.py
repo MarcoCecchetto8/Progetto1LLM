@@ -71,7 +71,7 @@ def test_refusal_in_lines_and_answer():
     out = run_turn(graph, "sistema", [], ask("carbonara?"), "", SETTINGS)
     expected = REFUSAL.format(motivo="cucina")
     assert out.answer == expected
-    assert out.lines == [expected]
+    assert out.lines == ["[router] fuori ambito: cucina", expected]
 
 
 def test_event_recorder_fifo_and_lines():

@@ -22,11 +22,18 @@ class AgentRequestError(Exception):
         self.status = status  # codice HTTP della risposta; None se l'errore è arrivato come evento SSE
 
 
-def parse_sse(lines: Iterable[str]) -> Iterator[tuple[str, dict]]:
+# Evento finto per i keepalive («: »): solo su richiesta, per chi deve accorgersi presto di un annullamento
+KEEPALIVE_EVENT = "keepalive"
+
+
+def parse_sse(lines: Iterable[str], keepalive: bool = False) -> Iterator[tuple[str, dict]]:
     """Eventi `event:`/`data:` chiusi da una riga vuota; l'ultimo vale anche senza la riga vuota finale."""
     name, data = None, []
     for raw in lines:
         line = raw.rstrip("\r\n")
+        if keepalive and line.startswith(":"):
+            yield KEEPALIVE_EVENT, {}
+            continue
         if not line:
             if name is not None:
                 yield name, json.loads("\n".join(data))
@@ -86,13 +93,13 @@ class AgentHTTPClient:
             raise error_from(response)
         return response.json()
 
-    def stream_turn(self, payload: dict) -> Iterator[tuple[str, dict]]:
+    def stream_turn(self, payload: dict, keepalive: bool = False) -> Iterator[tuple[str, dict]]:
         try:
             with self._http.stream("POST", "/chat/stream", json=payload) as response:
                 if response.status_code != 200:
                     response.read()
                     raise error_from(response)
-                yield from parse_sse(_sse_lines(response.iter_text()))
+                yield from parse_sse(_sse_lines(response.iter_text()), keepalive)
         except httpx.TransportError as error:
             raise AgentUnavailable(UNAVAILABLE) from error
 

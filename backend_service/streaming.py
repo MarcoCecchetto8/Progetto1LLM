@@ -8,7 +8,7 @@ import threading
 import time
 from collections.abc import AsyncIterator, Callable
 
-from assistant.agent_http import AgentHTTPClient, AgentRequestError, AgentUnavailable
+from assistant.agent_http import KEEPALIVE_EVENT, AgentHTTPClient, AgentRequestError, AgentUnavailable
 from backend_service.errors import AGENT_DOWN, DB_DOWN, BackendError
 from backend_service.schemas import TurnResult
 from backend_service.store import StoreUnavailable
@@ -32,12 +32,17 @@ def _error(code: str, message: str) -> tuple[str, dict]:
 def _read_agent(turns: ChatTurns, agent: AgentHTTPClient, chat_id: int, payload: dict, question: str,
                 events: queue.Queue, cancelled: threading.Event) -> str:
     """Inoltra gli eventi dell'agente; al `fine` salva qui, nel thread, anche se il client se n'è andato."""
-    stream = agent.stream_turn(payload)
+    # Con i keepalive dell'agente (ogni 0,5 s) l'annullamento si vede anche nelle fasi silenziose
+    stream = agent.stream_turn(payload, keepalive=True)
     try:
-        # Limite strutturale: il thread è fermo dentro l'iteratore dell'agente e vede l'annullamento solo tra
-        # un evento e l'altro; nelle fasi silenziose (router, modello prima del primo token, revisore) il turno
-        # non si può interrompere prima, e l'agente può arrivare al `fine` con le sue azioni già fatte.
+        # Il thread vede l'annullamento fra un evento e l'altro: anche i keepalive contano, quindi entro
+        # circa mezzo secondo pure nelle fasi silenziose (router, revisore). Se l'agente arriva prima al
+        # `fine`, le sue azioni sono già fatte e il turno si salva.
         for name, data in stream:
+            if name == KEEPALIVE_EVENT:
+                if cancelled.is_set():
+                    return "interrotto"  # uscire dal for chiude lo stream verso l'agente, che ferma il turno
+                continue
             if name == "fine":
                 # Si salva anche se il client se n'è andato: le azioni del turno sono già avvenute
                 result = turns.finish(chat_id, question, data)

@@ -276,3 +276,11 @@ def test_date_line_uses_preferences_timezone():
     utc = datetime(2026, 11, 20, 3, 30, tzinfo=timezone.utc)  # a New York è ancora il 19
     line = date_line_for("America/New_York", now=lambda zone: utc.astimezone(zone))()
     assert line == "Oggi è giovedì 19 novembre 2026 (2026-11-19), fuso orario America/New_York."
+
+
+def test_reviewer_is_off_with_max_reviews_zero():
+    # MAX_REVIEWS=0 spegne il revisore: nessuna chiamata al modello per giudicare la risposta
+    built = []
+    assert startup.reviewer_for(0, lambda: built.append(1) or "revisore") is None
+    assert built == []
+    assert startup.reviewer_for(1, lambda: "revisore") == "revisore"
