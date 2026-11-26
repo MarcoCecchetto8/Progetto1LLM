@@ -126,3 +126,21 @@ def test_persistence(tmp_path):
     path = tmp_path / "notes.db"
     note = NoteStore(path).add("resta", "2026-11-13")
     assert NoteStore(path).list_notes() == (1, [note])
+
+
+def test_compact_command_prints_arrow_on_cp1252_stdout(tmp_path, monkeypatch):
+    # uscita reindirizzata su Windows (cp1252): la «→» non deve far fallire il comando dopo la rinumerazione
+    import io
+    import sys
+
+    from notes_service import compact
+    db = tmp_path / "notes.db"
+    store = NoteStore(db)
+    store.add("a")
+    store.add("b")
+    store.delete(1)
+    raw = io.BytesIO()
+    monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(raw, encoding="cp1252"))
+    compact.main(["--db", str(db)])
+    sys.stdout.flush()
+    assert "2 → 1" in raw.getvalue().decode("utf-8")

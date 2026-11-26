@@ -1,6 +1,7 @@
 """Compattazione una tantum dei numeri delle note: 1…N in ordine di numero. Da lanciare a servizio spento."""
 
 import argparse
+import sys
 from pathlib import Path
 
 from notes_service.__main__ import DEFAULT_DB
@@ -14,6 +15,8 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("--db", type=Path, default=DEFAULT_DB, help="file SQLite delle note")
     args = parser.parse_args(argv)
+    # con l'uscita reindirizzata Windows userebbe cp1252: la «→» farebbe fallire il comando dopo la rinumerazione
+    sys.stdout.reconfigure(encoding="utf-8")
     changed = NoteStore(args.db).compact()
     if not changed:
         print("Nessuna nota da rinumerare.")

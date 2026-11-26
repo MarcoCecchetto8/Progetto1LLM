@@ -797,7 +797,14 @@ def test_tool_hints(text, hint):
 
 @pytest.mark.parametrize("text", ["Che ore sono a Tokyo?", "Natale è una bella festa", "Quanto fa 37 per 19?",
                                   "elimina la nota cinque", "Aggiungi una nota: comprare il latte",
-                                  "cancella tutte le note", "salva queste note sul Python"])
+                                  "cancella tutte le note", "salva queste note sul Python",
+                                  # elenco + azione: decide il modello, niente indicazione
+                                  "quali note ho? eliminale", "mostrami la lista delle note e poi creane una",
+                                  "che note ho? aggiungine una",
+                                  # «ricordami/annota/segna»: è un'aggiunta, non un elenco
+                                  "Ricordami di vedere le note del corso domani",
+                                  "annota che devo rivedere le mie note di Python",
+                                  "segnami che devo stampare la lista delle note"])
 def test_tool_hints_leave_other_questions(text):
     assert tool_hints(text) == text
 

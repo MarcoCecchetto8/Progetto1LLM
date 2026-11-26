@@ -739,7 +739,12 @@ async function runTurn(path, body, view, text, usersBefore = null) {
           updateTrace(view, "riscrittura…");
           setTurnState("review");
         }
-        if (line.startsWith("[")) {
+        // dopo «[riassunto] …» arriva il testo del riassunto: va nel menù, non nella risposta
+        const summaryText = view.afterSummary && !line.startsWith("[");
+        view.afterSummary = line.startsWith("[riassunto]");
+        if (summaryText) {
+          view.trace.body.append(infoLine(line));
+        } else if (line.startsWith("[")) {
           view.trace.body.append(infoLine(line));
           const verdict = reviewVerdict([line]);
           if (verdict) {
@@ -791,7 +796,7 @@ async function runTurn(path, body, view, text, usersBefore = null) {
   state.controller = null;
   setBusy(false);
   // revisore spento: nessun verdetto, la bozza diventa la risposta senza timbro
-  if (view.writing && !view.revealed) reveal(view);
+  if (view.answer.classList.contains("answer-draft")) reveal(view);
   metrics.total = performance.now() - started;
   hideInfoAlert();
   if (outcome.esito === "conferma_richiesta") {

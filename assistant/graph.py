@@ -138,7 +138,8 @@ _HOLIDAY_QUESTION = re.compile(r"\bmanca(?:no)?\b", re.IGNORECASE)
 # «che note ci sono?», «mostrami le note»: il modello a volte ricopiava l'elenco a memoria dalla chat
 _NOTES_LIST = re.compile(r"\b(?:che|quali|quante|elenc\w*|mostr\w*|vedere|lista|mie)\b.*\b(?:note|promemoria)\b"
                          r"|\b(?:note|promemoria)\b.*\b(?:elenc\w*|lista)\b", re.IGNORECASE)
-_NOTES_ACTION = re.compile(r"aggiung|\bcrea|salva|elimin|cancell", re.IGNORECASE)
+# azioni sulle note (anche «ricordami/annota/segnami», che aggiungono): l'indicazione dell'elenco sarebbe sbagliata
+_NOTES_ACTION = re.compile(r"aggiung|\bcrea|salva|elimin|cancell|ricord|\bannot|\bsegn", re.IGNORECASE)
 
 
 def tool_hints(text: str) -> str:
