@@ -318,7 +318,7 @@ Poi si apre http://127.0.0.1:8003 nel browser. Il front-end parte su `127.0.0.1:
 
 **Che cosa fa la pagina.**
 
-- Elenco delle chat (la più recente in alto), «Nuova chat» ed eliminazione con conferma del browser. «Nuova chat» non crea nulla subito: la chat nasce al primo invio.
+- Elenco delle chat (la più recente in alto), «Nuova chat» ed eliminazione con una finestra di conferma a tema («Annulla» ha il focus; Esc o un clic fuori annullano). «Nuova chat» non crea nulla subito: la chat nasce al primo invio.
 - Messaggi della chat aperta: nel messaggio di Pico c'è solo la risposta, con il timbro «✓ revisionata» quando il revisore l'ha approvata; sotto, un menù a tendina chiuso (la riga nomina lo strumento usato) con schede degli strumenti, righe del revisore, tempi e ragionamento (se il modello lo manda). La risposta arriva in streaming come **bozza**: il testo compare man mano, attenuato e con il timbro «in revisione…»; quando il revisore l'approva prende il colore normale e il timbro «✓ revisionata»; se la boccia, la bozza è sostituita da «Il revisore ha chiesto una nuova risposta…» e la nuova arriva di nuovo in streaming; senza revisore (`MAX_REVIEWS=0`) a fine turno il timbro sparisce.
 - **Scelta di streaming con il revisore (slide 18 della lezione 6)**: si mostra la bozza mentre viene scritta, non solo la risposta approvata. Lo streaming della sola risposta approvata non esiste: il revisore giudica il testo completo, quindi quando approva la risposta è già tutta scritta. Nascondere la bozza (provato il 25/11) lasciava la pagina ferma per 30–40 s; il timbro dice sempre se il testo è già stato approvato. Il testo del riassunto della cronologia, quando scatta, sta nel menù dei dettagli e non nella risposta.
 - Invio invia, Maiuscolo+Invio va a capo.
@@ -809,20 +809,20 @@ Limiti osservati:
 
 ### Prova reale del front-end
 
-Prove da fare nel browser (http://127.0.0.1:8003) con database, agente, back-end, front-end e LM Studio accesi. Gli esiti si riempiono dopo la prova.
+Prove da fare nel browser (http://127.0.0.1:8003) con database, agente, back-end, front-end e LM Studio accesi. Esiti della prova dell'utente del 2026-11-26 (modello `liquid/lfm2-24b-a2b`). Non provato nel browser: il testo del riassunto automatico nel menù invece che nella bozza (serve una chat oltre `SUMMARY_THRESHOLD`). Tempi osservati: circa 39 s per il primo turno di una chat, circa 30 s per i successivi, di più con le note.
 
 | Prova | Atteso | Esito |
 |---|---|---|
-| Conversazione con uno strumento dal browser (per esempio «Che ore sono?») | la risposta compare, con la riga dello strumento usato | da fare |
-| Chat creata dall'interfaccia, poi arresto e riavvio del back-end e ricarica della pagina | la chat è ancora in elenco con i suoi messaggi | da fare |
-| Agente spento, invio di una domanda | messaggio di errore comprensibile, pagina utilizzabile, domanda ancora nella casella | da fare |
-| Risposta in streaming | il testo compare man mano come bozza «in revisione…», poi «✓ revisionata» | da fare |
-| «Che note ci sono?» | `list_notes` nel menù, note per numero crescente | da fare |
-| Nuova nota dopo un'eliminazione | riprende il numero libero più piccolo | da fare |
-| Eliminazione di una nota: prima «Non eliminare», poi «Elimina» | con «Non eliminare» la nota resta; con «Elimina» viene eliminata | da fare |
-| Eliminazione di una chat | conferma del browser, poi la chat sparisce dall'elenco | da fare |
-| «Interrompi» durante una risposta | la risposta si ferma; salvata solo se Pico era già alla fine; il turno successivo funziona | da fare |
-| Finestra stretta | l'elenco diventa un pannello che si apre con un pulsante, la chat resta usabile | da fare |
+| Conversazione con uno strumento dal browser (per esempio «Che ore sono?») | la risposta compare, con la riga dello strumento usato | ok (2026-11-26): «che note ci sono?» con `list_notes` nel menù, note 1…9 in ordine |
+| Chat creata dall'interfaccia, poi arresto e riavvio del back-end e ricarica della pagina | la chat è ancora in elenco con i suoi messaggi | ok (2026-11-26) |
+| Agente spento, invio di una domanda | messaggio di errore comprensibile, pagina utilizzabile, domanda ancora nella casella | ok (2026-11-26) |
+| Risposta in streaming | il testo compare man mano come bozza «in revisione…», poi «✓ revisionata» | ok (2026-11-26); prima la risposta era nascosta fino al verdetto, cambiata su richiesta dell'utente |
+| «Che note ci sono?» | `list_notes` nel menù, note per numero crescente | ok (2026-11-26); prima della modifica il modello a volte ricopiava l'elenco a memoria (note dimenticate, «la 14 è stata eliminata» falso, segnalato dall'avviso) |
+| Nuova nota dopo un'eliminazione | riprende il numero libero più piccolo | ok (2026-11-26): dopo la compattazione 5…28 → 1…9, nuova nota 10; eliminata la 3, la nota successiva ha preso il 3; «Ricordami di comprare il caffè domani» salvata con `add_note` |
+| Eliminazione di una nota: prima «Non eliminare», poi «Elimina» | con «Non eliminare» la nota resta; con «Elimina» viene eliminata | ok (2026-11-26): traccia «Conferma · nota N: non eliminata / eliminata» |
+| Eliminazione di una chat | finestra di conferma a tema («Annulla» / «Elimina chat»), poi la chat sparisce dall'elenco | ok con la conferma del browser (2026-11-26); giudicata brutta → sostituita con la finestra a tema: da provare |
+| «Interrompi» durante una risposta | la risposta si ferma; salvata solo se Pico era già alla fine; il turno successivo funziona | ok (2026-11-26): nota «Risposta interrotta», domanda successiva senza avvisi |
+| Finestra stretta | sotto gli 860 px l'elenco diventa un pannello che si apre con ☰, la chat resta usabile | ok (2026-11-26, screenshot a 700 px); a metà schermo su 1920 px (circa 960 px) la disposizione resta quella larga |
 
 ## Diagnosi
 
